@@ -109,6 +109,13 @@ type openEditorMsg struct {
 	Text string
 }
 
+// NavigateToViewMsg requests navigation to a named view.
+//
+// TODO: route this message through the view stack router once it lands.
+type NavigateToViewMsg struct {
+	View string
+}
+
 type (
 	// cancelTimerExpiredMsg is sent when the cancel timer expires.
 	cancelTimerExpiredMsg struct{}
@@ -835,6 +842,10 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.textarea.SetValue(msg.Text)
 		m.textarea.MoveToEnd()
 		cmds = append(cmds, m.updateTextareaWithPrevHeight(msg, prevHeight))
+	case NavigateToViewMsg:
+		if cmd := m.handleNavigateToView(msg); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	case util.InfoMsg:
 		if msg.Type == util.InfoTypeError {
 			slog.Error("Error reported", "error", msg.Msg)
@@ -1351,6 +1362,9 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 			cmds = append(cmds, cmd)
 		}
 		m.dialog.CloseDialog(dialog.CommandsID)
+	case dialog.ActionNavigate:
+		m.dialog.CloseDialog(dialog.CommandsID)
+		cmds = append(cmds, m.navigateToView(msg.View))
 	case dialog.ActionToggleThinking:
 		cmds = append(cmds, func() tea.Msg {
 			cfg := m.com.Config()
@@ -1579,6 +1593,21 @@ func substituteArgs(content string, args map[string]string) string {
 	return content
 }
 
+func (m *UI) navigateToView(view string) tea.Cmd {
+	view = strings.TrimSpace(view)
+	if view == "" {
+		return nil
+	}
+	return util.CmdHandler(NavigateToViewMsg{View: view})
+}
+
+func (m *UI) handleNavigateToView(msg NavigateToViewMsg) tea.Cmd {
+	if strings.TrimSpace(msg.View) == "" {
+		return nil
+	}
+	return util.ReportInfo(fmt.Sprintf("%s view coming soon", msg.View))
+}
+
 func (m *UI) openAuthenticationDialog(provider catwalk.Provider, model config.SelectedModel, modelType config.SelectedModelType) tea.Cmd {
 	var (
 		dlg dialog.Dialog
@@ -1628,6 +1657,12 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 			if cmd := m.openSessionsDialog(); cmd != nil {
 				cmds = append(cmds, cmd)
 			}
+			return true
+		case key.Matches(msg, m.keyMap.RunDashboard):
+			cmds = append(cmds, m.navigateToView("runs"))
+			return true
+		case key.Matches(msg, m.keyMap.Approvals):
+			cmds = append(cmds, m.navigateToView("approvals"))
 			return true
 		case key.Matches(msg, m.keyMap.Chat.Details) && m.isCompact:
 			m.detailsOpen = !m.detailsOpen
@@ -2177,6 +2212,8 @@ func (m *UI) ShortHelp() []key.Binding {
 			tab,
 			commands,
 			k.Models,
+			k.RunDashboard,
+			k.Approvals,
 		)
 
 		switch m.focus {
@@ -2203,6 +2240,8 @@ func (m *UI) ShortHelp() []key.Binding {
 		binds = append(binds,
 			commands,
 			k.Models,
+			k.RunDashboard,
+			k.Approvals,
 			k.Editor.Newline,
 		)
 	}
@@ -2259,6 +2298,8 @@ func (m *UI) FullHelp() [][]key.Binding {
 			commands,
 			k.Models,
 			k.Sessions,
+			k.RunDashboard,
+			k.Approvals,
 		)
 		if hasSession {
 			mainBinds = append(mainBinds, k.Chat.NewSession)
@@ -2317,6 +2358,8 @@ func (m *UI) FullHelp() [][]key.Binding {
 					commands,
 					k.Models,
 					k.Sessions,
+					k.RunDashboard,
+					k.Approvals,
 				},
 			)
 			editorBinds := []key.Binding{
