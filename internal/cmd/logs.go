@@ -55,10 +55,10 @@ var logsCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to load configuration: %v", err)
 		}
-		logsFile := filepath.Join(cfg.Config().Options.DataDirectory, "logs", "crush.log")
+		logsFile := filepath.Join(cfg.Config().Options.DataDirectory, "logs", "smithers-tui.log")
 		_, err = os.Stat(logsFile)
 		if os.IsNotExist(err) {
-			log.Warn("Looks like you are not in a crush project. No logs found.")
+			log.Warn("Looks like you are not in a smithers-tui project. No logs found.")
 			return nil
 		}
 
