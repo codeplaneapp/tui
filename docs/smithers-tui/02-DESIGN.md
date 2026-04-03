@@ -15,6 +15,10 @@
 4. **Information density**: Terminal users expect density. Show more, not less.
 5. **Crush DNA**: Preserve Crush's proven UX patterns — command palette,
    session management, tool rendering, MCP status.
+6. **Native handoff over embedded clones**: When the user wants to interact
+   with an external tool (agent CLI, editor), suspend the TUI and launch
+   the real thing. Don't build degraded replicas of nvim or claude-code
+   inside Smithers.
 
 ---
 
@@ -232,50 +236,90 @@ Accessed via `/chat <run_id>` or pressing `c` on a run.
 
 ---
 
-### 3.4 Hijack Mode
+### 3.4 Hijack Mode (Native TUI Handoff)
 
-Triggered by `/hijack <run_id>` or pressing `h` in chat viewer.
+Triggered by `/hijack <run_id>` or pressing `h` in chat viewer / run list.
+
+Hijacking uses **native TUI handoff**: Smithers TUI suspends itself
+entirely and launches the agent's own CLI/TUI. The user interacts with
+the agent in its native interface. When the user exits (e.g., `/exit` in
+claude-code, `Ctrl+C` in codex), Smithers TUI resumes.
+
+**Flow**:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│ SMITHERS › HIJACK › abc123 (code-review)            [Esc] Release  │
-│ ⚡ YOU ARE DRIVING │ Agent: claude-code │ Node: review-auth         │
+│ SMITHERS › Chat › abc123 (code-review)              [Esc] Back     │
+│ Agent: claude-code │ Node: review-auth │ Attempt: 1 │ ⏱ 2m 14s    │
 │─────────────────────────────────────────────────────────────────────│
 │                                                                     │
-│ [context from agent's prior conversation shown above]               │
-│                                                                     │
-│ ─ ─ ─ ─ ─ ─ ─ SESSION HIJACKED ─ ─ ─ ─ ─ ─ ─                     │
-│                                                                     │
-│ ◆ You:                                                              │
-│   Actually, don't change the token hashing yet. First check if      │
-│   there's an existing hash utility in src/utils/crypto.ts           │
-│                                                                     │
-│ ◇ Agent:                                                            │
-│   Good call. Let me check that file first.                          │
-│   ┌─ read ──────────────────────────────────────────┐               │
-│   │ src/utils/crypto.ts                             │               │
-│   │ 67 lines read                                   │               │
-│   └─────────────────────────────────────────────────┘               │
-│   Yes! There's already a `hashToken()` function at line 23          │
-│   that uses SHA-256. I'll use that instead of introducing           │
-│   a new dependency.                                                 │
+│  ... (agent's chat output, tool calls, etc.) ...                   │
 │                                                                     │
 │─────────────────────────────────────────────────────────────────────│
+│ [h] Hijack this session  [f] Follow (auto-scroll)  [Esc] Back     │
+│─────────────────────────────────────────────────────────────────────│
+```
+
+User presses `h`:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
 │                                                                     │
-│ > _                                                                 │
-│ :::                                                                 │
+│  ⚡ Hijacking run abc123...                                         │
 │                                                                     │
-│ /resume  hand back to Smithers   /cancel  abort the run            │
+│  Pausing Smithers agent on node "review-auth"                      │
+│  Launching claude-code --resume ses_abc123                          │
+│                                                                     │
+│  Smithers TUI will resume when you exit claude-code.               │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+Then Smithers TUI disappears and the user is in **claude-code's own TUI**:
+
+```
+╭─────────────────────────────────────────────────────────────────────╮
+│                                                                     │
+│  claude-code (resumed session ses_abc123)                          │
+│                                                                     │
+│  [full native claude-code interface — their own rendering,         │
+│   their own keybindings, their own tool display, etc.]              │
+│                                                                     │
+│  > Actually, don't change the token hashing yet. First check if    │
+│    there's an existing hash utility in src/utils/crypto.ts         │
+│                                                                     │
+╰─────────────────────────────────────────────────────────────────────╯
+```
+
+When the user exits claude-code, Smithers TUI resumes:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ SMITHERS › Chat › abc123 (code-review)              [Esc] Back     │
+│ Agent: claude-code │ Node: review-auth │ Attempt: 1 │ ⏱ 5m 30s    │
+│─────────────────────────────────────────────────────────────────────│
+│                                                                     │
+│  ... (updated chat history including hijack session) ...           │
+│                                                                     │
+│  ─ ─ ─ ─ ─ ─ ─ HIJACK SESSION ENDED ─ ─ ─ ─ ─ ─ ─               │
+│  You drove claude-code for 3m 16s. Run resumed by Smithers.        │
+│                                                                     │
+│─────────────────────────────────────────────────────────────────────│
+│ [h] Hijack again  [f] Follow (auto-scroll)  [Esc] Back            │
 │─────────────────────────────────────────────────────────────────────│
 ```
 
 **Key UX details**:
-- Clear visual indicator: "YOU ARE DRIVING" banner with highlight color
-- Prior agent context visible above the hijack marker
-- Separator line marks where human took over
-- `/resume` returns control to Smithers (agent continues from where human left off)
-- `/cancel` aborts the entire run
-- `Esc` releases hijack (same as `/resume`)
+- **Full native experience**: User gets the agent's own TUI with its own
+  rendering, keybindings, plugins, etc. No degraded proxy.
+- **Clean suspend/resume**: Bubble Tea's `tea.ExecProcess` handles terminal
+  state — no flicker, no state corruption.
+- **Transition messages**: Brief message before handoff (which agent,
+  which session). Summary message on return (duration, status).
+- **State refresh**: On return, Smithers fetches updated run state and
+  chat history to reflect what happened during the hijack.
+- **Fallback**: If the agent has no CLI/TUI or `--resume` support, fall
+  back to an in-TUI conversation replay (same as the GUI's approach).
 
 ---
 
@@ -363,7 +407,7 @@ Accessed via `/timeline <run_id>`.
 
 ---
 
-### 3.7 Agent Browser
+### 3.7 Agent Browser (Native TUI Handoff)
 
 Accessed via `/agents`. Mirrors `AgentsList.tsx`.
 
@@ -399,32 +443,44 @@ Accessed via `/agents`. Mirrors `AgentsList.tsx`.
 │   Auth: ✗  API Key: ✗  Roles: coding                              │
 │                                                                     │
 │─────────────────────────────────────────────────────────────────────│
-│ [Enter] Chat with agent  [r] Refresh                  [Esc] Back   │
+│ [Enter] Launch agent TUI  [r] Refresh                 [Esc] Back   │
 │─────────────────────────────────────────────────────────────────────│
 ```
 
 **Agent Chat** (pressing Enter on an agent):
 
+Smithers TUI suspends and hands off to the agent's native CLI/TUI.
+The user gets the full native experience. On exit, Smithers resumes.
+
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│ SMITHERS › Agents › claude-code                         [Esc] Back │
-│─────────────────────────────────────────────────────────────────────│
 │                                                                     │
-│ ◆ You:                                                              │
-│   What files changed in the last commit?                            │
+│  Launching claude-code...                                           │
 │                                                                     │
-│ ◇ claude-code:                                                      │
-│   The last commit modified 3 files:                                 │
-│   - src/auth/middleware.ts (47 insertions, 12 deletions)            │
-│   - src/auth/session.ts (8 insertions, 3 deletions)                │
-│   - tests/auth.test.ts (22 insertions)                              │
+│  Smithers TUI will resume when you exit claude-code.               │
 │                                                                     │
-│─────────────────────────────────────────────────────────────────────│
-│                                                                     │
-│ > _                                                                 │
-│ :::                                                                 │
-│─────────────────────────────────────────────────────────────────────│
+└─────────────────────────────────────────────────────────────────────┘
 ```
+
+Then the user is in **claude-code's own TUI** (or codex, amp, etc.):
+
+```
+╭─────────────────────────────────────────────────────────────────────╮
+│                                                                     │
+│  claude-code                                                        │
+│                                                                     │
+│  [full native claude-code interface]                                │
+│                                                                     │
+│  > What files changed in the last commit?                          │
+│                                                                     │
+│  The last commit modified 3 files:                                  │
+│  - src/auth/middleware.ts (47 insertions, 12 deletions)            │
+│  ...                                                                │
+│                                                                     │
+╰─────────────────────────────────────────────────────────────────────╯
+```
+
+When exiting, the user returns to the Smithers agent browser.
 
 ---
 
@@ -811,7 +867,7 @@ Accessed via `/scores`.
 | `Ctrl+A` | Any | Open Approval Queue |
 | `Enter` | Run list | Inspect selected run |
 | `c` | Run list | View run's live chat |
-| `h` | Run list / Chat viewer | Hijack run |
+| `h` | Run list / Chat viewer | Hijack run (handoff to agent TUI) |
 | `a` | Run list / Approval view | Approve gate |
 | `d` | Approval view | Deny gate |
 | `x` | Run list | Cancel run |
@@ -840,9 +896,13 @@ Accessed via `/scores`.
 ┌────────┐┌──────┐┌──────┐┌──────┐┌──────┐┌──────┐┌──────┐┌──────┐
 │  Runs  ││Wflow ││Agents││Prompt││Ticket││  SQL ││Trigrs││Scores│
 │  Dash  ││ List ││Browse││Editor││ Mgr  ││Browse││/Cron ││ /ROI │
-└───┬────┘└──┬───┘└──┬───┘└──────┘└──────┘└──────┘└──────┘└──────┘
+└───┬────┘└──┬───┘└──┬───┘└──┬───┘└──┬───┘└──────┘└──────┘└──────┘
+    │        │       │       │       │
+    │        │       │       │       └──▸ Ctrl+O ═══▸ [$EDITOR] ⟲
+    │        │       │       │
+    │        │       │       └──▸ Ctrl+O ═══▸ [$EDITOR] ⟲
     │        │       │
-    │        │       └──▸ Agent Chat
+    │        │       └──▸ Enter ═══▸ [Agent Native TUI] ⟲
     │        │
     │        └──▸ Workflow Executor (input form)
     │
@@ -852,14 +912,24 @@ Accessed via `/scores`.
     │
     ├──▸ Live Chat Viewer
     │       │
-    │       └──▸ Hijack Mode
+    │       └──▸ h ═══▸ [Agent Native TUI --resume] ⟲
     │
     ├──▸ Timeline / Time-Travel
     │
     └──▸ Approval Queue
+
+Legend:
+  ──▸     View push (view stack, Esc pops back)
+  ═══▸    TUI handoff (tea.ExecProcess, TUI suspends/resumes)
+  [...]   External program (agent CLI, $EDITOR)
+  ⟲       Returns to parent view on exit
 ```
 
 Every view has `Esc` back to parent. Console/Chat is always the root.
+
+TUI handoff transitions (═══▸) are **not** view stack pushes — they
+suspend the entire Smithers TUI and give terminal control to the external
+program. When that program exits, Smithers resumes exactly where it was.
 
 ---
 
