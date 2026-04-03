@@ -61,6 +61,7 @@ palette — exactly the foundation we need to surpass the GUI.
 | G8 | GUI feature parity | Every feature in the Electrobun GUI is available in the TUI |
 | G9 | Thin frontend | Go TUI contains zero Smithers business logic; all ops go through Smithers CLI server / MCP / shell-out |
 | G10 | Built on Crush | Leverage Crush's mature Bubble Tea infrastructure, sessions, MCP, tool rendering |
+| G11 | Native TUI handoff | Seamlessly suspend the TUI to launch external programs (agent CLIs, editors) and resume on exit |
 
 ---
 
@@ -141,16 +142,23 @@ View a running agent's chat output in real-time:
 - **Follow mode**: Auto-scroll as new output arrives.
 - **Multi-pane**: View chat alongside run status.
 
-### 6.4 Chat Hijacking
+### 6.4 Chat Hijacking (Native TUI Handoff)
 
-Take over a running agent session:
+Take over a running agent session by handing off to the agent's own TUI:
 
 - **Hijack command**: `/hijack <run_id>` from chat or command palette.
-- **Seamless transition**: The TUI switches from viewing the agent's output
-  to an interactive chat where the user drives the conversation.
-- **Resume**: When done, `/resume` hands control back to Smithers.
+- **Native TUI handoff**: Smithers TUI suspends itself and launches the
+  agent's native CLI/TUI (e.g., `claude-code --resume`, `codex`, `amp`).
+  The user gets the full native experience of that agent's own interface.
+  When the user exits the agent TUI, Smithers TUI resumes automatically.
+- **Seamless transition**: Bubble Tea's `tea.ExecProcess` handles terminal
+  handoff — no PTY management, no I/O proxying. The agent TUI gets full
+  control of stdin/stdout/stderr.
+- **On return**: Smithers TUI refreshes run state, shows updated chat
+  history, and resumes normal operation.
 - **Engine support**: claude-code, codex, gemini, pi, kimi, forge, amp.
-- **Two modes**: Native CLI resume (preferred) or conversation replay.
+- **Fallback**: For agents without a TUI or `--resume` support, fall back
+  to conversation replay through the Smithers chat interface.
 
 ### 6.5 Approval Gate Management
 
@@ -176,7 +184,7 @@ Take over a running agent session:
 - **Inspect workflow**: View DAG structure, agents, schemas.
 - **Doctor**: Run diagnostics on workflow configuration.
 
-### 6.8 Agent Browser & Chat
+### 6.8 Agent Browser & Chat (Native TUI Handoff)
 
 Mirrors the GUI's **Agents** tab (`AgentsList.tsx` + `AgentChat.tsx`).
 
@@ -185,11 +193,12 @@ Mirrors the GUI's **Agents** tab (`AgentsList.tsx` + `AgentChat.tsx`).
 - **Status display**: For each agent show binary path, availability,
   auth status (`likely-subscription`, `api-key`, `binary-only`,
   `unavailable`), and roles.
-- **Agent chat**: Open a direct chat session with any detected agent.
-  Messages flow user → agent in a conversational UI (not through the
-  Smithers orchestrator).
+- **Agent chat via native TUI**: Pressing Enter on an agent suspends
+  Smithers TUI and launches the agent's own CLI/TUI (e.g., `claude-code`,
+  `codex`). The user gets the full native agent experience. When the user
+  exits the agent TUI, Smithers TUI resumes.
 - **Use case**: Quick ad-hoc conversations with a specific agent outside
-  of a workflow context.
+  of a workflow context, using that agent's own interface.
 
 ### 6.9 Ticket Manager
 
@@ -267,6 +276,32 @@ Smithers CLI is exposed as an MCP server providing these tool groups:
 - **Fact list**: View cross-run memory facts.
 - **Semantic recall**: Query memory with natural language.
 - **Message history**: Browse conversation threads across runs.
+
+### 6.16 Native TUI Handoff
+
+A cross-cutting capability that allows Smithers TUI to seamlessly suspend
+itself and hand terminal control to an external program, resuming when that
+program exits. This uses Bubble Tea's `tea.ExecProcess` which Crush already
+uses for its `Ctrl+O` editor integration.
+
+**Handoff scenarios**:
+
+| Trigger | External Program | On Return |
+|---------|-----------------|-----------|
+| Hijack a run (`h` key) | Agent's native TUI (`claude-code --resume`, `codex`, etc.) | Refresh run state, show updated chat |
+| Chat with agent (Enter in agent list) | Agent's native TUI (`claude-code`, `codex`, `amp`, etc.) | Return to agent browser |
+| Edit file (from chat tool result) | `$EDITOR` (nvim, vim, helix, etc.) | Refresh file state in chat context |
+| Edit ticket (`Ctrl+O` in ticket editor) | `$EDITOR` on ticket file | Reload ticket content |
+| Edit prompt (`Ctrl+O` in prompt editor) | `$EDITOR` on prompt `.mdx` file | Reload prompt, re-render preview |
+
+**Why native handoff over embedded UI**:
+- Users get the **full native experience** of each tool (syntax highlighting,
+  plugins, keybindings, completion, etc.).
+- **Zero implementation cost** for replicating agent UIs — we don't need to
+  build a claude-code clone or a codex clone inside Smithers.
+- **Automatically supports new agents** — any agent that ships a CLI/TUI
+  works with zero Smithers-side changes.
+- **Proven pattern** — Crush already does this for `$EDITOR` via `Ctrl+O`.
 
 ---
 
@@ -352,7 +387,7 @@ Smithers TUI reads configuration from (in priority order):
 |-----------|--------|
 | Users can monitor all active runs without leaving TUI | 100% of `ps` functionality |
 | Users can approve/deny gates from TUI | < 3 keystrokes from notification |
-| Users can hijack a running agent session | Seamless transition, < 2s latency |
+| Users can hijack a running agent session | Native TUI handoff, instant suspend/resume |
 | Users can time-travel debug from TUI | Diff, fork, replay all functional |
 | Chat agent can answer Smithers questions | Handles 90% of common queries |
 | Startup time | < 500ms to interactive |
@@ -362,35 +397,43 @@ Smithers TUI reads configuration from (in priority order):
 ## 11. Architecture Principle: Thin Frontend
 
 The Go TUI is a **presentation layer only**. It does NOT contain Smithers
-business logic. All data and mutations flow through one of three channels
-to the TypeScript Smithers CLI:
+business logic. All data and mutations flow through one of four channels:
 
 ```
 ┌──────────────────┐
 │  Smithers TUI    │  (Go / Bubble Tea)
 │  Thin Frontend   │
-└───┬──────┬───┬───┘
-    │      │   │
-    │      │   └── 3. Shell-out: exec("smithers", args...)
-    │      │           For one-shot commands, fallback
-    │      │
-    │      └────── 2. MCP Server: smithers mcp-serve (stdio)
-    │                  For AI agent tool calls
-    │
-    └───────────── 1. HTTP API: smithers up --serve
-                       For views, SSE streaming, mutations
+└─┬──────┬───┬───┬─┘
+  │      │   │   │
+  │      │   │   └── 4. TUI Handoff: tea.ExecProcess(cmd)
+  │      │   │           Suspend TUI, launch agent CLI/editor,
+  │      │   │           resume on exit. For hijack, agent chat,
+  │      │   │           file editing.
+  │      │   │
+  │      │   └────── 3. Shell-out: exec("smithers", args...)
+  │      │               For one-shot commands, fallback
+  │      │
+  │      └────────── 2. MCP Server: smithers mcp-serve (stdio)
+  │                      For AI agent tool calls
+  │
+  └───────────────── 1. HTTP API: smithers up --serve
+                         For views, SSE streaming, mutations
 ```
 
 This mirrors the GUI's architecture: the SolidJS frontend called the same
 Smithers CLI server via HTTP (`/ps`, `/sql`, `/workflow/run/{id}`, etc.)
 through a transport layer (`gui/src/ui/api/transport.ts`). The TUI does
-the same thing in Go.
+the same thing in Go — plus adds channel 4 (TUI handoff), which has no
+GUI equivalent since desktop apps can't suspend themselves to launch a
+terminal program.
 
 **Consequences**:
 - No Drizzle ORM, no SQLite access, no workflow engine code in Go.
 - The `internal/smithers/` package is purely an HTTP/exec client.
 - All 17 GUI API endpoints are consumed by the TUI.
 - MCP server provides the same data to the chat agent.
+- Hijacking and agent chat use native TUI handoff — no need to replicate
+  agent UIs inside Smithers.
 
 ## 12. Open Questions
 

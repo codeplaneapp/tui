@@ -103,8 +103,7 @@ internal/
   │   │   ├─ runinspect.go          Run Inspector + DAG (→ NodeInspector.tsx)
   │   │   ├─ tasktabs.go            Node detail tabs (→ TaskTabs.tsx)
   │   │   ├─ workflows.go           Workflow List + Executor (→ WorkflowsList.tsx)
-  │   │   ├─ agents.go              Agent Browser (→ AgentsList.tsx)
-  │   │   ├─ agentchat.go           Agent Chat (→ AgentChat.tsx)
+  │   │   ├─ agents.go              Agent Browser + handoff (→ AgentsList.tsx)
   │   │   ├─ prompts.go             Prompt Editor + Preview (→ PromptsList.tsx)
   │   │   ├─ tickets.go             Ticket Manager (→ TicketsList.tsx)
   │   │   │
@@ -113,8 +112,7 @@ internal/
   │   │   ├─ triggers.go            Trigger/Cron Manager (→ TriggersList.tsx)
   │   │   │
   │   │   │  ── TUI-only (beyond GUI) ──
-  │   │   ├─ livechat.go            Live Chat Viewer (streaming)
-  │   │   ├─ hijack.go              Hijack Mode
+  │   │   ├─ livechat.go            Live Chat Viewer (streaming + hijack handoff)
   │   │   ├─ approvals.go           Approval Queue
   │   │   ├─ timeline.go            Time-Travel Timeline
   │   │   ├─ scores.go              Scores / ROI
@@ -152,6 +150,54 @@ internal/
   └─ config/
       └─ config.go                  MODIFY — Add smithers config section
 ```
+
+### 2.4 TUI Handoff Pattern
+
+A key architectural pattern in Smithers TUI: **suspending the TUI to
+launch external programs**, then resuming when they exit.
+
+**Mechanism**: Bubble Tea's `tea.ExecProcess(cmd, callback)`.
+
+When called, Bubble Tea:
+1. Releases the terminal (restores cooked mode, clears alternate screen)
+2. Hands stdin/stdout/stderr to the child process
+3. The child gets full TTY control (interactive TUIs work perfectly)
+4. When the child exits, Bubble Tea reclaims the terminal
+5. The callback fires, returning a `tea.Msg` to the Update loop
+
+Crush already uses this for `Ctrl+O` editor handoff
+(`internal/ui/model/ui.go:2630`) and the general `ExecShell()` utility
+(`internal/ui/util/util.go:87`).
+
+**Pattern**:
+
+```go
+// Generic handoff helper
+func handoffToProgram(binary string, args []string, cwd string, onReturn func(error) tea.Msg) tea.Cmd {
+    cmd := exec.Command(binary, args...)
+    if cwd != "" {
+        cmd.Dir = cwd
+    }
+    return tea.ExecProcess(cmd, func(err error) tea.Msg {
+        return onReturn(err)
+    })
+}
+```
+
+**Handoff sites in Smithers TUI**:
+
+| Site | Trigger | Command | On Return |
+|------|---------|---------|-----------|
+| Hijack (livechat/runs) | `h` key | `claude --resume <tok>`, `codex`, etc. | Refresh run state + chat |
+| Agent chat (agents) | `Enter` key | `claude`, `codex`, `amp`, etc. | Return to agent list |
+| Edit ticket (tickets) | `Ctrl+O` | `$EDITOR <ticket.md>` | Reload ticket |
+| Edit prompt (prompts) | `Ctrl+O` | `$EDITOR <prompt.mdx>` | Reload + re-render |
+| Edit message (chat) | `Ctrl+O` | `$EDITOR <tmpfile>` | Set textarea (inherited from Crush) |
+
+**Why this matters**: This eliminates the need to build embedded clones
+of agent UIs, editors, or other TUI programs. Each handoff site is ~10
+lines of code. No PTY management, no I/O proxying, no terminal state
+gymnastics.
 
 ---
 
@@ -549,19 +595,20 @@ func (v *LiveChatView) streamChat() tea.Cmd {
 }
 ```
 
-#### 3.2.2 Chat Hijacking
+#### 3.2.2 Chat Hijacking (Native TUI Handoff)
 
-**`internal/smithers/hijack.go`**:
+Hijacking uses Bubble Tea's `tea.ExecProcess` to **suspend the entire
+Smithers TUI** and launch the agent's native CLI/TUI. No PTY management,
+no I/O proxying, no embedded chat clone. The user gets the real agent
+interface.
 
-Hijacking requires coordinating between:
-1. Smithers (pausing the automated agent)
-2. The TUI (switching from viewer to interactive mode)
-3. The underlying agent CLI (resuming the session)
+This is the same mechanism Crush uses for `Ctrl+O` editor handoff
+(`internal/ui/model/ui.go:2630-2670`), extended to agent CLIs.
 
 **Flow**:
 
 ```
-User presses 'h' in LiveChatView
+User presses 'h' in LiveChatView or Run Dashboard
     │
     ▼
 TUI calls Client.HijackRun(runID)
@@ -570,70 +617,90 @@ TUI calls Client.HijackRun(runID)
 Smithers HTTP API receives hijack request
     │
     ├─ Pauses running agent
-    ├─ Captures session metadata (resume token, messages, cwd)
-    └─ Returns HijackSession{engine, mode, resume, messages, cwd}
+    ├─ Captures session metadata (resume token, engine, cwd)
+    └─ Returns HijackSession{engine, resumeToken, cwd, agentBinary}
     │
     ▼
 TUI receives HijackSession
     │
-    ├─ If mode == "native-cli":
-    │     Launch agent CLI with --resume flag
-    │     Attach agent's stdin/stdout to TUI
-    │     User types directly to agent
+    ├─ If agent has --resume support (claude-code, codex, amp):
+    │     tea.ExecProcess(exec.Command(agentBinary, "--resume", token))
+    │     Smithers TUI suspends → agent TUI takes over terminal
+    │     User interacts with native agent TUI
+    │     User exits agent TUI → Smithers TUI resumes
+    │     Callback refreshes run state and chat history
     │
-    └─ If mode == "conversation":
-          Switch to interactive chat mode
-          Pre-populate context with message history
-          User sends messages through Smithers agent
-          Agent relays to underlying engine
+    └─ If agent has no --resume (fallback):
+          tea.ExecProcess(exec.Command(agentBinary))
+          Launch agent TUI without resume (new session)
+          Or fall back to in-TUI conversation replay
 ```
 
-**`internal/ui/views/hijack.go`**:
+**Implementation**:
 
 ```go
-type HijackView struct {
-    runID    string
-    session  *smithers.HijackSession
-    // Embeds the chat component for interactive messaging
-    chat     *chat.Chat
-    // Banner state
-    driving  bool
+// internal/ui/views/livechat.go (or runs.go)
+
+// hijackReturnMsg is sent when the user exits the agent TUI
+type hijackReturnMsg struct {
+    RunID string
+    Err   error
 }
 
-func (v *HijackView) Update(msg tea.Msg) (View, tea.Cmd) {
-    switch msg := msg.(type) {
-    case tea.KeyMsg:
-        // Handle /resume command
-        if v.isResumeCommand(msg) {
-            return v, v.resume()
+func (v *LiveChatView) hijackRun() tea.Cmd {
+    return func() tea.Msg {
+        session, err := v.client.HijackRun(context.Background(), v.runID)
+        if err != nil {
+            return util.ReportError(err)
         }
+        return hijackSessionMsg{Session: session}
     }
-    // Delegate to embedded chat
-    return v, v.chat.Update(msg)
 }
+
+// In Update(), when we receive the hijack session:
+case hijackSessionMsg:
+    session := msg.Session
+    cmd := exec.Command(session.AgentBinary, session.ResumeArgs()...)
+    cmd.Dir = session.CWD
+    return v, tea.ExecProcess(cmd, func(err error) tea.Msg {
+        return hijackReturnMsg{RunID: v.runID, Err: err}
+    })
+
+// When the user exits the agent TUI:
+case hijackReturnMsg:
+    // Refresh run state — the agent may have made progress
+    return v, v.refreshRunState()
 ```
 
-**Native CLI hijack** (preferred for claude-code, codex):
+**Key simplification**: No `hijack.go` view needed. The hijack is not a
+view — it's a terminal handoff. The LiveChatView (or RunsView) initiates
+the handoff and handles the return message. This eliminates:
+- The `HijackView` struct
+- The embedded chat component
+- PTY management code
+- The `pty` package dependency
+- The "YOU ARE DRIVING" in-TUI banner
 
-When the agent supports `--resume`, we spawn the CLI as a subprocess
-and attach it to a pseudo-terminal. The TUI renders the PTY output
-and forwards input. This is similar to how Crush handles the bash tool
-but with the agent CLI instead.
+**Agent resume support matrix**:
 
-```go
-// Spawn claude-code --resume <session-id>
-cmd := exec.Command("claude-code", "--resume", session.Resume)
-cmd.Dir = session.CWD
-pty, _ := pty.Start(cmd)
-// Wire PTY to TUI viewport
-```
+| Agent | Binary | Resume Flag | Handoff |
+|-------|--------|-------------|---------|
+| claude-code | `claude` | `--resume <session>` | Full resume |
+| codex | `codex` | `--resume <session>` | Full resume |
+| amp | `amp` | TBD | Full resume |
+| gemini | `gemini` | None yet | New session |
+| kimi | `kimi` | None yet | New session |
+| forge | `forge` | None yet | New session |
+| pi | `pi` | None yet | New session |
 
-**Conversation hijack** (fallback):
+For agents without `--resume`, we still hand off to their TUI — the user
+just starts a fresh conversation rather than continuing the hijacked one.
 
-When native resume isn't available, we replay the message history
-into a new agent session and let the user continue the conversation.
-The TUI's existing chat component handles this — we just pre-seed
-the message history.
+**Conversation replay** (last resort fallback):
+
+If an agent has no CLI/TUI at all (binary-only, no interactive mode),
+fall back to replaying the message history into Smithers' own chat
+interface. This is the only case where we need the in-TUI chat approach.
 
 #### 3.2.3 Approval Management
 
@@ -871,8 +938,14 @@ has this pattern for its 57 built-in tools).
 
 ### 6.3 End-to-End Tests
 
-- **TUI interaction**: Use `teatest` or VHS (Charm's terminal recorder)
-  to verify full user flows.
+- **Terminal E2E harness**: Add CLI TUI end-to-end coverage using the
+  Microsoft Playwright-style terminal harness pattern used in
+  `../smithers/tests/tui.e2e.test.ts` and `../smithers/tests/tui-helpers.ts`.
+  This should exercise real keyboard-driven flows against the running TUI,
+  not just component-level rendering.
+- **Happy-path recording**: Add at least one VHS-based happy-path terminal
+  recording test for a canonical Smithers TUI flow, matching Crush's
+  terminal-recorder testing direction.
 - **Hijack flow**: Full hijack lifecycle with mock agent.
 
 ---
@@ -963,7 +1036,7 @@ if missing.
 |------|--------|------------|
 | Crush upstream breaks fork | Medium | Clean initial commit, selective cherry-picks |
 | Smithers MCP server not ready | High | Direct CLI execution fallback (`exec.Command("smithers", ...)`) |
-| Hijack complexity across 7 agents | High | Start with claude-code only, add others iteratively |
+| Hijack across 7 agents | Low | `tea.ExecProcess` works with any CLI; only resume flags vary per agent |
 | SSE reliability | Medium | Reconnection logic, direct DB fallback |
 | Terminal compatibility | Low | Bubble Tea handles most terminals; test in common ones |
 | Performance with many runs | Medium | Pagination, lazy loading, debounced updates |
@@ -976,7 +1049,7 @@ if missing.
 
 | Package | Purpose |
 |---------|---------|
-| (none new required) | Crush already includes Bubble Tea, Lip Gloss, harmonica, etc. |
+| (none new required) | Crush already includes Bubble Tea (with `tea.ExecProcess`), Lip Gloss, harmonica, `x/editor`, etc. |
 
 ### External Dependencies
 
@@ -984,7 +1057,7 @@ if missing.
 |------------|-------------|
 | `smithers` CLI | MCP server, workflow execution |
 | Smithers SQLite DB | Direct data access |
-| Agent CLIs (claude-code, codex, etc.) | Hijacking |
+| Agent CLIs (claude-code, codex, etc.) | Hijacking (TUI handoff) and agent chat |
 
 ---
 
@@ -998,9 +1071,9 @@ if missing.
    **Recommendation**: HTTP-first (more complete API), DB fallback for
    offline/read-only access.
 
-3. **Hijack PTY handling**: Should we use a raw PTY or parse structured
-   output? **Recommendation**: Start with structured (NDJSON from agent
-   CLI), fall back to raw PTY for native-cli mode.
+3. ~~**Hijack PTY handling**~~: **Resolved**. Use `tea.ExecProcess` for
+   native TUI handoff. No PTY management needed. Bubble Tea suspends
+   the TUI and gives the agent CLI full terminal control.
 
 4. **Event handling**: Should SSE events go through Crush's pubsub or a
    separate channel? **Recommendation**: Through pubsub for consistency
