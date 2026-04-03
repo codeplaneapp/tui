@@ -17,3 +17,12 @@ vhs tests/vhs/helpbar-shortcuts.tape
 
 This recording is a happy-path smoke flow for the new `ctrl+r` and `ctrl+a`
 Smithers shortcut behavior in the TUI help bar.
+
+Run the Smithers branding-status tape with:
+
+```bash
+vhs tests/vhs/branding-status.tape
+```
+
+This recording is a happy-path smoke flow for Smithers header branding and
+status-bar rendering.

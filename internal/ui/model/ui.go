@@ -225,6 +225,9 @@ type UI struct {
 	// mcp
 	mcpStates map[string]mcp.ClientInfo
 
+	// smithersStatus holds optional runtime metrics rendered in header/status.
+	smithersStatus *SmithersStatus
+
 	// sidebarLogo keeps a cached version of the sidebar sidebarLogo.
 	sidebarLogo string
 
@@ -2012,6 +2015,7 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 
 // drawHeader draws the header section of the UI.
 func (m *UI) drawHeader(scr uv.Screen, area uv.Rectangle) {
+	m.header.SetSmithersStatus(m.smithersStatus)
 	m.header.drawHeader(
 		scr,
 		area,
@@ -2084,6 +2088,7 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 
 	// Add status and help layer
 	m.status.SetHideHelp(isOnboarding)
+	m.status.SetSmithersStatus(m.smithersStatus)
 	m.status.Draw(scr, layout.status)
 
 	// Draw completions popup if open
@@ -2142,6 +2147,12 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 		}
 	}
 	return nil
+}
+
+// SetSmithersStatus updates optional Smithers runtime status for header and
+// status-bar rendering.
+func (m *UI) SetSmithersStatus(status *SmithersStatus) {
+	m.smithersStatus = status
 }
 
 // View renders the UI model's view.
@@ -3621,7 +3632,7 @@ func (m *UI) disableDockerMCP() tea.Msg {
 	return util.NewInfoMsg("Docker MCP disabled successfully")
 }
 
-// renderLogo renders the Crush logo with the given styles and dimensions.
+// renderLogo renders the Smithers logo with the given styles and dimensions.
 func renderLogo(t *styles.Styles, compact bool, width int) string {
 	return logo.Render(t, version.Version, compact, logo.Opts{
 		FieldColor:   t.LogoFieldColor,

@@ -28,7 +28,7 @@ func TestHelpbarShortcuts_TUI(t *testing.T) {
 	tui := launchTUI(t)
 	defer tui.Terminate()
 
-	require.NoError(t, tui.WaitForText("CRUSH", 15*time.Second))
+	require.NoError(t, tui.WaitForText("SMITHERS", 15*time.Second))
 	require.NoError(t, tui.WaitForText("ctrl+r", 15*time.Second))
 	require.NoError(t, tui.WaitForText("runs", 15*time.Second))
 	require.NoError(t, tui.WaitForText("ctrl+a", 15*time.Second))

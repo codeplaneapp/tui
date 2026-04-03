@@ -35,7 +35,7 @@ func TestSmithersDomainSystemPrompt_TUI(t *testing.T) {
 	tui := launchTUI(t)
 	defer tui.Terminate()
 
-	require.NoError(t, tui.WaitForText("CRUSH", 15*time.Second))
+	require.NoError(t, tui.WaitForText("SMITHERS", 15*time.Second))
 }
 
 func TestSmithersDomainSystemPrompt_CoderFallback_TUI(t *testing.T) {
@@ -53,5 +53,5 @@ func TestSmithersDomainSystemPrompt_CoderFallback_TUI(t *testing.T) {
 	tui := launchTUI(t)
 	defer tui.Terminate()
 
-	require.NoError(t, tui.WaitForText("CRUSH", 15*time.Second))
+	require.NoError(t, tui.WaitForText("SMITHERS", 15*time.Second))
 }

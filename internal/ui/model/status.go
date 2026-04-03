@@ -1,6 +1,8 @@
 package model
 
 import (
+	"fmt"
+	"image"
 	"strings"
 	"time"
 
@@ -18,11 +20,12 @@ const DefaultStatusTTL = 5 * time.Second
 
 // Status is the status bar and help model.
 type Status struct {
-	com      *common.Common
-	hideHelp bool
-	help     help.Model
-	helpKm   help.KeyMap
-	msg      util.InfoMsg
+	com            *common.Common
+	hideHelp       bool
+	help           help.Model
+	helpKm         help.KeyMap
+	msg            util.InfoMsg
+	smithersStatus *SmithersStatus
 }
 
 // NewStatus creates a new status bar and help model.
@@ -67,6 +70,11 @@ func (s *Status) SetHideHelp(hideHelp bool) {
 	s.hideHelp = hideHelp
 }
 
+// SetSmithersStatus sets optional Smithers runtime metrics.
+func (s *Status) SetSmithersStatus(status *SmithersStatus) {
+	s.smithersStatus = status
+}
+
 // Draw draws the status bar onto the screen.
 func (s *Status) Draw(scr uv.Screen, area uv.Rectangle) {
 	if !s.hideHelp {
@@ -74,11 +82,14 @@ func (s *Status) Draw(scr uv.Screen, area uv.Rectangle) {
 		uv.NewStyledString(helpView).Draw(scr, area)
 	}
 
-	// Render notifications
 	if s.msg.IsEmpty() {
+		if !s.hideHelp {
+			s.drawSmithersSummary(scr, area)
+		}
 		return
 	}
 
+	// Render notifications
 	var indStyle lipgloss.Style
 	var msgStyle lipgloss.Style
 	switch s.msg.Type {
@@ -110,6 +121,50 @@ func (s *Status) Draw(scr uv.Screen, area uv.Rectangle) {
 
 	// Draw the info message over the help view
 	uv.NewStyledString(ind+info).Draw(scr, area)
+}
+
+func (s *Status) drawSmithersSummary(scr uv.Screen, area uv.Rectangle) {
+	if s.smithersStatus == nil {
+		return
+	}
+
+	summary := s.formatSmithersSummary()
+	if summary == "" {
+		return
+	}
+
+	summary = ansi.Truncate(summary, area.Dx(), "…")
+	summary = s.com.Styles.Muted.Render(summary)
+	summaryWidth := lipgloss.Width(summary)
+	if summaryWidth <= 0 {
+		return
+	}
+
+	startX := max(area.Min.X, area.Max.X-summaryWidth)
+	summaryArea := image.Rect(startX, area.Min.Y, area.Max.X, area.Max.Y)
+	uv.NewStyledString(summary).Draw(scr, summaryArea)
+}
+
+func (s *Status) formatSmithersSummary() string {
+	var parts []string
+
+	if s.smithersStatus.ActiveRuns > 0 {
+		runNoun := "runs"
+		if s.smithersStatus.ActiveRuns == 1 {
+			runNoun = "run"
+		}
+		parts = append(parts, fmt.Sprintf("%d %s", s.smithersStatus.ActiveRuns, runNoun))
+	}
+
+	if s.smithersStatus.PendingApprovals > 0 {
+		approvalNoun := "approvals"
+		if s.smithersStatus.PendingApprovals == 1 {
+			approvalNoun = "approval"
+		}
+		parts = append(parts, fmt.Sprintf("%d %s", s.smithersStatus.PendingApprovals, approvalNoun))
+	}
+
+	return strings.Join(parts, " · ")
 }
 
 // clearInfoMsgCmd returns a command that clears the info message after the

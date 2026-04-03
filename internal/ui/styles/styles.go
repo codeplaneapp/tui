@@ -500,8 +500,8 @@ func (s *Styles) DialogHelpStyles() help.Styles {
 // DefaultStyles returns the default styles for the UI.
 func DefaultStyles() Styles {
 	var (
-		primary   = charmtone.Charple
-		secondary = charmtone.Dolly
+		primary   = lipgloss.Color("#63b3ed")
+		secondary = lipgloss.Color("#e2e8f0")
 		tertiary  = charmtone.Bok
 		// accent    = charmtone.Zest
 
@@ -520,7 +520,7 @@ func DefaultStyles() Styles {
 
 		// Borders
 		border      = charmtone.Charcoal
-		borderFocus = charmtone.Charple
+		borderFocus = primary
 
 		// Status
 		error   = charmtone.Sriracha
@@ -1212,8 +1212,8 @@ func DefaultStyles() Styles {
 	s.LogoFieldColor = primary
 	s.LogoTitleColorA = secondary
 	s.LogoTitleColorB = primary
-	s.LogoCharmColor = secondary
-	s.LogoVersionColor = primary
+	s.LogoCharmColor = lipgloss.Color("#718096")
+	s.LogoVersionColor = lipgloss.Color("#a0aec0")
 
 	// Section
 	s.Section.Title = s.Subtle
