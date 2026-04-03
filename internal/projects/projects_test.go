@@ -12,10 +12,10 @@ func TestRegisterAndList(t *testing.T) {
 
 	// Override the projects file path for testing
 	t.Setenv("XDG_DATA_HOME", tmpDir)
-	t.Setenv("CRUSH_GLOBAL_DATA", filepath.Join(tmpDir, "crush"))
+	t.Setenv("SMITHERS_TUI_GLOBAL_DATA", filepath.Join(tmpDir, "smithers-tui"))
 
 	// Test registering a project
-	err := Register("/home/user/project1", "/home/user/project1/.crush")
+	err := Register("/home/user/project1", "/home/user/project1/.smithers-tui")
 	if err != nil {
 		t.Fatalf("Register failed: %v", err)
 	}
@@ -34,12 +34,12 @@ func TestRegisterAndList(t *testing.T) {
 		t.Errorf("Expected path /home/user/project1, got %s", projects[0].Path)
 	}
 
-	if projects[0].DataDir != "/home/user/project1/.crush" {
-		t.Errorf("Expected data_dir /home/user/project1/.crush, got %s", projects[0].DataDir)
+	if projects[0].DataDir != "/home/user/project1/.smithers-tui" {
+		t.Errorf("Expected data_dir /home/user/project1/.smithers-tui, got %s", projects[0].DataDir)
 	}
 
 	// Register another project
-	err = Register("/home/user/project2", "/home/user/project2/.crush")
+	err = Register("/home/user/project2", "/home/user/project2/.smithers-tui")
 	if err != nil {
 		t.Fatalf("Register failed: %v", err)
 	}
@@ -62,10 +62,10 @@ func TestRegisterAndList(t *testing.T) {
 func TestRegisterUpdatesExisting(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", tmpDir)
-	t.Setenv("CRUSH_GLOBAL_DATA", filepath.Join(tmpDir, "crush"))
+	t.Setenv("SMITHERS_TUI_GLOBAL_DATA", filepath.Join(tmpDir, "smithers-tui"))
 
 	// Register a project
-	err := Register("/home/user/project1", "/home/user/project1/.crush")
+	err := Register("/home/user/project1", "/home/user/project1/.smithers-tui")
 	if err != nil {
 		t.Fatalf("Register failed: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestRegisterUpdatesExisting(t *testing.T) {
 func TestLoadEmptyFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", tmpDir)
-	t.Setenv("CRUSH_GLOBAL_DATA", filepath.Join(tmpDir, "crush"))
+	t.Setenv("SMITHERS_TUI_GLOBAL_DATA", filepath.Join(tmpDir, "smithers-tui"))
 
 	// List before any projects exist
 	projects, err := List()
@@ -115,9 +115,9 @@ func TestLoadEmptyFile(t *testing.T) {
 func TestProjectsFilePath(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", tmpDir)
-	t.Setenv("CRUSH_GLOBAL_DATA", filepath.Join(tmpDir, "crush"))
+	t.Setenv("SMITHERS_TUI_GLOBAL_DATA", filepath.Join(tmpDir, "smithers-tui"))
 
-	expected := filepath.Join(tmpDir, "crush", "projects.json")
+	expected := filepath.Join(tmpDir, "smithers-tui", "projects.json")
 	actual := projectsFilePath()
 
 	if actual != expected {
@@ -128,11 +128,11 @@ func TestProjectsFilePath(t *testing.T) {
 func TestRegisterWithParentDataDir(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", tmpDir)
-	t.Setenv("CRUSH_GLOBAL_DATA", filepath.Join(tmpDir, "crush"))
+	t.Setenv("SMITHERS_TUI_GLOBAL_DATA", filepath.Join(tmpDir, "smithers-tui"))
 
-	// Register a project where .crush is in a parent directory.
-	// e.g., working in /home/user/monorepo/packages/app but .crush is at /home/user/monorepo/.crush
-	err := Register("/home/user/monorepo/packages/app", "/home/user/monorepo/.crush")
+	// Register a project where .smithers-tui is in a parent directory.
+	// e.g., working in /home/user/monorepo/packages/app but .smithers-tui is at /home/user/monorepo/.smithers-tui
+	err := Register("/home/user/monorepo/packages/app", "/home/user/monorepo/.smithers-tui")
 	if err != nil {
 		t.Fatalf("Register failed: %v", err)
 	}
@@ -150,17 +150,17 @@ func TestRegisterWithParentDataDir(t *testing.T) {
 		t.Errorf("Expected path /home/user/monorepo/packages/app, got %s", projects[0].Path)
 	}
 
-	if projects[0].DataDir != "/home/user/monorepo/.crush" {
-		t.Errorf("Expected data_dir /home/user/monorepo/.crush, got %s", projects[0].DataDir)
+	if projects[0].DataDir != "/home/user/monorepo/.smithers-tui" {
+		t.Errorf("Expected data_dir /home/user/monorepo/.smithers-tui, got %s", projects[0].DataDir)
 	}
 }
 
 func TestRegisterWithExternalDataDir(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", tmpDir)
-	t.Setenv("CRUSH_GLOBAL_DATA", filepath.Join(tmpDir, "crush"))
+	t.Setenv("SMITHERS_TUI_GLOBAL_DATA", filepath.Join(tmpDir, "smithers-tui"))
 
-	// Register a project where .crush is in a completely different location.
+	// Register a project where .smithers-tui is in a completely different location.
 	// e.g., project at /home/user/project but data stored at /var/data/crush/myproject
 	err := Register("/home/user/project", "/var/data/crush/myproject")
 	if err != nil {
