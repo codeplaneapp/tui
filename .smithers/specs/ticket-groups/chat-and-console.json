@@ -1,0 +1,243 @@
+{
+  "groupId": "chat-and-console",
+  "groupName": "Chat And Console",
+  "tickets": [
+    {
+      "id": "chat-active-run-summary",
+      "title": "Active Run Summary",
+      "type": "feature",
+      "featureName": "CHAT_SMITHERS_ACTIVE_RUN_SUMMARY",
+      "description": "Display the aggregate number of active Smithers runs in the UI header/status bar.",
+      "acceptanceCriteria": [
+        "The header displays 'X active' when there are running workflows.",
+        "The run count updates dynamically based on the Smithers client state."
+      ],
+      "dependencies": [
+        "chat-ui-branding-status"
+      ],
+      "sourceContext": [
+        "internal/ui/model/header.go",
+        "internal/smithers/client.go"
+      ],
+      "implementationNotes": [
+        "Implement a `renderSmithersStatus()` function in `internal/ui/model/header.go`.",
+        "Fetch the active run count from the cached `smithersClient` state to populate the string."
+      ],
+      "groupId": "chat-and-console",
+      "groupName": "Chat And Console"
+    },
+    {
+      "id": "chat-custom-tool-renderers",
+      "title": "Custom Tool Renderers",
+      "type": "feature",
+      "featureName": "CHAT_SMITHERS_CUSTOM_TOOL_RENDERERS",
+      "description": "Build custom UI renderers for Smithers MCP tool results so they display as styled components instead of raw JSON.",
+      "acceptanceCriteria": [
+        "Tool calls to `smithers_ps` render as styled tabular data in the chat stream.",
+        "Tool calls to `smithers_approve` render as a styled confirmation card.",
+        "Other Smithers tools render nicely instead of just dumping JSON to the chat."
+      ],
+      "dependencies": [
+        "chat-specialized-agent"
+      ],
+      "sourceContext": [
+        "internal/ui/chat/tools.go",
+        "internal/ui/chat/smithers_ps.go",
+        "internal/ui/chat/smithers_approve.go"
+      ],
+      "implementationNotes": [
+        "Create new files in `internal/ui/chat/` for Smithers-specific renderers.",
+        "Implement `renderSmithersPS(result mcp.ToolResult)` and `renderSmithersApprove(result mcp.ToolResult)`.",
+        "Register these rendering functions in the primary tool renderer registry in `internal/ui/chat/tools.go`."
+      ],
+      "groupId": "chat-and-console",
+      "groupName": "Chat And Console"
+    },
+    {
+      "id": "chat-default-console",
+      "title": "Default Chat Console",
+      "type": "feature",
+      "featureName": "CHAT_SMITHERS_DEFAULT_CONSOLE",
+      "description": "Establish the chat interface as the default Smithers TUI view, ensuring it acts as the base of the navigation stack.",
+      "acceptanceCriteria": [
+        "Launching the application opens the chat interface.",
+        "Pressing `Esc` from any view returns the user to the chat console.",
+        "The chat interface displays correctly under the new Smithers branding."
+      ],
+      "dependencies": [
+        "chat-ui-branding-status"
+      ],
+      "sourceContext": [
+        "internal/ui/model/ui.go"
+      ],
+      "implementationNotes": [
+        "Integrate the existing chat model as the base view in the new `views.Router` (assuming the router structure from the platform group).",
+        "Ensure `Esc` key handling in `UI.Update()` delegates to popping the view stack back to the chat."
+      ],
+      "groupId": "chat-and-console",
+      "groupName": "Chat And Console"
+    },
+    {
+      "id": "chat-domain-system-prompt",
+      "title": "Smithers Domain System Prompt",
+      "type": "feature",
+      "featureName": "CHAT_SMITHERS_DOMAIN_SYSTEM_PROMPT",
+      "description": "Create and configure the Smithers-specific system prompt to instruct the agent on workflow management and Smithers TUI operations.",
+      "acceptanceCriteria": [
+        "The agent is initialized with the Smithers system prompt instead of the default coding prompt.",
+        "The prompt includes instructions on formatting runs, mentioning pending approvals, and using Smithers MCP tools."
+      ],
+      "dependencies": [],
+      "sourceContext": [
+        "internal/agent/templates/smithers.md.tpl",
+        "internal/agent/agent.go"
+      ],
+      "implementationNotes": [
+        "Create `internal/agent/templates/smithers.md.tpl` with the content outlined in the Engineering document.",
+        "Update `internal/agent/agent.go` or the configuration layer to load this template for the primary agent session."
+      ],
+      "groupId": "chat-and-console",
+      "groupName": "Chat And Console"
+    },
+    {
+      "id": "chat-helpbar-shortcuts",
+      "title": "Helpbar Shortcuts",
+      "type": "feature",
+      "featureName": "CHAT_SMITHERS_HELPBAR_SHORTCUTS",
+      "description": "Update the bottom help bar and global keymap to include Smithers-specific shortcuts.",
+      "acceptanceCriteria": [
+        "The help bar displays new shortcuts like `ctrl+r runs` and `ctrl+a approvals`.",
+        "Pressing the configured shortcuts triggers the appropriate view switch in the application."
+      ],
+      "dependencies": [],
+      "sourceContext": [
+        "internal/ui/model/keys.go",
+        "internal/ui/model/ui.go"
+      ],
+      "implementationNotes": [
+        "Add `RunDashboard` (`ctrl+r`) and `Approvals` (`ctrl+a`) key bindings to `DefaultKeyMap()` in `internal/ui/model/keys.go`.",
+        "Implement handling for these keybindings in the main `UI.Update()` function to push the respective views."
+      ],
+      "groupId": "chat-and-console",
+      "groupName": "Chat And Console"
+    },
+    {
+      "id": "chat-mcp-connection-status",
+      "title": "MCP Connection Status",
+      "type": "feature",
+      "featureName": "CHAT_SMITHERS_MCP_CONNECTION_STATUS",
+      "description": "Show the Smithers MCP server connection status visually in the UI header or chat welcome area.",
+      "acceptanceCriteria": [
+        "The UI displays whether the Smithers CLI MCP server is connected or disconnected.",
+        "Updates dynamically as the MCP client establishes its connection."
+      ],
+      "dependencies": [
+        "chat-ui-branding-status"
+      ],
+      "sourceContext": [
+        "internal/ui/model/header.go",
+        "internal/mcp/client.go"
+      ],
+      "implementationNotes": [
+        "Query the global MCP client registry for the 'smithers' server connection state.",
+        "Render the state as an indicator (e.g., green dot for connected) next to the Smithers status."
+      ],
+      "groupId": "chat-and-console",
+      "groupName": "Chat And Console"
+    },
+    {
+      "id": "chat-pending-approval-summary",
+      "title": "Pending Approval Summary",
+      "type": "feature",
+      "featureName": "CHAT_SMITHERS_PENDING_APPROVAL_SUMMARY",
+      "description": "Display the aggregate number of pending Smithers approval gates in the UI header with a warning indicator.",
+      "acceptanceCriteria": [
+        "The header displays '⚠ Y pending approval' when there are workflows waiting at a gate.",
+        "If there are both active runs and pending approvals, they are separated by a center dot."
+      ],
+      "dependencies": [
+        "chat-active-run-summary"
+      ],
+      "sourceContext": [
+        "internal/ui/model/header.go"
+      ],
+      "implementationNotes": [
+        "Extend the `renderSmithersStatus()` function to check for pending approvals from the Smithers client and append the warning string to the status parts array."
+      ],
+      "groupId": "chat-and-console",
+      "groupName": "Chat And Console"
+    },
+    {
+      "id": "chat-specialized-agent",
+      "title": "Specialized Agent Configuration",
+      "type": "feature",
+      "featureName": "CHAT_SMITHERS_SPECIALIZED_AGENT",
+      "description": "Configure the default agent to utilize the new Smithers system prompt, disable irrelevant tools, and prioritize Smithers MCP tools.",
+      "acceptanceCriteria": [
+        "The default tool configuration disables irrelevant tools like `sourcegraph`.",
+        "The agent is explicitly configured to interact with the Smithers MCP server tools."
+      ],
+      "dependencies": [
+        "chat-workspace-context"
+      ],
+      "sourceContext": [
+        "internal/config/defaults.go",
+        "internal/agent/agent.go"
+      ],
+      "implementationNotes": [
+        "Modify `DefaultTools` in `internal/config/defaults.go` to disable tools like `sourcegraph` and `multiedit`.",
+        "Ensure the MCP client is configured by default to discover tools from the `smithers` local stdio server."
+      ],
+      "groupId": "chat-and-console",
+      "groupName": "Chat And Console"
+    },
+    {
+      "id": "chat-ui-branding-status",
+      "title": "Chat UI Branding & Status Bar Enhancements",
+      "type": "engineering",
+      "featureName": null,
+      "description": "Update the default Crush UI to reflect the Smithers brand, including logo updates and structural changes to the status/header bar to support Smithers connection and run metrics.",
+      "acceptanceCriteria": [
+        "The application header displays the Smithers ASCII art instead of Crush.",
+        "The header/status components are prepared to receive and display dynamic Smithers client state."
+      ],
+      "dependencies": [],
+      "sourceContext": [
+        "internal/ui/logo/logo.go",
+        "internal/ui/model/header.go",
+        "internal/ui/model/status.go",
+        "internal/ui/styles/styles.go"
+      ],
+      "implementationNotes": [
+        "Replace the ASCII art in `internal/ui/logo/logo.go`.",
+        "Update the `header.go` or `status.go` structures to accept a `smithers.Client` state or similar so that active runs and MCP status can be injected in subsequent tickets."
+      ],
+      "groupId": "chat-and-console",
+      "groupName": "Chat And Console"
+    },
+    {
+      "id": "chat-workspace-context",
+      "title": "Workspace Context Discovery",
+      "type": "feature",
+      "featureName": "CHAT_SMITHERS_WORKSPACE_CONTEXT_DISCOVERY",
+      "description": "Inject local workspace context (like workflow directory and active runs) into the agent's system prompt during template execution.",
+      "acceptanceCriteria": [
+        "The agent system prompt receives dynamic context such as `.WorkflowDir` and `.ActiveRuns`.",
+        "The agent is aware of the currently active workflow runs without needing to execute a tool first."
+      ],
+      "dependencies": [
+        "chat-domain-system-prompt"
+      ],
+      "sourceContext": [
+        "internal/agent/agent.go",
+        "internal/smithers/client.go"
+      ],
+      "implementationNotes": [
+        "Modify the template execution data payload to include `WorkflowDir` from the configuration and `ActiveRuns` from the Smithers client state.",
+        "Ensure the context is refreshed when a new session starts."
+      ],
+      "groupId": "chat-and-console",
+      "groupName": "Chat And Console"
+    }
+  ]
+}

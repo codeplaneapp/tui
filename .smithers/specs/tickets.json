@@ -1,0 +1,3695 @@
+[
+  {
+    "id": "approvals-context-display",
+    "title": "Display context for the selected approval",
+    "type": "feature",
+    "featureName": "APPROVALS_CONTEXT_DISPLAY",
+    "description": "Show the task, inputs, and workflow context for the currently highlighted approval in the queue.",
+    "acceptanceCriteria": [
+      "A details pane updates as the user moves the cursor through the queue.",
+      "Details include the specific question/gate and any relevant payload."
+    ],
+    "dependencies": [
+      "approvals-queue"
+    ],
+    "sourceContext": [
+      "internal/ui/views/approvals.go"
+    ],
+    "implementationNotes": [
+      "Consider a split-pane layout within the approvals view (list on left, details on right or bottom)."
+    ],
+    "groupId": "approvals-and-notifications",
+    "groupName": "Approvals And Notifications"
+  },
+  {
+    "id": "approvals-inline-approve",
+    "title": "Implement inline approval action",
+    "type": "feature",
+    "featureName": "APPROVALS_INLINE_APPROVE",
+    "description": "Allow the user to approve a gate directly from the TUI.",
+    "acceptanceCriteria": [
+      "Pressing the configured key (e.g., 'a') sends an approve API request.",
+      "Upon success, the item is removed from the pending queue."
+    ],
+    "dependencies": [
+      "approvals-context-display"
+    ],
+    "sourceContext": [
+      "internal/ui/views/approvals.go",
+      "internal/smithers/client.go"
+    ],
+    "implementationNotes": [
+      "Show a loading indicator while the API request is inflight."
+    ],
+    "groupId": "approvals-and-notifications",
+    "groupName": "Approvals And Notifications"
+  },
+  {
+    "id": "approvals-inline-deny",
+    "title": "Implement inline deny action",
+    "type": "feature",
+    "featureName": "APPROVALS_INLINE_DENY",
+    "description": "Allow the user to deny a gate directly from the TUI.",
+    "acceptanceCriteria": [
+      "Pressing the configured key (e.g., 'd' or 'x') sends a deny API request.",
+      "Upon success, the item is removed from the pending queue."
+    ],
+    "dependencies": [
+      "approvals-context-display"
+    ],
+    "sourceContext": [
+      "internal/ui/views/approvals.go",
+      "internal/smithers/client.go"
+    ],
+    "implementationNotes": [
+      "Provide an optional input field for a denial reason if supported by the Smithers API."
+    ],
+    "groupId": "approvals-and-notifications",
+    "groupName": "Approvals And Notifications"
+  },
+  {
+    "id": "approvals-pending-badges",
+    "title": "Show pending approval badges in global UI",
+    "type": "feature",
+    "featureName": "APPROVALS_PENDING_BADGES",
+    "description": "Display a visual indicator in the main UI (e.g., header or status bar) when approvals are pending.",
+    "acceptanceCriteria": [
+      "If `pending_count > 0`, a badge is visible on the main screen.",
+      "Badge updates dynamically via SSE events."
+    ],
+    "dependencies": [
+      "approvals-queue"
+    ],
+    "sourceContext": [
+      "internal/ui/model/status.go",
+      "internal/ui/model/header.go"
+    ],
+    "implementationNotes": [
+      "Integrate with Crush's existing status bar (`internal/ui/model/status.go`) to add the badge."
+    ],
+    "groupId": "approvals-and-notifications",
+    "groupName": "Approvals And Notifications"
+  },
+  {
+    "id": "approvals-queue",
+    "title": "Build the pending approvals queue",
+    "type": "feature",
+    "featureName": "APPROVALS_QUEUE",
+    "description": "Fetch and display a list of all pending approval gates from the Smithers API/DB.",
+    "acceptanceCriteria": [
+      "The view shows a selectable list/table of pending approvals.",
+      "List dynamically updates if new approvals arrive via SSE."
+    ],
+    "dependencies": [
+      "eng-approvals-view-scaffolding"
+    ],
+    "sourceContext": [
+      "internal/ui/views/approvals.go",
+      "internal/smithers/client.go"
+    ],
+    "implementationNotes": [
+      "Use Bubble Tea's `list` or `table` component. Fetch data via the Smithers API client."
+    ],
+    "groupId": "approvals-and-notifications",
+    "groupName": "Approvals And Notifications"
+  },
+  {
+    "id": "approvals-recent-decisions",
+    "title": "Show recent approval decisions",
+    "type": "feature",
+    "featureName": "APPROVALS_RECENT_DECISIONS",
+    "description": "Display a history of recently approved or denied gates in the approvals view.",
+    "acceptanceCriteria": [
+      "A section or toggleable view shows historical decisions.",
+      "Each entry shows the decision made and timestamps."
+    ],
+    "dependencies": [
+      "eng-approvals-view-scaffolding"
+    ],
+    "sourceContext": [
+      "internal/ui/views/approvals.go"
+    ],
+    "implementationNotes": [
+      "This might be a separate tab within the approvals view or a section below the pending queue."
+    ],
+    "groupId": "approvals-and-notifications",
+    "groupName": "Approvals And Notifications"
+  },
+  {
+    "id": "chat-active-run-summary",
+    "title": "Active Run Summary",
+    "type": "feature",
+    "featureName": "CHAT_SMITHERS_ACTIVE_RUN_SUMMARY",
+    "description": "Display the aggregate number of active Smithers runs in the UI header/status bar.",
+    "acceptanceCriteria": [
+      "The header displays 'X active' when there are running workflows.",
+      "The run count updates dynamically based on the Smithers client state."
+    ],
+    "dependencies": [
+      "chat-ui-branding-status"
+    ],
+    "sourceContext": [
+      "internal/ui/model/header.go",
+      "internal/smithers/client.go"
+    ],
+    "implementationNotes": [
+      "Implement a `renderSmithersStatus()` function in `internal/ui/model/header.go`.",
+      "Fetch the active run count from the cached `smithersClient` state to populate the string."
+    ],
+    "groupId": "chat-and-console",
+    "groupName": "Chat And Console"
+  },
+  {
+    "id": "chat-custom-tool-renderers",
+    "title": "Custom Tool Renderers",
+    "type": "feature",
+    "featureName": "CHAT_SMITHERS_CUSTOM_TOOL_RENDERERS",
+    "description": "Build custom UI renderers for Smithers MCP tool results so they display as styled components instead of raw JSON.",
+    "acceptanceCriteria": [
+      "Tool calls to `smithers_ps` render as styled tabular data in the chat stream.",
+      "Tool calls to `smithers_approve` render as a styled confirmation card.",
+      "Other Smithers tools render nicely instead of just dumping JSON to the chat."
+    ],
+    "dependencies": [
+      "chat-specialized-agent"
+    ],
+    "sourceContext": [
+      "internal/ui/chat/tools.go",
+      "internal/ui/chat/smithers_ps.go",
+      "internal/ui/chat/smithers_approve.go"
+    ],
+    "implementationNotes": [
+      "Create new files in `internal/ui/chat/` for Smithers-specific renderers.",
+      "Implement `renderSmithersPS(result mcp.ToolResult)` and `renderSmithersApprove(result mcp.ToolResult)`.",
+      "Register these rendering functions in the primary tool renderer registry in `internal/ui/chat/tools.go`."
+    ],
+    "groupId": "chat-and-console",
+    "groupName": "Chat And Console"
+  },
+  {
+    "id": "chat-default-console",
+    "title": "Default Chat Console",
+    "type": "feature",
+    "featureName": "CHAT_SMITHERS_DEFAULT_CONSOLE",
+    "description": "Establish the chat interface as the default Smithers TUI view, ensuring it acts as the base of the navigation stack.",
+    "acceptanceCriteria": [
+      "Launching the application opens the chat interface.",
+      "Pressing `Esc` from any view returns the user to the chat console.",
+      "The chat interface displays correctly under the new Smithers branding."
+    ],
+    "dependencies": [
+      "chat-ui-branding-status"
+    ],
+    "sourceContext": [
+      "internal/ui/model/ui.go"
+    ],
+    "implementationNotes": [
+      "Integrate the existing chat model as the base view in the new `views.Router` (assuming the router structure from the platform group).",
+      "Ensure `Esc` key handling in `UI.Update()` delegates to popping the view stack back to the chat."
+    ],
+    "groupId": "chat-and-console",
+    "groupName": "Chat And Console"
+  },
+  {
+    "id": "chat-domain-system-prompt",
+    "title": "Smithers Domain System Prompt",
+    "type": "feature",
+    "featureName": "CHAT_SMITHERS_DOMAIN_SYSTEM_PROMPT",
+    "description": "Create and configure the Smithers-specific system prompt to instruct the agent on workflow management and Smithers TUI operations.",
+    "acceptanceCriteria": [
+      "The agent is initialized with the Smithers system prompt instead of the default coding prompt.",
+      "The prompt includes instructions on formatting runs, mentioning pending approvals, and using Smithers MCP tools."
+    ],
+    "dependencies": [],
+    "sourceContext": [
+      "internal/agent/templates/smithers.md.tpl",
+      "internal/agent/agent.go"
+    ],
+    "implementationNotes": [
+      "Create `internal/agent/templates/smithers.md.tpl` with the content outlined in the Engineering document.",
+      "Update `internal/agent/agent.go` or the configuration layer to load this template for the primary agent session."
+    ],
+    "groupId": "chat-and-console",
+    "groupName": "Chat And Console"
+  },
+  {
+    "id": "chat-helpbar-shortcuts",
+    "title": "Helpbar Shortcuts",
+    "type": "feature",
+    "featureName": "CHAT_SMITHERS_HELPBAR_SHORTCUTS",
+    "description": "Update the bottom help bar and global keymap to include Smithers-specific shortcuts.",
+    "acceptanceCriteria": [
+      "The help bar displays new shortcuts like `ctrl+r runs` and `ctrl+a approvals`.",
+      "Pressing the configured shortcuts triggers the appropriate view switch in the application."
+    ],
+    "dependencies": [],
+    "sourceContext": [
+      "internal/ui/model/keys.go",
+      "internal/ui/model/ui.go"
+    ],
+    "implementationNotes": [
+      "Add `RunDashboard` (`ctrl+r`) and `Approvals` (`ctrl+a`) key bindings to `DefaultKeyMap()` in `internal/ui/model/keys.go`.",
+      "Implement handling for these keybindings in the main `UI.Update()` function to push the respective views."
+    ],
+    "groupId": "chat-and-console",
+    "groupName": "Chat And Console"
+  },
+  {
+    "id": "chat-mcp-connection-status",
+    "title": "MCP Connection Status",
+    "type": "feature",
+    "featureName": "CHAT_SMITHERS_MCP_CONNECTION_STATUS",
+    "description": "Show the Smithers MCP server connection status visually in the UI header or chat welcome area.",
+    "acceptanceCriteria": [
+      "The UI displays whether the Smithers CLI MCP server is connected or disconnected.",
+      "Updates dynamically as the MCP client establishes its connection."
+    ],
+    "dependencies": [
+      "chat-ui-branding-status"
+    ],
+    "sourceContext": [
+      "internal/ui/model/header.go",
+      "internal/mcp/client.go"
+    ],
+    "implementationNotes": [
+      "Query the global MCP client registry for the 'smithers' server connection state.",
+      "Render the state as an indicator (e.g., green dot for connected) next to the Smithers status."
+    ],
+    "groupId": "chat-and-console",
+    "groupName": "Chat And Console"
+  },
+  {
+    "id": "chat-pending-approval-summary",
+    "title": "Pending Approval Summary",
+    "type": "feature",
+    "featureName": "CHAT_SMITHERS_PENDING_APPROVAL_SUMMARY",
+    "description": "Display the aggregate number of pending Smithers approval gates in the UI header with a warning indicator.",
+    "acceptanceCriteria": [
+      "The header displays '⚠ Y pending approval' when there are workflows waiting at a gate.",
+      "If there are both active runs and pending approvals, they are separated by a center dot."
+    ],
+    "dependencies": [
+      "chat-active-run-summary"
+    ],
+    "sourceContext": [
+      "internal/ui/model/header.go"
+    ],
+    "implementationNotes": [
+      "Extend the `renderSmithersStatus()` function to check for pending approvals from the Smithers client and append the warning string to the status parts array."
+    ],
+    "groupId": "chat-and-console",
+    "groupName": "Chat And Console"
+  },
+  {
+    "id": "chat-specialized-agent",
+    "title": "Specialized Agent Configuration",
+    "type": "feature",
+    "featureName": "CHAT_SMITHERS_SPECIALIZED_AGENT",
+    "description": "Configure the default agent to utilize the new Smithers system prompt, disable irrelevant tools, and prioritize Smithers MCP tools.",
+    "acceptanceCriteria": [
+      "The default tool configuration disables irrelevant tools like `sourcegraph`.",
+      "The agent is explicitly configured to interact with the Smithers MCP server tools."
+    ],
+    "dependencies": [
+      "chat-workspace-context"
+    ],
+    "sourceContext": [
+      "internal/config/defaults.go",
+      "internal/agent/agent.go"
+    ],
+    "implementationNotes": [
+      "Modify `DefaultTools` in `internal/config/defaults.go` to disable tools like `sourcegraph` and `multiedit`.",
+      "Ensure the MCP client is configured by default to discover tools from the `smithers` local stdio server."
+    ],
+    "groupId": "chat-and-console",
+    "groupName": "Chat And Console"
+  },
+  {
+    "id": "chat-ui-branding-status",
+    "title": "Chat UI Branding & Status Bar Enhancements",
+    "type": "engineering",
+    "featureName": null,
+    "description": "Update the default Crush UI to reflect the Smithers brand, including logo updates and structural changes to the status/header bar to support Smithers connection and run metrics.",
+    "acceptanceCriteria": [
+      "The application header displays the Smithers ASCII art instead of Crush.",
+      "The header/status components are prepared to receive and display dynamic Smithers client state."
+    ],
+    "dependencies": [],
+    "sourceContext": [
+      "internal/ui/logo/logo.go",
+      "internal/ui/model/header.go",
+      "internal/ui/model/status.go",
+      "internal/ui/styles/styles.go"
+    ],
+    "implementationNotes": [
+      "Replace the ASCII art in `internal/ui/logo/logo.go`.",
+      "Update the `header.go` or `status.go` structures to accept a `smithers.Client` state or similar so that active runs and MCP status can be injected in subsequent tickets."
+    ],
+    "groupId": "chat-and-console",
+    "groupName": "Chat And Console"
+  },
+  {
+    "id": "chat-workspace-context",
+    "title": "Workspace Context Discovery",
+    "type": "feature",
+    "featureName": "CHAT_SMITHERS_WORKSPACE_CONTEXT_DISCOVERY",
+    "description": "Inject local workspace context (like workflow directory and active runs) into the agent's system prompt during template execution.",
+    "acceptanceCriteria": [
+      "The agent system prompt receives dynamic context such as `.WorkflowDir` and `.ActiveRuns`.",
+      "The agent is aware of the currently active workflow runs without needing to execute a tool first."
+    ],
+    "dependencies": [
+      "chat-domain-system-prompt"
+    ],
+    "sourceContext": [
+      "internal/agent/agent.go",
+      "internal/smithers/client.go"
+    ],
+    "implementationNotes": [
+      "Modify the template execution data payload to include `WorkflowDir` from the configuration and `ActiveRuns` from the Smithers client state.",
+      "Ensure the context is refreshed when a new session starts."
+    ],
+    "groupId": "chat-and-console",
+    "groupName": "Chat And Console"
+  },
+  {
+    "id": "eng-agents-e2e-tests",
+    "title": "Engineering: Agents View E2E and Visual Tests",
+    "type": "engineering",
+    "featureName": null,
+    "description": "Add comprehensive end-to-end testing and terminal recording for the Agents view functionality.",
+    "acceptanceCriteria": [
+      "Add a test in ../smithers/tests/tui.e2e.test.ts that navigates to the /agents view and verifies the rendering of the agent list.",
+      "Simulate an Enter keypress in the E2E test to verify the TUI correctly attempts a handoff.",
+      "Create a VHS tape recording (.tape file) demonstrating navigation to the Agents view, scrolling, and launching an agent."
+    ],
+    "dependencies": [
+      "feat-agents-binary-path-display",
+      "feat-agents-availability-status",
+      "feat-agents-auth-status-classification",
+      "feat-agents-role-display",
+      "feat-agents-native-tui-launch"
+    ],
+    "sourceContext": [
+      "../smithers/tests/tui.e2e.test.ts",
+      "../smithers/tests/tui-helpers.ts"
+    ],
+    "implementationNotes": [
+      "Model the E2E test on the existing fan-out-fan-in runs dashboard test. You may need to mock the smithers API or ensure the test environment exposes mock agents."
+    ],
+    "groupId": "agents",
+    "groupName": "Agents"
+  },
+  {
+    "id": "eng-agents-view-scaffolding",
+    "title": "Engineering: Scaffolding for Agents View",
+    "type": "engineering",
+    "featureName": null,
+    "description": "Create the structural boilerplate for the Agents view and establish the internal client method to fetch agent data from the Smithers CLI.",
+    "acceptanceCriteria": [
+      "Create internal/ui/views/agents.go implementing the base View interface.",
+      "Add a ListAgents() stub to internal/smithers/client.go.",
+      "Register the /agents route in the main view router so it can be navigated to."
+    ],
+    "dependencies": [],
+    "sourceContext": [
+      "internal/ui/views/router.go",
+      "internal/smithers/client.go",
+      "internal/ui/model/ui.go"
+    ],
+    "implementationNotes": [
+      "Use Crush's existing Bubble Tea list component patterns if applicable.",
+      "The list of agents will mirror the behavior in ../smithers/gui/src/components/AgentsList.tsx."
+    ],
+    "groupId": "agents",
+    "groupName": "Agents"
+  },
+  {
+    "id": "eng-approvals-e2e-tests",
+    "title": "Add E2E tests for approvals and notifications",
+    "type": "engineering",
+    "featureName": null,
+    "description": "Implement automated testing for the approvals flow using both the terminal E2E harness and VHS recordings.",
+    "acceptanceCriteria": [
+      "Playwright-style E2E test added covering the notification -> queue -> approve flow.",
+      "VHS script created demonstrating a happy-path approval."
+    ],
+    "dependencies": [
+      "approvals-inline-approve",
+      "approvals-inline-deny",
+      "notifications-approval-requests"
+    ],
+    "sourceContext": [
+      "../smithers/tests/tui.e2e.test.ts",
+      "../smithers/tests/tui-helpers.ts"
+    ],
+    "implementationNotes": [
+      "Mock the Smithers HTTP server in the E2E test to emit the `ApprovalRequested` SSE event and respond to the approval POST."
+    ],
+    "groupId": "approvals-and-notifications",
+    "groupName": "Approvals And Notifications"
+  },
+  {
+    "id": "eng-approvals-view-scaffolding",
+    "title": "Scaffold the approvals TUI view",
+    "type": "engineering",
+    "featureName": null,
+    "description": "Create the base `approvals` view and register it in the router with the `ctrl+a` keybinding.",
+    "acceptanceCriteria": [
+      "Pressing `ctrl+a` navigates to the empty approvals view.",
+      "Pressing `esc` returns to the previous view."
+    ],
+    "dependencies": [],
+    "sourceContext": [
+      "internal/ui/views/approvals.go",
+      "internal/ui/model/ui.go",
+      "internal/ui/model/keys.go"
+    ],
+    "implementationNotes": [
+      "Follow the new Router pattern defined in `03-ENGINEERING.md`. Add `Approvals` key to `keys.go`."
+    ],
+    "groupId": "approvals-and-notifications",
+    "groupName": "Approvals And Notifications"
+  },
+  {
+    "id": "eng-hijack-handoff-util",
+    "title": "Handoff Utility for Hijack",
+    "type": "engineering",
+    "featureName": null,
+    "description": "Implement a reusable wrapper around tea.ExecProcess for cleanly suspending and resuming the TUI.",
+    "acceptanceCriteria": [
+      "Provides a function to execute an external CLI.",
+      "Returns a tea.Cmd that handles the suspend and resume."
+    ],
+    "dependencies": [],
+    "sourceContext": [
+      "internal/ui/util/handoff.go"
+    ],
+    "implementationNotes": [
+      "Create `handoffToProgram(binary string, args []string, cwd string, onReturn func(error) tea.Msg) tea.Cmd`."
+    ],
+    "groupId": "live-chat-and-hijack",
+    "groupName": "Live Chat And Hijack"
+  },
+  {
+    "id": "eng-in-terminal-toast-component",
+    "title": "Build in-terminal toast notification component",
+    "type": "engineering",
+    "featureName": null,
+    "description": "Create an in-terminal toast overlay component designed to render at the bottom-right of the TUI.",
+    "acceptanceCriteria": [
+      "Component supports rendering Title, Body, and action hints.",
+      "Component respects a TTL for auto-dismissal.",
+      "Component structure lives in internal/ui/components/notification.go."
+    ],
+    "dependencies": [],
+    "sourceContext": [
+      "internal/ui/components/notification.go"
+    ],
+    "implementationNotes": [
+      "Unlike the existing Crush native notifications (in internal/ui/notification), this needs to be an in-terminal Bubble Tea component drawn via Lip Gloss over the existing views."
+    ],
+    "groupId": "approvals-and-notifications",
+    "groupName": "Approvals And Notifications"
+  },
+  {
+    "id": "eng-live-chat-e2e-testing",
+    "title": "Live Chat & Hijack E2E Tests",
+    "type": "engineering",
+    "featureName": null,
+    "description": "Implement E2E testing for the Live Chat and Hijack flows utilizing the Playwright TUI test harness and a VHS recording script.",
+    "acceptanceCriteria": [
+      "Playwright E2E tests exist for opening Live Chat and initiating Hijack.",
+      "A .tape VHS file exists that successfully records a happy-path chat stream."
+    ],
+    "dependencies": [
+      "feat-live-chat-viewer",
+      "feat-hijack-seamless-transition"
+    ],
+    "sourceContext": [
+      "tests/livechat.e2e.test.ts",
+      "tests/vhs/live-chat.tape"
+    ],
+    "implementationNotes": [
+      "Model the E2E tests on `tui.e2e.test.ts` from the Smithers UI v2 project.",
+      "Ensure we await terminal buffer outputs for 'Hijacking run...'."
+    ],
+    "groupId": "live-chat-and-hijack",
+    "groupName": "Live Chat And Hijack"
+  },
+  {
+    "id": "eng-live-chat-scaffolding",
+    "title": "Scaffold Live Chat View Structure",
+    "type": "engineering",
+    "featureName": null,
+    "description": "Create the baseline Bubble Tea view model for the Live Chat Viewer to be routed by the new view stack manager.",
+    "acceptanceCriteria": [
+      "LiveChatView struct implements the View interface.",
+      "Can be pushed to the Router stack."
+    ],
+    "dependencies": [],
+    "sourceContext": [
+      "internal/ui/views/livechat.go",
+      "internal/ui/views/router.go"
+    ],
+    "implementationNotes": [
+      "Define LiveChatView which will hold the runID and SmithersClient.",
+      "Ensure Init() returns a command to start streaming."
+    ],
+    "groupId": "live-chat-and-hijack",
+    "groupName": "Live Chat And Hijack"
+  },
+  {
+    "id": "eng-mcp-integration-tests",
+    "title": "E2E and VHS Testing for MCP Tool Renderers",
+    "type": "engineering",
+    "featureName": null,
+    "description": "Create terminal E2E tests and VHS-style recordings for Smithers MCP tool integrations in the chat interface.",
+    "acceptanceCriteria": [
+      "Terminal E2E path modeled on the upstream @microsoft/tui-test harness verifies tool discovery and execution via the TUI.",
+      "At least one VHS-style happy-path recording test verifies the rendering of a Smithers MCP tool result in the chat."
+    ],
+    "dependencies": [
+      "feat-mcp-tool-discovery",
+      "feat-mcp-runs-tools",
+      "feat-mcp-control-tools"
+    ],
+    "sourceContext": [
+      "tests/tui.e2e.test.ts",
+      "tests/tui-helpers.ts"
+    ],
+    "implementationNotes": [
+      "Model testing harness on `../smithers/tests/tui.e2e.test.ts` and `../smithers/tests/tui-helpers.ts`.",
+      "Add a `.tape` file for the VHS recording."
+    ],
+    "groupId": "mcp-integration",
+    "groupName": "Mcp Integration"
+  },
+  {
+    "id": "eng-mcp-renderer-scaffolding",
+    "title": "Base Scaffolding for Smithers Tool Renderers",
+    "type": "engineering",
+    "featureName": null,
+    "description": "Create the base abstraction and registration patterns for Smithers-specific MCP tool renderers in the TUI chat interface.",
+    "acceptanceCriteria": [
+      "A standard pattern for parsing Smithers tool result JSON is established.",
+      "Common UI styles (tables, cards, success/error indicators) for Smithers tools are defined in `internal/ui/styles`.",
+      "A registry entry or switch case maps `smithers_*` tool calls to their respective renderers."
+    ],
+    "dependencies": [
+      "feat-mcp-tool-discovery"
+    ],
+    "sourceContext": [
+      "internal/ui/chat/tools.go",
+      "internal/ui/styles/styles.go"
+    ],
+    "implementationNotes": [
+      "Crush registers tool renderers in `internal/ui/chat/tools.go` or similar.",
+      "Provide a helper function for unmarshaling `mcp.ToolResult.Content` to Smithers domain structs."
+    ],
+    "groupId": "mcp-integration",
+    "groupName": "Mcp Integration"
+  },
+  {
+    "id": "eng-memory-e2e",
+    "title": "Memory Browser E2E Tests",
+    "type": "engineering",
+    "featureName": null,
+    "description": "Create automated tests for the Memory Browser to ensure recall and facts list work.",
+    "acceptanceCriteria": [
+      "Includes a terminal E2E Playwright-style test.",
+      "Includes a VHS-style happy-path recording demonstrating semantic recall."
+    ],
+    "dependencies": [
+      "feat-memory-fact-list",
+      "feat-memory-semantic-recall",
+      "feat-memory-cross-run-message-history"
+    ],
+    "sourceContext": [
+      "../smithers/tests/tui.e2e.test.ts"
+    ],
+    "implementationNotes": [],
+    "groupId": "systems-and-analytics",
+    "groupName": "Systems And Analytics"
+  },
+  {
+    "id": "eng-memory-scaffolding",
+    "title": "Scaffold Memory Browser View",
+    "type": "engineering",
+    "featureName": null,
+    "description": "Create the base Bubble Tea model and routing for the `/memory` view.",
+    "acceptanceCriteria": [
+      "internal/ui/memory.go is created.",
+      "Routing to `/memory` is enabled."
+    ],
+    "dependencies": [
+      "eng-systems-api-client"
+    ],
+    "sourceContext": [
+      "internal/ui/memory.go"
+    ],
+    "implementationNotes": [],
+    "groupId": "systems-and-analytics",
+    "groupName": "Systems And Analytics"
+  },
+  {
+    "id": "eng-prompts-api-client",
+    "title": "Implement Prompts API Client Methods",
+    "type": "engineering",
+    "featureName": null,
+    "description": "Add HTTP or MCP client methods to fetch prompts, update prompt sources, and render prompt previews.",
+    "acceptanceCriteria": [
+      "Client exposes `ListPrompts`, `UpdatePromptSource`, and `RenderPromptPreview` operations.",
+      "Terminal E2E test verifying API client capabilities for prompts."
+    ],
+    "dependencies": [],
+    "sourceContext": [
+      "../smithers/gui/src/api/transport.ts"
+    ],
+    "implementationNotes": [
+      "Mirror `fetchPrompts`, `updatePromptSource`, and `renderPromptPreview` from the GUI transport.",
+      "Ensure `RenderPromptPreview` correctly passes down a map of key-value props."
+    ],
+    "groupId": "content-and-prompts",
+    "groupName": "Content And Prompts"
+  },
+  {
+    "id": "eng-scores-e2e",
+    "title": "Scores Dashboard E2E Tests",
+    "type": "engineering",
+    "featureName": null,
+    "description": "Create automated tests for the Scores Dashboard to ensure data renders correctly.",
+    "acceptanceCriteria": [
+      "Includes a terminal E2E Playwright-style test.",
+      "Includes a VHS-style happy-path recording."
+    ],
+    "dependencies": [
+      "feat-scores-daily-and-weekly-summaries",
+      "feat-scores-run-evaluations",
+      "feat-scores-token-usage-metrics",
+      "feat-scores-tool-call-metrics",
+      "feat-scores-latency-metrics",
+      "feat-scores-cache-efficiency-metrics",
+      "feat-scores-cost-tracking"
+    ],
+    "sourceContext": [
+      "../smithers/tests/tui.e2e.test.ts"
+    ],
+    "implementationNotes": [
+      "Mock the GetScores client method to provide consistent metrics."
+    ],
+    "groupId": "systems-and-analytics",
+    "groupName": "Systems And Analytics"
+  },
+  {
+    "id": "eng-scores-scaffolding",
+    "title": "Scaffold Scores Dashboard View",
+    "type": "engineering",
+    "featureName": null,
+    "description": "Create the base Bubble Tea model and routing for the `/scores` view.",
+    "acceptanceCriteria": [
+      "internal/ui/scores.go is created.",
+      "Routing to `/scores` is enabled."
+    ],
+    "dependencies": [
+      "eng-systems-api-client"
+    ],
+    "sourceContext": [
+      "internal/ui/scores.go"
+    ],
+    "implementationNotes": [
+      "This view acts as a static dashboard. Focus on layout configuration with lipgloss."
+    ],
+    "groupId": "systems-and-analytics",
+    "groupName": "Systems And Analytics"
+  },
+  {
+    "id": "eng-smithers-client-runs",
+    "title": "Implement HTTP Client for Runs API",
+    "type": "engineering",
+    "featureName": null,
+    "description": "Implement the Smithers HTTP client and SSE event stream consumer to support fetching run state and real-time updates.",
+    "acceptanceCriteria": [
+      "Client can fetch the list of runs from /api/runs",
+      "Client can fetch specific run details and DAG from /api/runs/:id",
+      "Client can stream SSE events for run status updates",
+      "Client exposes Approve, Deny, Cancel, and Hijack mutations",
+      "Unit tests cover client serialization and API errors"
+    ],
+    "dependencies": [],
+    "sourceContext": [
+      "internal/smithers/client.go",
+      "internal/smithers/types.go",
+      "../smithers/src/server/routes/runs.ts"
+    ],
+    "implementationNotes": [
+      "Ensure dual-mode access (HTTP if running, SQLite fallback if direct db exists).",
+      "Events should be translated into tea.Msg types for easy consumption by the TUI loop."
+    ],
+    "groupId": "runs-and-inspection",
+    "groupName": "Runs And Inspection"
+  },
+  {
+    "id": "eng-smithers-workflows-client",
+    "title": "Build Smithers Workflow API Client Subsystem",
+    "type": "engineering",
+    "featureName": null,
+    "description": "Implement the API client methods in the TUI to interact with the Smithers server's workflow endpoints, supporting workflow listing, metadata retrieval, and execution operations.",
+    "acceptanceCriteria": [
+      "Create or update internal/smithers/client.go with ListWorkflows, GetWorkflow, and RunWorkflow methods.",
+      "Ensure the client correctly deserializes workflow schemas and parameters from the Smithers HTTP API.",
+      "Add unit tests for the workflow client methods simulating API responses."
+    ],
+    "dependencies": [],
+    "sourceContext": [
+      "internal/smithers/client.go",
+      "../smithers/src/server/index.ts"
+    ],
+    "implementationNotes": [
+      "Map the HTTP API payloads to Go structs mirroring the DiscoveredWorkflow and Workflow types from Smithers.",
+      "Ensure dual-mode fallback is supported (HTTP preferred, SQLite read-only fallback) for listing."
+    ],
+    "groupId": "workflows",
+    "groupName": "Workflows"
+  },
+  {
+    "id": "eng-split-pane-component",
+    "title": "Create Shared Split Pane Layout Component",
+    "type": "engineering",
+    "featureName": null,
+    "description": "Implement a reusable Bubble Tea component for side-by-side layouts, supporting a fixed-width left pane and a responsive right pane.",
+    "acceptanceCriteria": [
+      "Component can render arbitrary left and right Bubble Tea views.",
+      "Handles viewport resizing correctly."
+    ],
+    "dependencies": [],
+    "sourceContext": [
+      "docs/smithers-tui/03-ENGINEERING.md"
+    ],
+    "implementationNotes": [
+      "Create `internal/ui/components/splitpane.go`.",
+      "Use `lipgloss.JoinHorizontal` to stitch views. The left view should typically have a hardcoded max width."
+    ],
+    "groupId": "content-and-prompts",
+    "groupName": "Content And Prompts"
+  },
+  {
+    "id": "eng-sql-e2e",
+    "title": "SQL Browser E2E Tests",
+    "type": "engineering",
+    "featureName": null,
+    "description": "Create automated tests for the SQL Browser view to ensure regressions are not introduced.",
+    "acceptanceCriteria": [
+      "Includes a terminal E2E test modeled on the upstream `@microsoft/tui-test` harness in `../smithers/tests/tui.e2e.test.ts`.",
+      "Includes at least one VHS-style happy-path recording test verifying table selection and query execution."
+    ],
+    "dependencies": [
+      "feat-sql-table-sidebar",
+      "feat-sql-results-table"
+    ],
+    "sourceContext": [
+      "../smithers/tests/tui.e2e.test.ts",
+      "../smithers/tests/tui-helpers.ts"
+    ],
+    "implementationNotes": [
+      "Mock the Smithers API client to return deterministic database results for testing."
+    ],
+    "groupId": "systems-and-analytics",
+    "groupName": "Systems And Analytics"
+  },
+  {
+    "id": "eng-sql-scaffolding",
+    "title": "Scaffold SQL Browser View",
+    "type": "engineering",
+    "featureName": null,
+    "description": "Create the base Bubble Tea model and routing for the `/sql` view. This establishes the UI shell that will hold the table sidebar, query editor, and results table.",
+    "acceptanceCriteria": [
+      "internal/ui/sqlbrowser.go is created with a base Bubble Tea model.",
+      "Typing `/sql` in the console or selecting it from the palette navigates to this view.",
+      "Escape key pops the view off the back stack."
+    ],
+    "dependencies": [
+      "eng-systems-api-client"
+    ],
+    "sourceContext": [
+      "internal/ui/sqlbrowser.go",
+      "internal/ui/model/"
+    ],
+    "implementationNotes": [
+      "Follow the established UI architecture in `internal/ui`. Use `tea.Model` patterns."
+    ],
+    "groupId": "systems-and-analytics",
+    "groupName": "Systems And Analytics"
+  },
+  {
+    "id": "eng-systems-api-client",
+    "title": "Implement Systems and Analytics API Client Methods",
+    "type": "engineering",
+    "featureName": null,
+    "description": "Expand the Smithers HTTP/SQLite client to include methods required for the Systems and Analytics views. This includes API bindings for executing raw SQL queries, retrieving scores and metrics, memory recall/listing, and cron/trigger CRUD operations. Must support dual-mode access (HTTP when server running, SQLite fallback when direct db is present) for read operations where applicable.",
+    "acceptanceCriteria": [
+      "Client struct includes ExecuteSQL, GetScores, ListMemoryFacts, RecallMemory, and cron management methods.",
+      "Methods use HTTP API when available, falling back to direct SQLite access for read operations if possible.",
+      "Unit tests confirm requests are routed to the correct transport layer."
+    ],
+    "dependencies": [],
+    "sourceContext": [
+      "internal/app/",
+      "../smithers/src/server/"
+    ],
+    "implementationNotes": [
+      "Refer to PRD Section 6.11-6.15 and Engineering Section 3.1.2.",
+      "Cron management might need to shell out (`exec.Command`) to `smithers cron` if explicit HTTP endpoints don't exist."
+    ],
+    "groupId": "systems-and-analytics",
+    "groupName": "Systems And Analytics"
+  },
+  {
+    "id": "eng-tickets-api-client",
+    "title": "Implement Tickets API Client Methods",
+    "type": "engineering",
+    "featureName": null,
+    "description": "Add HTTP or MCP client methods to fetch, create, and update tickets based on the `.smithers/tickets` directory.",
+    "acceptanceCriteria": [
+      "Client exposes `ListTickets`, `CreateTicket`, and `UpdateTicket` operations.",
+      "Operations serialize and deserialize payloads correctly according to the backend schema.",
+      "Terminal E2E test verifying API client capabilities for tickets."
+    ],
+    "dependencies": [],
+    "sourceContext": [
+      "../smithers/gui/src/api/transport.ts"
+    ],
+    "implementationNotes": [
+      "Mirror the functionality of `fetchTickets`, `createTicket`, and `updateTicket` found in the GUI transport layer.",
+      "Add these methods to the `internal/app/smithers` client wrapper."
+    ],
+    "groupId": "content-and-prompts",
+    "groupName": "Content And Prompts"
+  },
+  {
+    "id": "eng-time-travel-api-and-model",
+    "title": "Time Travel API Client and Model Scaffolding",
+    "type": "engineering",
+    "featureName": null,
+    "description": "Add Smithers client methods for snapshot operations and basic Bubble Tea model scaffolding for the Timeline view.",
+    "acceptanceCriteria": [
+      "Client contains ListSnapshots, DiffSnapshots, ForkRun, and ReplayRun methods.",
+      "Timeline struct and essential Bubble Tea Msg types are defined.",
+      "E2E test mock is available for the snapshot APIs."
+    ],
+    "dependencies": [],
+    "sourceContext": [
+      "docs/smithers-tui/03-ENGINEERING.md",
+      "internal/app/provider.go",
+      "../smithers/tests/tui.e2e.test.ts"
+    ],
+    "implementationNotes": [
+      "Model the client APIs after the mock definitions in 03-ENGINEERING.md (ListSnapshots, DiffSnapshots, ForkRun, ReplayRun).",
+      "Create base Bubble Tea structs in internal/ui/model/timeline.go or internal/ui/views/timeline.go.",
+      "Include mock implementations for terminal E2E tests modeled on ../smithers/tests/tui-helpers.ts."
+    ],
+    "groupId": "time-travel",
+    "groupName": "Time Travel"
+  },
+  {
+    "id": "eng-triggers-e2e",
+    "title": "Triggers E2E Tests",
+    "type": "engineering",
+    "featureName": null,
+    "description": "Create automated tests for the Triggers Manager to ensure CRUD operations work.",
+    "acceptanceCriteria": [
+      "Includes a terminal E2E test modeled on the upstream `@microsoft/tui-test` harness.",
+      "Includes a VHS-style happy-path recording demonstrating toggle, edit, and delete."
+    ],
+    "dependencies": [
+      "feat-triggers-toggle",
+      "feat-triggers-create",
+      "feat-triggers-edit",
+      "feat-triggers-delete"
+    ],
+    "sourceContext": [
+      "../smithers/tests/tui.e2e.test.ts"
+    ],
+    "implementationNotes": [],
+    "groupId": "systems-and-analytics",
+    "groupName": "Systems And Analytics"
+  },
+  {
+    "id": "eng-triggers-scaffolding",
+    "title": "Scaffold Triggers Manager View",
+    "type": "engineering",
+    "featureName": null,
+    "description": "Create the base Bubble Tea model and routing for the `/triggers` view.",
+    "acceptanceCriteria": [
+      "internal/ui/triggers.go is created with a base model.",
+      "Routing to `/triggers` is enabled."
+    ],
+    "dependencies": [
+      "eng-systems-api-client"
+    ],
+    "sourceContext": [
+      "internal/ui/triggers.go"
+    ],
+    "implementationNotes": [
+      "Review `../smithers/gui-ref/src/ui/tabs/TriggersList.tsx` for state inspiration."
+    ],
+    "groupId": "systems-and-analytics",
+    "groupName": "Systems And Analytics"
+  },
+  {
+    "id": "feat-agents-auth-status-classification",
+    "title": "Agent Auth Status Classification",
+    "type": "feature",
+    "featureName": "AGENTS_AUTH_STATUS_CLASSIFICATION",
+    "description": "Render the detailed authentication and API key validation status markers for each agent.",
+    "acceptanceCriteria": [
+      "Displays 'Auth: ✓' or 'Auth: ✗' indicating active authentication.",
+      "Displays 'API Key: ✓' or 'API Key: ✗' indicating environment variable presence.",
+      "Icons use standard success/error colors (green/red)."
+    ],
+    "dependencies": [
+      "feat-agents-cli-detection"
+    ],
+    "sourceContext": [
+      "internal/ui/views/agents.go",
+      "docs/smithers-tui/02-DESIGN.md"
+    ],
+    "implementationNotes": [
+      "Align the output on a single line matching the design doc: `Auth: ✓  API Key: ✓  Roles: ...`"
+    ],
+    "groupId": "agents",
+    "groupName": "Agents"
+  },
+  {
+    "id": "feat-agents-availability-status",
+    "title": "Agent Availability Status",
+    "type": "feature",
+    "featureName": "AGENTS_AVAILABILITY_STATUS",
+    "description": "Render the overall availability status of each agent (e.g., likely-subscription, api-key, binary-only, unavailable).",
+    "acceptanceCriteria": [
+      "Each agent displays a 'Status: ● <status>' line.",
+      "Applies distinct colors for different states (e.g., green for likely-subscription/api-key, gray for unavailable)."
+    ],
+    "dependencies": [
+      "feat-agents-cli-detection"
+    ],
+    "sourceContext": [
+      "internal/ui/views/agents.go",
+      "internal/ui/styles/styles.go"
+    ],
+    "implementationNotes": [
+      "Define Lip Gloss styles in internal/ui/styles/styles.go mapping to these specific Smithers agent statuses."
+    ],
+    "groupId": "agents",
+    "groupName": "Agents"
+  },
+  {
+    "id": "feat-agents-binary-path-display",
+    "title": "Agent Binary Path Display",
+    "type": "feature",
+    "featureName": "AGENTS_BINARY_PATH_DISPLAY",
+    "description": "Enhance the agent list items to display the physical binary path discovered for each agent.",
+    "acceptanceCriteria": [
+      "Each agent list item renders a 'Binary: <path>' line below the agent name.",
+      "If no binary is found, it renders 'Binary: —'."
+    ],
+    "dependencies": [
+      "feat-agents-cli-detection"
+    ],
+    "sourceContext": [
+      "internal/ui/views/agents.go",
+      "docs/smithers-tui/02-DESIGN.md"
+    ],
+    "implementationNotes": [
+      "Use Lip Gloss styles to format the path with a slightly dimmed or secondary text color."
+    ],
+    "groupId": "agents",
+    "groupName": "Agents"
+  },
+  {
+    "id": "feat-agents-browser",
+    "title": "Agents Browser Base View",
+    "type": "feature",
+    "featureName": "AGENTS_BROWSER",
+    "description": "Implement the main Bubble Tea view for the Agent Browser, rendering the layout frame and handling standard navigation.",
+    "acceptanceCriteria": [
+      "Navigating to /agents or using the command palette opens the Agents view.",
+      "The view displays a 'SMITHERS › Agents' header and a placeholder list.",
+      "Pressing Esc returns the user to the previous view (chat/console)."
+    ],
+    "dependencies": [
+      "eng-agents-view-scaffolding"
+    ],
+    "sourceContext": [
+      "internal/ui/views/agents.go",
+      "docs/smithers-tui/02-DESIGN.md"
+    ],
+    "implementationNotes": [
+      "Reference the design doc section 3.7 for layout specifications.",
+      "Leverage internal/ui/styles/styles.go for standard layout margins and colors."
+    ],
+    "groupId": "agents",
+    "groupName": "Agents"
+  },
+  {
+    "id": "feat-agents-cli-detection",
+    "title": "Agent CLI Detection and Listing",
+    "type": "feature",
+    "featureName": "AGENTS_CLI_DETECTION",
+    "description": "Populate the Agent Browser list with real data fetched from the Smithers API, showing all detected agent CLI tools on the system.",
+    "acceptanceCriteria": [
+      "The agents list is populated dynamically via SmithersClient.ListAgents().",
+      "Users can navigate the list using standard up/down arrow keys.",
+      "The name of each agent (e.g., claude-code, codex) is rendered prominently."
+    ],
+    "dependencies": [
+      "feat-agents-browser"
+    ],
+    "sourceContext": [
+      "internal/ui/views/agents.go",
+      "internal/smithers/client.go"
+    ],
+    "implementationNotes": [
+      "Handle loading states and potential API errors gracefully within the view's Update and View loops."
+    ],
+    "groupId": "agents",
+    "groupName": "Agents"
+  },
+  {
+    "id": "feat-agents-native-tui-launch",
+    "title": "Agent Direct Chat (Native TUI Launch)",
+    "type": "feature",
+    "featureName": "AGENTS_NATIVE_TUI_LAUNCH",
+    "description": "Implement the TUI handoff mechanism allowing users to press Enter on an agent to launch its native CLI/TUI and suspend Smithers TUI.",
+    "acceptanceCriteria": [
+      "Pressing Enter on an available agent displays a brief 'Launching...' handoff message.",
+      "The TUI suspends and executes the agent's binary using tea.ExecProcess.",
+      "The agent is given full control of the terminal I/O.",
+      "When the agent process exits, the Smithers TUI resumes automatically."
+    ],
+    "dependencies": [
+      "feat-agents-browser",
+      "feat-agents-cli-detection"
+    ],
+    "sourceContext": [
+      "internal/ui/views/agents.go",
+      "docs/smithers-tui/03-ENGINEERING.md"
+    ],
+    "implementationNotes": [
+      "Review section 2.4 'TUI Handoff Pattern' in the engineering doc. Use tea.ExecProcess(cmd, callback) rather than trying to proxy PTY output."
+    ],
+    "groupId": "agents",
+    "groupName": "Agents"
+  },
+  {
+    "id": "feat-agents-role-display",
+    "title": "Agent Role Display",
+    "type": "feature",
+    "featureName": "AGENTS_ROLE_DISPLAY",
+    "description": "Render the list of supported roles or capabilities (e.g., coding, research, review) provided by the agent.",
+    "acceptanceCriteria": [
+      "Displays 'Roles: <role1>, <role2>' on the same line as the auth status.",
+      "Roles are comma-separated and properly capitalized."
+    ],
+    "dependencies": [
+      "feat-agents-cli-detection"
+    ],
+    "sourceContext": [
+      "internal/ui/views/agents.go",
+      "docs/smithers-tui/02-DESIGN.md"
+    ],
+    "implementationNotes": [
+      "Extract roles from the agent metadata returned by the Smithers API."
+    ],
+    "groupId": "agents",
+    "groupName": "Agents"
+  },
+  {
+    "id": "feat-hijack-conversation-replay-fallback",
+    "title": "Conversation Replay Fallback",
+    "type": "feature",
+    "featureName": "HIJACK_CONVERSATION_REPLAY_FALLBACK",
+    "description": "Provide a fallback to replaying the chat in-TUI if the target agent has no native TUI resume support.",
+    "acceptanceCriteria": [
+      "If agent lacks --resume, fall back to in-TUI conversation loading.",
+      "User can still interact with the session."
+    ],
+    "dependencies": [
+      "feat-hijack-native-cli-resume"
+    ],
+    "sourceContext": [
+      "internal/ui/views/livechat.go"
+    ],
+    "implementationNotes": [
+      "Check agent metadata for resume support.",
+      "If missing, route the history into Crush's native chat model instead of executing an external process."
+    ],
+    "groupId": "live-chat-and-hijack",
+    "groupName": "Live Chat And Hijack"
+  },
+  {
+    "id": "feat-hijack-multi-engine-support",
+    "title": "Multi-Engine Support",
+    "type": "feature",
+    "featureName": "HIJACK_MULTI_ENGINE_SUPPORT",
+    "description": "Support different agent binaries and resume flag combinations for claude-code, codex, amp, etc.",
+    "acceptanceCriteria": [
+      "Agent-specific arguments (e.g., --resume <tok>) are applied correctly based on the engine."
+    ],
+    "dependencies": [
+      "feat-hijack-native-cli-resume"
+    ],
+    "sourceContext": [
+      "internal/smithers/types.go",
+      "internal/ui/views/livechat.go"
+    ],
+    "implementationNotes": [
+      "Map engine types to specific argument formatting logic inside `HijackSession.ResumeArgs()`."
+    ],
+    "groupId": "live-chat-and-hijack",
+    "groupName": "Live Chat And Hijack"
+  },
+  {
+    "id": "feat-hijack-native-cli-resume",
+    "title": "Native CLI Resume Execution",
+    "type": "feature",
+    "featureName": "HIJACK_NATIVE_CLI_RESUME",
+    "description": "Pass the appropriate resume tokens and spawn the agent CLI directly, suspending the Smithers TUI.",
+    "acceptanceCriteria": [
+      "The external CLI starts correctly with the right directory and token.",
+      "Smithers TUI fully relinquishes the TTY."
+    ],
+    "dependencies": [
+      "feat-hijack-seamless-transition"
+    ],
+    "sourceContext": [
+      "internal/ui/views/livechat.go"
+    ],
+    "implementationNotes": [
+      "Extract `AgentBinary`, `ResumeArgs()`, and `CWD` from the `HijackSession` message.",
+      "Execute using `handoffToProgram`."
+    ],
+    "groupId": "live-chat-and-hijack",
+    "groupName": "Live Chat And Hijack"
+  },
+  {
+    "id": "feat-hijack-resume-to-automation",
+    "title": "Resume to Automation on Exit",
+    "type": "feature",
+    "featureName": "HIJACK_RESUME_TO_AUTOMATION",
+    "description": "Automatically refresh the Smithers run state and chat history when the user exits the native agent TUI.",
+    "acceptanceCriteria": [
+      "Upon agent TUI exit, Live Chat Viewer immediately reflects new state.",
+      "User is not left with stale pre-hijack state."
+    ],
+    "dependencies": [
+      "feat-hijack-native-cli-resume"
+    ],
+    "sourceContext": [
+      "internal/ui/views/livechat.go"
+    ],
+    "implementationNotes": [
+      "On `hijackReturnMsg`, call `v.refreshRunState()` to pull the latest events from the Smithers API."
+    ],
+    "groupId": "live-chat-and-hijack",
+    "groupName": "Live Chat And Hijack"
+  },
+  {
+    "id": "feat-hijack-run-command",
+    "title": "Hijack Command",
+    "type": "feature",
+    "featureName": "HIJACK_RUN_COMMAND",
+    "description": "Implement the command and keybinding ('h') to initiate a run hijack.",
+    "acceptanceCriteria": [
+      "Pressing 'h' calls Client.HijackRun().",
+      "Triggers the hijack flow."
+    ],
+    "dependencies": [
+      "feat-live-chat-viewer",
+      "eng-hijack-handoff-util"
+    ],
+    "sourceContext": [
+      "internal/ui/views/livechat.go",
+      "internal/ui/views/runs.go"
+    ],
+    "implementationNotes": [
+      "Add key handler for 'h' in both LiveChatView and RunsView.",
+      "Return a `hijackSessionMsg` on success."
+    ],
+    "groupId": "live-chat-and-hijack",
+    "groupName": "Live Chat And Hijack"
+  },
+  {
+    "id": "feat-hijack-seamless-transition",
+    "title": "Seamless Hijack Transition",
+    "type": "feature",
+    "featureName": "HIJACK_SEAMLESS_TRANSITION",
+    "description": "Handle the visual transition into and out of the hijacked session smoothly, displaying status banners.",
+    "acceptanceCriteria": [
+      "Displays a 'Hijacking run...' message before handoff.",
+      "Displays a summary message when returning from the native TUI.",
+      "Must be verified with a Playwright TUI test capturing the transition text."
+    ],
+    "dependencies": [
+      "feat-hijack-run-command"
+    ],
+    "sourceContext": [
+      "internal/ui/views/livechat.go"
+    ],
+    "implementationNotes": [
+      "Update view state to render a transition banner while `tea.ExecProcess` spins up."
+    ],
+    "groupId": "live-chat-and-hijack",
+    "groupName": "Live Chat And Hijack"
+  },
+  {
+    "id": "feat-live-chat-attempt-tracking",
+    "title": "Attempt Tracking",
+    "type": "feature",
+    "featureName": "LIVE_CHAT_ATTEMPT_TRACKING",
+    "description": "Display the current attempt number in the chat header for the running node.",
+    "acceptanceCriteria": [
+      "Header updates dynamically to show 'Attempt: N'."
+    ],
+    "dependencies": [
+      "feat-live-chat-viewer"
+    ],
+    "sourceContext": [
+      "internal/ui/views/livechat.go"
+    ],
+    "implementationNotes": [
+      "Extract attempt count from the running Node details via the Client."
+    ],
+    "groupId": "live-chat-and-hijack",
+    "groupName": "Live Chat And Hijack"
+  },
+  {
+    "id": "feat-live-chat-follow-mode",
+    "title": "Follow Mode",
+    "type": "feature",
+    "featureName": "LIVE_CHAT_FOLLOW_MODE",
+    "description": "Add an auto-scroll 'follow mode' toggled by pressing 'f'.",
+    "acceptanceCriteria": [
+      "Pressing 'f' toggles follow mode.",
+      "When active, the viewport automatically scrolls to the bottom on new messages.",
+      "When inactive, scrolling is manual."
+    ],
+    "dependencies": [
+      "feat-live-chat-streaming-output"
+    ],
+    "sourceContext": [
+      "internal/ui/views/livechat.go"
+    ],
+    "implementationNotes": [
+      "Add a `following bool` to LiveChatView.",
+      "Call `viewport.GotoBottom()` during Update if following is true."
+    ],
+    "groupId": "live-chat-and-hijack",
+    "groupName": "Live Chat And Hijack"
+  },
+  {
+    "id": "feat-live-chat-relative-timestamps",
+    "title": "Relative Timestamps",
+    "type": "feature",
+    "featureName": "LIVE_CHAT_RELATIVE_TIMESTAMPS",
+    "description": "Render timestamps on chat messages relative to the start of the run (e.g., [00:02]).",
+    "acceptanceCriteria": [
+      "Each message block shows a relative timestamp.",
+      "Calculated accurately from the run's start time."
+    ],
+    "dependencies": [
+      "feat-live-chat-streaming-output"
+    ],
+    "sourceContext": [
+      "internal/ui/views/livechat.go"
+    ],
+    "implementationNotes": [
+      "Calculate time.Since(run.Started) for each block.",
+      "Format as [MM:SS]."
+    ],
+    "groupId": "live-chat-and-hijack",
+    "groupName": "Live Chat And Hijack"
+  },
+  {
+    "id": "feat-live-chat-retry-history",
+    "title": "Retry History",
+    "type": "feature",
+    "featureName": "LIVE_CHAT_RETRY_HISTORY",
+    "description": "Allow navigation between different attempts if retries occurred for the node.",
+    "acceptanceCriteria": [
+      "Users can page through previous attempts' chat logs.",
+      "UI indicates if viewing a historical attempt."
+    ],
+    "dependencies": [
+      "feat-live-chat-attempt-tracking"
+    ],
+    "sourceContext": [
+      "internal/ui/views/livechat.go"
+    ],
+    "implementationNotes": [
+      "Add keybindings to fetch previous attempts via the HTTP API.",
+      "Cache previous attempts locally in the view state."
+    ],
+    "groupId": "live-chat-and-hijack",
+    "groupName": "Live Chat And Hijack"
+  },
+  {
+    "id": "feat-live-chat-side-by-side",
+    "title": "Side by Side Context",
+    "type": "feature",
+    "featureName": "LIVE_CHAT_SIDE_BY_SIDE_CONTEXT",
+    "description": "Multi-pane layout supporting viewing chat alongside the run status list.",
+    "acceptanceCriteria": [
+      "Users can toggle a split pane showing the dashboard and the live chat simultaneously."
+    ],
+    "dependencies": [
+      "feat-live-chat-viewer"
+    ],
+    "sourceContext": [
+      "internal/ui/views/livechat.go",
+      "internal/ui/components/splitpane.go"
+    ],
+    "implementationNotes": [
+      "Integrate with `internal/ui/components/splitpane.go`.",
+      "Render Dashboard on the left and LiveChatView on the right."
+    ],
+    "groupId": "live-chat-and-hijack",
+    "groupName": "Live Chat And Hijack"
+  },
+  {
+    "id": "feat-live-chat-streaming-output",
+    "title": "Streaming Chat Output",
+    "type": "feature",
+    "featureName": "LIVE_CHAT_STREAMING_OUTPUT",
+    "description": "Render real-time streaming of agent prompt, stdout, stderr, and response via Smithers SSE events.",
+    "acceptanceCriteria": [
+      "Chat blocks are appended in real time.",
+      "UI does not block while waiting for events.",
+      "E2E test verifies that text from a background agent run appears in the TUI stream."
+    ],
+    "dependencies": [
+      "feat-live-chat-viewer"
+    ],
+    "sourceContext": [
+      "internal/ui/views/livechat.go",
+      "internal/smithers/client.go"
+    ],
+    "implementationNotes": [
+      "Map Smithers ChatAttempt structures to Crush's chat.Message model.",
+      "Stream via Client.StreamChat(ctx, runID)."
+    ],
+    "groupId": "live-chat-and-hijack",
+    "groupName": "Live Chat And Hijack"
+  },
+  {
+    "id": "feat-live-chat-tool-call-rendering",
+    "title": "Tool Call Rendering",
+    "type": "feature",
+    "featureName": "LIVE_CHAT_TOOL_CALL_RENDERING",
+    "description": "Map Smithers tool calls (from NDJSON) to Crush's tool renderers so they appear correctly in the stream.",
+    "acceptanceCriteria": [
+      "Tool calls render as styled boxes rather than raw JSON.",
+      "Reuses existing Crush tool renderers."
+    ],
+    "dependencies": [
+      "feat-live-chat-streaming-output"
+    ],
+    "sourceContext": [
+      "internal/ui/views/livechat.go",
+      "internal/ui/chat/"
+    ],
+    "implementationNotes": [
+      "Convert Smithers tool calls to mcp.ToolCall and mcp.ToolResult.",
+      "Feed them into Crush's chat renderer component."
+    ],
+    "groupId": "live-chat-and-hijack",
+    "groupName": "Live Chat And Hijack"
+  },
+  {
+    "id": "feat-live-chat-viewer",
+    "title": "Live Chat Viewer UI",
+    "type": "feature",
+    "featureName": "LIVE_CHAT_VIEWER",
+    "description": "Base UI frame for viewing a running agent's chat, showing the run ID, agent name, node, and elapsed time.",
+    "acceptanceCriteria": [
+      "Header displays Run ID, Agent Name, Node, and Time.",
+      "Pressing 'c' on Run Dashboard opens this view.",
+      "Covered by a Playwright-style E2E test verifying header text.",
+      "Covered by a VHS-style recording test displaying the chat."
+    ],
+    "dependencies": [
+      "eng-live-chat-scaffolding"
+    ],
+    "sourceContext": [
+      "internal/ui/views/livechat.go"
+    ],
+    "implementationNotes": [
+      "Follow 02-DESIGN.md section 3.3 for the layout.",
+      "Use Lip Gloss for the header styling."
+    ],
+    "groupId": "live-chat-and-hijack",
+    "groupName": "Live Chat And Hijack"
+  },
+  {
+    "id": "feat-mcp-agent-tools",
+    "title": "Agent Tool Renderers",
+    "type": "feature",
+    "featureName": "MCP_AGENT_TOOLS",
+    "description": "Implement UI renderers for agent tools (`smithers_agent_list`, `smithers_agent_chat`).",
+    "acceptanceCriteria": [
+      "`smithers_agent_list` displays agent binaries and availability status.",
+      "`smithers_agent_chat` prompts the user about native TUI handoff or shows chat outcome."
+    ],
+    "dependencies": [
+      "eng-mcp-renderer-scaffolding"
+    ],
+    "sourceContext": [
+      "internal/ui/chat/smithers_agents.go"
+    ],
+    "implementationNotes": [
+      "Align `agent_list` table structure with the dedicated `/agents` view."
+    ],
+    "groupId": "mcp-integration",
+    "groupName": "Mcp Integration"
+  },
+  {
+    "id": "feat-mcp-control-tools",
+    "title": "Control & Hijack Tool Renderers",
+    "type": "feature",
+    "featureName": "MCP_CONTROL_TOOLS",
+    "description": "Implement UI renderers for Smithers control tools (`smithers_approve`, `smithers_deny`, `smithers_hijack`).",
+    "acceptanceCriteria": [
+      "`smithers_approve` and `smithers_deny` show clear success or error indicators.",
+      "`smithers_hijack` shows instructions or confirmation of hijack transition."
+    ],
+    "dependencies": [
+      "eng-mcp-renderer-scaffolding"
+    ],
+    "sourceContext": [
+      "internal/ui/chat/smithers_control.go"
+    ],
+    "implementationNotes": [
+      "Visual distinctness is important for approval/deny actions (e.g., green checkmark vs red X)."
+    ],
+    "groupId": "mcp-integration",
+    "groupName": "Mcp Integration"
+  },
+  {
+    "id": "feat-mcp-cron-tools",
+    "title": "Cron Tool Renderers",
+    "type": "feature",
+    "featureName": "MCP_CRON_TOOLS",
+    "description": "Implement UI renderers for cron schedule tools (`smithers_cron_list`, `smithers_cron_add`, `smithers_cron_rm`, `smithers_cron_toggle`).",
+    "acceptanceCriteria": [
+      "`smithers_cron_list` shows schedules with enable/disable indicators.",
+      "Mutation tools render success notifications."
+    ],
+    "dependencies": [
+      "eng-mcp-renderer-scaffolding"
+    ],
+    "sourceContext": [
+      "internal/ui/chat/smithers_cron.go"
+    ],
+    "implementationNotes": [
+      "Format crontab nicely with translation to human-readable strings if possible."
+    ],
+    "groupId": "mcp-integration",
+    "groupName": "Mcp Integration"
+  },
+  {
+    "id": "feat-mcp-memory-tools",
+    "title": "Memory Tool Renderers",
+    "type": "feature",
+    "featureName": "MCP_MEMORY_TOOLS",
+    "description": "Implement UI renderers for memory tools (`smithers_memory_list`, `smithers_memory_recall`).",
+    "acceptanceCriteria": [
+      "`smithers_memory_list` shows facts stored in memory.",
+      "`smithers_memory_recall` displays facts matching the semantic query."
+    ],
+    "dependencies": [
+      "eng-mcp-renderer-scaffolding"
+    ],
+    "sourceContext": [
+      "internal/ui/chat/smithers_memory.go"
+    ],
+    "implementationNotes": [
+      "Format memory facts as a simple list."
+    ],
+    "groupId": "mcp-integration",
+    "groupName": "Mcp Integration"
+  },
+  {
+    "id": "feat-mcp-observability-tools",
+    "title": "Observability Tool Renderers",
+    "type": "feature",
+    "featureName": "MCP_OBSERVABILITY_TOOLS",
+    "description": "Implement UI renderers for Smithers observability tools (`smithers_logs`, `smithers_chat`, `smithers_inspect`).",
+    "acceptanceCriteria": [
+      "`smithers_inspect` renders a detailed DAG or node list for a run.",
+      "`smithers_logs` formats log events clearly with timestamps.",
+      "`smithers_chat` renders conversational blocks from an agent run."
+    ],
+    "dependencies": [
+      "eng-mcp-renderer-scaffolding"
+    ],
+    "sourceContext": [
+      "internal/ui/chat/smithers_observability.go"
+    ],
+    "implementationNotes": [
+      "Map JSON arrays from `smithers_chat` to readable message sequences."
+    ],
+    "groupId": "mcp-integration",
+    "groupName": "Mcp Integration"
+  },
+  {
+    "id": "feat-mcp-prompt-tools",
+    "title": "Prompt Tool Renderers",
+    "type": "feature",
+    "featureName": "MCP_PROMPT_TOOLS",
+    "description": "Implement UI renderers for prompt management tools (`smithers_prompt_list`, `smithers_prompt_update`, `smithers_prompt_render`).",
+    "acceptanceCriteria": [
+      "`smithers_prompt_list` shows available prompts.",
+      "`smithers_prompt_render` shows the evaluated output of the prompt template.",
+      "`smithers_prompt_update` renders a success message."
+    ],
+    "dependencies": [
+      "eng-mcp-renderer-scaffolding"
+    ],
+    "sourceContext": [
+      "internal/ui/chat/smithers_prompts.go"
+    ],
+    "implementationNotes": [
+      "For `smithers_prompt_render`, use markdown rendering (Glamour) if applicable."
+    ],
+    "groupId": "mcp-integration",
+    "groupName": "Mcp Integration"
+  },
+  {
+    "id": "feat-mcp-runs-tools",
+    "title": "Run Management Tool Renderers",
+    "type": "feature",
+    "featureName": "MCP_RUNS_TOOLS",
+    "description": "Implement UI renderers for Smithers run management tools (`smithers_ps`, `smithers_up`, `smithers_cancel`, `smithers_down`).",
+    "acceptanceCriteria": [
+      "`smithers_ps` renders a formatted table of active and completed runs.",
+      "`smithers_up` renders a success card with the new run ID.",
+      "`smithers_cancel` and `smithers_down` render confirmation indicators."
+    ],
+    "dependencies": [
+      "eng-mcp-renderer-scaffolding"
+    ],
+    "sourceContext": [
+      "internal/ui/chat/smithers_runs.go"
+    ],
+    "implementationNotes": [
+      "Use Lip Gloss tables for `smithers_ps`.",
+      "Register renderers for all runs-related tools."
+    ],
+    "groupId": "mcp-integration",
+    "groupName": "Mcp Integration"
+  },
+  {
+    "id": "feat-mcp-scoring-tools",
+    "title": "Scoring Tool Renderers",
+    "type": "feature",
+    "featureName": "MCP_SCORING_TOOLS",
+    "description": "Implement UI renderers for the `smithers_scores` tool.",
+    "acceptanceCriteria": [
+      "`smithers_scores` displays evaluation metrics and token usage in a clear grid or table."
+    ],
+    "dependencies": [
+      "eng-mcp-renderer-scaffolding"
+    ],
+    "sourceContext": [
+      "internal/ui/chat/smithers_scoring.go"
+    ],
+    "implementationNotes": [
+      "Metrics might need specific formatting (percentages, charts) if data allows."
+    ],
+    "groupId": "mcp-integration",
+    "groupName": "Mcp Integration"
+  },
+  {
+    "id": "feat-mcp-sql-tools",
+    "title": "SQL Tool Renderers",
+    "type": "feature",
+    "featureName": "MCP_SQL_TOOLS",
+    "description": "Implement UI renderers for the `smithers_sql` tool.",
+    "acceptanceCriteria": [
+      "`smithers_sql` renders raw database query results in a dynamic table."
+    ],
+    "dependencies": [
+      "eng-mcp-renderer-scaffolding"
+    ],
+    "sourceContext": [
+      "internal/ui/chat/smithers_sql.go"
+    ],
+    "implementationNotes": [
+      "Dynamic table rendering since SQL results have arbitrary columns."
+    ],
+    "groupId": "mcp-integration",
+    "groupName": "Mcp Integration"
+  },
+  {
+    "id": "feat-mcp-ticket-tools",
+    "title": "Ticket Tool Renderers",
+    "type": "feature",
+    "featureName": "MCP_TICKET_TOOLS",
+    "description": "Implement UI renderers for ticket management tools (`smithers_ticket_list`, `smithers_ticket_create`, `smithers_ticket_update`).",
+    "acceptanceCriteria": [
+      "`smithers_ticket_list` displays a table of tickets.",
+      "`smithers_ticket_create` and `smithers_ticket_update` render success messages."
+    ],
+    "dependencies": [
+      "eng-mcp-renderer-scaffolding"
+    ],
+    "sourceContext": [
+      "internal/ui/chat/smithers_tickets.go"
+    ],
+    "implementationNotes": [
+      "Basic list/detail formatting."
+    ],
+    "groupId": "mcp-integration",
+    "groupName": "Mcp Integration"
+  },
+  {
+    "id": "feat-mcp-time-travel-tools",
+    "title": "Time-Travel Tool Renderers",
+    "type": "feature",
+    "featureName": "MCP_TIME_TRAVEL_TOOLS",
+    "description": "Implement UI renderers for time-travel tools (`smithers_diff`, `smithers_fork`, `smithers_replay`, `smithers_timeline`).",
+    "acceptanceCriteria": [
+      "`smithers_timeline` renders a horizontal or vertical snapshot history.",
+      "`smithers_diff` highlights changed state between snapshots.",
+      "`smithers_fork` and `smithers_replay` show success indicators with new run IDs."
+    ],
+    "dependencies": [
+      "eng-mcp-renderer-scaffolding"
+    ],
+    "sourceContext": [
+      "internal/ui/chat/smithers_time_travel.go"
+    ],
+    "implementationNotes": [
+      "Use Lip Gloss or Charm `ansi` for diff highlighting."
+    ],
+    "groupId": "mcp-integration",
+    "groupName": "Mcp Integration"
+  },
+  {
+    "id": "feat-mcp-tool-discovery",
+    "title": "Configure Smithers MCP Server Discovery",
+    "type": "feature",
+    "featureName": "MCP_TOOL_DISCOVERY_FROM_SMITHERS_SERVER",
+    "description": "Configure Crush to automatically discover and connect to the Smithers MCP server (`smithers mcp-serve`) on startup, setting Smithers tools as the primary tools in the default config.",
+    "acceptanceCriteria": [
+      "Default configuration automatically sets up `smithers` stdio MCP server pointing to `smithers mcp-serve`.",
+      "Default tool list in config prioritizes Smithers tools over general coding tools.",
+      "Agent successfully discovers and can invoke Smithers MCP tools."
+    ],
+    "dependencies": [],
+    "sourceContext": [
+      "internal/config/defaults.go",
+      "internal/config/config.go",
+      "internal/app/app.go"
+    ],
+    "implementationNotes": [
+      "Modify `DefaultTools` in `internal/config/defaults.go` to include expected Smithers tools.",
+      "Add `mcpServers` config for `smithers` in default config.",
+      "Ensure MCP initialization in `app.go` picks up the local Smithers server."
+    ],
+    "groupId": "mcp-integration",
+    "groupName": "Mcp Integration"
+  },
+  {
+    "id": "feat-mcp-workflow-tools",
+    "title": "Workflow Tool Renderers",
+    "type": "feature",
+    "featureName": "MCP_WORKFLOW_TOOLS",
+    "description": "Implement UI renderers for workflow tools (`smithers_workflow_list`, `smithers_workflow_run`, `smithers_workflow_doctor`).",
+    "acceptanceCriteria": [
+      "`smithers_workflow_list` displays available workflows in a list.",
+      "`smithers_workflow_run` confirms execution.",
+      "`smithers_workflow_doctor` clearly highlights warnings and errors."
+    ],
+    "dependencies": [
+      "eng-mcp-renderer-scaffolding"
+    ],
+    "sourceContext": [
+      "internal/ui/chat/smithers_workflows.go"
+    ],
+    "implementationNotes": [
+      "Format `doctor` output similar to ESLint or Go diagnostics."
+    ],
+    "groupId": "mcp-integration",
+    "groupName": "Mcp Integration"
+  },
+  {
+    "id": "feat-memory-browser",
+    "title": "Memory Browser Layout",
+    "type": "feature",
+    "featureName": "MEMORY_BROWSER",
+    "description": "Implement the core structural layout for the Memory Browser, supporting lists and detail panes.",
+    "acceptanceCriteria": [
+      "Layout supports a list pane on one side and a detail pane on the other."
+    ],
+    "dependencies": [
+      "eng-memory-scaffolding"
+    ],
+    "sourceContext": [
+      "internal/ui/memory.go"
+    ],
+    "implementationNotes": [
+      "Use lipgloss to structure a responsive 2-pane UI."
+    ],
+    "groupId": "systems-and-analytics",
+    "groupName": "Systems And Analytics"
+  },
+  {
+    "id": "feat-memory-cross-run-message-history",
+    "title": "Cross-Run Message History",
+    "type": "feature",
+    "featureName": "MEMORY_CROSS_RUN_MESSAGE_HISTORY",
+    "description": "Implement the detail pane showing the contextual conversation threads across runs associated with a memory fact.",
+    "acceptanceCriteria": [
+      "When a fact is selected, its context/history thread is displayed.",
+      "Content is wrapped and scrollable."
+    ],
+    "dependencies": [
+      "feat-memory-browser"
+    ],
+    "sourceContext": [
+      "internal/ui/memory.go"
+    ],
+    "implementationNotes": [
+      "Use `bubbles/viewport` to display long message threads."
+    ],
+    "groupId": "systems-and-analytics",
+    "groupName": "Systems And Analytics"
+  },
+  {
+    "id": "feat-memory-fact-list",
+    "title": "Memory Fact List",
+    "type": "feature",
+    "featureName": "MEMORY_FACT_LIST",
+    "description": "Implement a view listing cross-run memory facts retrieved from the API.",
+    "acceptanceCriteria": [
+      "Displays a paginated or scrolling list of memory facts.",
+      "Selecting a fact highlights it for detail viewing."
+    ],
+    "dependencies": [
+      "feat-memory-browser"
+    ],
+    "sourceContext": [
+      "internal/ui/memory.go"
+    ],
+    "implementationNotes": [
+      "Use `bubbles/list`."
+    ],
+    "groupId": "systems-and-analytics",
+    "groupName": "Systems And Analytics"
+  },
+  {
+    "id": "feat-memory-semantic-recall",
+    "title": "Memory Semantic Recall",
+    "type": "feature",
+    "featureName": "MEMORY_SEMANTIC_RECALL",
+    "description": "Add a search input field to query the memory system via natural language.",
+    "acceptanceCriteria": [
+      "Search input filters or queries the memory list.",
+      "Executes a semantic recall request against the Smithers client."
+    ],
+    "dependencies": [
+      "feat-memory-browser"
+    ],
+    "sourceContext": [
+      "internal/ui/memory.go"
+    ],
+    "implementationNotes": [
+      "Use `bubbles/textinput` embedded above the list."
+    ],
+    "groupId": "systems-and-analytics",
+    "groupName": "Systems And Analytics"
+  },
+  {
+    "id": "feat-prompts-external-editor-handoff",
+    "title": "External Editor Handoff for Prompts",
+    "type": "feature",
+    "featureName": "PROMPTS_EXTERNAL_EDITOR_HANDOFF",
+    "description": "Implement `Ctrl+O` handoff to suspend the TUI and launch `$EDITOR` on the prompt file.",
+    "acceptanceCriteria": [
+      "Pressing `Ctrl+O` launches `$EDITOR`.",
+      "TUI suspends correctly and resumes when the editor closes.",
+      "Prompt data is reloaded on resume.",
+      "Terminal E2E test verifying external editor handoff."
+    ],
+    "dependencies": [
+      "feat-prompts-source-edit"
+    ],
+    "sourceContext": [
+      "docs/smithers-tui/03-ENGINEERING.md"
+    ],
+    "implementationNotes": [
+      "Use `tea.ExecProcess` configured with the path to the physical prompt file.",
+      "Watch for `tea.ExecFinishedMsg` to trigger a refetch of the prompt."
+    ],
+    "groupId": "content-and-prompts",
+    "groupName": "Content And Prompts"
+  },
+  {
+    "id": "feat-prompts-list",
+    "title": "Prompts List View",
+    "type": "feature",
+    "featureName": "PROMPTS_LIST",
+    "description": "Implement the `/prompts` view showing a side-by-side list of available prompts.",
+    "acceptanceCriteria": [
+      "Prompts are fetched from the API and listed on the left pane.",
+      "Terminal E2E test navigating the prompts list."
+    ],
+    "dependencies": [
+      "eng-prompts-api-client",
+      "eng-split-pane-component"
+    ],
+    "sourceContext": [
+      "../smithers/gui/src/ui/PromptsList.tsx",
+      "internal/ui/prompts/"
+    ],
+    "implementationNotes": [
+      "Create `internal/ui/prompts/prompts.go`.",
+      "Use `bubbles/list` for the left pane and the shared split pane component for the layout."
+    ],
+    "groupId": "content-and-prompts",
+    "groupName": "Content And Prompts"
+  },
+  {
+    "id": "feat-prompts-live-preview",
+    "title": "Prompt Live Preview Rendering",
+    "type": "feature",
+    "featureName": "PROMPTS_LIVE_PREVIEW",
+    "description": "Call the render API with inputted props to preview the prompt output.",
+    "acceptanceCriteria": [
+      "A 'Render Preview' action triggers the backend preview endpoint.",
+      "The output is displayed in a dedicated preview section.",
+      "VHS-style happy-path recording test covers live preview."
+    ],
+    "dependencies": [
+      "feat-prompts-props-discovery",
+      "eng-prompts-api-client"
+    ],
+    "sourceContext": [
+      "../smithers/gui/src/ui/PromptsList.tsx"
+    ],
+    "implementationNotes": [
+      "Bind a shortcut to invoke the `RenderPromptPreview` API with the state gathered from the prop inputs."
+    ],
+    "groupId": "content-and-prompts",
+    "groupName": "Content And Prompts"
+  },
+  {
+    "id": "feat-prompts-props-discovery",
+    "title": "Prompt Props Discovery and Input",
+    "type": "feature",
+    "featureName": "PROMPTS_PROPS_DISCOVERY",
+    "description": "Dynamically render input fields for discovered props required by the prompt.",
+    "acceptanceCriteria": [
+      "A list of text inputs is rendered based on the prompt's `inputs` schema.",
+      "Users can enter test values for the prompt variables."
+    ],
+    "dependencies": [
+      "feat-prompts-source-edit"
+    ],
+    "sourceContext": [
+      "../smithers/gui/src/ui/PromptsList.tsx"
+    ],
+    "implementationNotes": [
+      "Iterate over the `inputs` property from the backend payload and generate `bubbles/textinput` instances."
+    ],
+    "groupId": "content-and-prompts",
+    "groupName": "Content And Prompts"
+  },
+  {
+    "id": "feat-prompts-save",
+    "title": "Save Prompt Source Changes",
+    "type": "feature",
+    "featureName": "PROMPTS_SAVE",
+    "description": "Save modifications made to the prompt source back to disk via the backend API.",
+    "acceptanceCriteria": [
+      "Pressing `Ctrl+S` saves the inline edits to the backend.",
+      "Success or error message is shown."
+    ],
+    "dependencies": [
+      "feat-prompts-source-edit",
+      "eng-prompts-api-client"
+    ],
+    "sourceContext": [
+      "../smithers/gui/src/ui/PromptsList.tsx"
+    ],
+    "implementationNotes": [
+      "Hook `Ctrl+S` keybinding to the `UpdatePromptSource` API wrapper."
+    ],
+    "groupId": "content-and-prompts",
+    "groupName": "Content And Prompts"
+  },
+  {
+    "id": "feat-prompts-source-edit",
+    "title": "Prompt Source Editor",
+    "type": "feature",
+    "featureName": "PROMPTS_SOURCE_EDIT",
+    "description": "Display and allow editing of the selected prompt's `.mdx` source in the right pane.",
+    "acceptanceCriteria": [
+      "Selecting a prompt shows its source code in an editable textarea.",
+      "User can type and modify the source directly."
+    ],
+    "dependencies": [
+      "feat-prompts-list"
+    ],
+    "sourceContext": [
+      "../smithers/gui/src/ui/PromptsList.tsx"
+    ],
+    "implementationNotes": [
+      "Use `bubbles/textarea` for rendering and editing the prompt source."
+    ],
+    "groupId": "content-and-prompts",
+    "groupName": "Content And Prompts"
+  },
+  {
+    "id": "feat-scores-and-roi-dashboard",
+    "title": "Scores and ROI Dashboard Layout",
+    "type": "feature",
+    "featureName": "SCORES_AND_ROI_DASHBOARD",
+    "description": "Implement the structural layout for the Scores and ROI dashboard to hold summary and metrics panes.",
+    "acceptanceCriteria": [
+      "View is segmented into distinct visual areas for daily summaries, evaluations, and usage metrics.",
+      "Responsive to terminal resizing."
+    ],
+    "dependencies": [
+      "eng-scores-scaffolding"
+    ],
+    "sourceContext": [
+      "internal/ui/scores.go"
+    ],
+    "implementationNotes": [
+      "Refer to Design Doc 3.16 for the specific layout expectations."
+    ],
+    "groupId": "systems-and-analytics",
+    "groupName": "Systems And Analytics"
+  },
+  {
+    "id": "feat-scores-cache-efficiency-metrics",
+    "title": "Cache Efficiency Metrics",
+    "type": "feature",
+    "featureName": "SCORES_CACHE_EFFICIENCY_METRICS",
+    "description": "Display metrics on cache hits vs misses.",
+    "acceptanceCriteria": [
+      "Shows percentage of cache hits and overall efficiency."
+    ],
+    "dependencies": [
+      "feat-scores-and-roi-dashboard"
+    ],
+    "sourceContext": [
+      "internal/ui/scores.go"
+    ],
+    "implementationNotes": [],
+    "groupId": "systems-and-analytics",
+    "groupName": "Systems And Analytics"
+  },
+  {
+    "id": "feat-scores-cost-tracking",
+    "title": "Cost Tracking Metrics",
+    "type": "feature",
+    "featureName": "SCORES_COST_TRACKING",
+    "description": "Display estimated monetary costs for runs and workflows based on token usage.",
+    "acceptanceCriteria": [
+      "Shows estimated total cost and cost per workflow run."
+    ],
+    "dependencies": [
+      "feat-scores-and-roi-dashboard"
+    ],
+    "sourceContext": [
+      "internal/ui/scores.go"
+    ],
+    "implementationNotes": [],
+    "groupId": "systems-and-analytics",
+    "groupName": "Systems And Analytics"
+  },
+  {
+    "id": "feat-scores-daily-and-weekly-summaries",
+    "title": "Scores Daily & Weekly Summaries",
+    "type": "feature",
+    "featureName": "SCORES_DAILY_AND_WEEKLY_SUMMARIES",
+    "description": "Implement top-level aggregation metrics showing runs, success counts, and running states for today and the week.",
+    "acceptanceCriteria": [
+      "Displays total runs, successful runs, running jobs, and failures aggregated by day/week.",
+      "Metrics update when the view is loaded."
+    ],
+    "dependencies": [
+      "feat-scores-and-roi-dashboard"
+    ],
+    "sourceContext": [
+      "internal/ui/scores.go"
+    ],
+    "implementationNotes": [
+      "Use lipgloss to create a visually distinct header section."
+    ],
+    "groupId": "systems-and-analytics",
+    "groupName": "Systems And Analytics"
+  },
+  {
+    "id": "feat-scores-latency-metrics",
+    "title": "Latency Metrics",
+    "type": "feature",
+    "featureName": "SCORES_LATENCY_METRICS",
+    "description": "Display execution latencies for workflows and tools.",
+    "acceptanceCriteria": [
+      "Shows average latency and p95 latency for recent runs."
+    ],
+    "dependencies": [
+      "feat-scores-and-roi-dashboard"
+    ],
+    "sourceContext": [
+      "internal/ui/scores.go"
+    ],
+    "implementationNotes": [],
+    "groupId": "systems-and-analytics",
+    "groupName": "Systems And Analytics"
+  },
+  {
+    "id": "feat-scores-run-evaluations",
+    "title": "Run Evaluations View",
+    "type": "feature",
+    "featureName": "SCORES_RUN_EVALUATIONS",
+    "description": "Implement a section displaying evaluation scores for completed runs.",
+    "acceptanceCriteria": [
+      "Displays a table or list of recent runs with their corresponding evaluation scores."
+    ],
+    "dependencies": [
+      "feat-scores-and-roi-dashboard"
+    ],
+    "sourceContext": [
+      "internal/ui/scores.go"
+    ],
+    "implementationNotes": [
+      "Align columns so scores are easily readable."
+    ],
+    "groupId": "systems-and-analytics",
+    "groupName": "Systems And Analytics"
+  },
+  {
+    "id": "feat-scores-token-usage-metrics",
+    "title": "Token Usage Metrics",
+    "type": "feature",
+    "featureName": "SCORES_TOKEN_USAGE_METRICS",
+    "description": "Display token usage metrics across runs in the dashboard.",
+    "acceptanceCriteria": [
+      "Shows aggregated prompt and completion tokens."
+    ],
+    "dependencies": [
+      "feat-scores-and-roi-dashboard"
+    ],
+    "sourceContext": [
+      "internal/ui/scores.go"
+    ],
+    "implementationNotes": [],
+    "groupId": "systems-and-analytics",
+    "groupName": "Systems And Analytics"
+  },
+  {
+    "id": "feat-scores-tool-call-metrics",
+    "title": "Tool Call Metrics",
+    "type": "feature",
+    "featureName": "SCORES_TOOL_CALL_METRICS",
+    "description": "Display metrics regarding tool usage and success rates in the dashboard.",
+    "acceptanceCriteria": [
+      "Shows count of tool calls.",
+      "Highlights frequency of most used tools or error rates."
+    ],
+    "dependencies": [
+      "feat-scores-and-roi-dashboard"
+    ],
+    "sourceContext": [
+      "internal/ui/scores.go"
+    ],
+    "implementationNotes": [],
+    "groupId": "systems-and-analytics",
+    "groupName": "Systems And Analytics"
+  },
+  {
+    "id": "feat-sql-browser",
+    "title": "SQL Browser Layout and Activation",
+    "type": "feature",
+    "featureName": "SQL_BROWSER",
+    "description": "Implement the core layout and pane management for the SQL Browser view, setting up the structural grid that will contain the sidebar and main query areas.",
+    "acceptanceCriteria": [
+      "Layout splits the terminal window into a left sidebar and a main right area.",
+      "Focus can be toggled between the sidebar and the main area.",
+      "UI reflects the design in Design Document Section 3.10."
+    ],
+    "dependencies": [
+      "eng-sql-scaffolding"
+    ],
+    "sourceContext": [
+      "internal/ui/sqlbrowser.go",
+      "../smithers/gui-ref/src/ui/tabs/SqlBrowser.tsx"
+    ],
+    "implementationNotes": [
+      "Use lipgloss for layout boundaries and borders."
+    ],
+    "groupId": "systems-and-analytics",
+    "groupName": "Systems And Analytics"
+  },
+  {
+    "id": "feat-sql-query-editor",
+    "title": "SQL Query Editor",
+    "type": "feature",
+    "featureName": "SQL_QUERY_EDITOR",
+    "description": "Implement a text input area for users to write raw SQL queries against the Smithers database.",
+    "acceptanceCriteria": [
+      "Multiline text area accepts SQL input.",
+      "Pressing Ctrl+Enter executes the query via the API client.",
+      "Displays execution errors elegantly in the UI."
+    ],
+    "dependencies": [
+      "feat-sql-browser"
+    ],
+    "sourceContext": [
+      "internal/ui/sqlbrowser.go"
+    ],
+    "implementationNotes": [
+      "Use `bubbles/textarea` for the input component."
+    ],
+    "groupId": "systems-and-analytics",
+    "groupName": "Systems And Analytics"
+  },
+  {
+    "id": "feat-sql-results-table",
+    "title": "SQL Results Table",
+    "type": "feature",
+    "featureName": "SQL_RESULTS_TABLE",
+    "description": "Implement a dynamic table view to render the results of the executed SQL queries.",
+    "acceptanceCriteria": [
+      "Results are displayed in a table format.",
+      "Columns are dynamically detected from the SQL result set keys.",
+      "Horizontal scrolling is supported for wide result sets."
+    ],
+    "dependencies": [
+      "feat-sql-query-editor"
+    ],
+    "sourceContext": [
+      "internal/ui/sqlbrowser.go"
+    ],
+    "implementationNotes": [
+      "Use `bubbles/table` and update its columns and rows based on the JSON response from the SQL execution."
+    ],
+    "groupId": "systems-and-analytics",
+    "groupName": "Systems And Analytics"
+  },
+  {
+    "id": "feat-sql-table-sidebar",
+    "title": "SQL Table Sidebar",
+    "type": "feature",
+    "featureName": "SQL_TABLE_SIDEBAR",
+    "description": "Implement the clickable list of available database tables in the SQL Browser sidebar.",
+    "acceptanceCriteria": [
+      "Sidebar displays `_smithers_runs`, `_smithers_nodes`, `_smithers_events`, `_smithers_chat_attempts`, `_smithers_memory`.",
+      "Selecting a table populates the query editor with `SELECT * FROM table LIMIT 50;`."
+    ],
+    "dependencies": [
+      "feat-sql-browser"
+    ],
+    "sourceContext": [
+      "internal/ui/sqlbrowser.go"
+    ],
+    "implementationNotes": [
+      "Use `bubbles/list` for the sidebar component."
+    ],
+    "groupId": "systems-and-analytics",
+    "groupName": "Systems And Analytics"
+  },
+  {
+    "id": "feat-tickets-create",
+    "title": "Create New Ticket Form",
+    "type": "feature",
+    "featureName": "TICKETS_CREATE",
+    "description": "Add functionality to create a new ticket from within the TUI.",
+    "acceptanceCriteria": [
+      "User can open a form to enter a new Ticket ID and markdown content.",
+      "Submitting the form creates the ticket via the API and refreshes the list.",
+      "Terminal E2E test verifying ticket creation."
+    ],
+    "dependencies": [
+      "feat-tickets-split-pane",
+      "eng-tickets-api-client"
+    ],
+    "sourceContext": [
+      "../smithers/gui/src/ui/TicketsList.tsx"
+    ],
+    "implementationNotes": [
+      "Provide a keybinding (e.g., `n`) to switch the right pane to a creation form.",
+      "Use `bubbles/textinput` for the ID and `bubbles/textarea` for the body."
+    ],
+    "groupId": "content-and-prompts",
+    "groupName": "Content And Prompts"
+  },
+  {
+    "id": "feat-tickets-detail-view",
+    "title": "Ticket Detail View",
+    "type": "feature",
+    "featureName": "TICKETS_DETAIL_VIEW",
+    "description": "Render the full markdown content of the selected ticket in the right pane.",
+    "acceptanceCriteria": [
+      "Selecting a ticket updates the right pane with its markdown content.",
+      "Markdown is formatted properly.",
+      "VHS-style happy-path recording test verifying ticket selection."
+    ],
+    "dependencies": [
+      "feat-tickets-split-pane"
+    ],
+    "sourceContext": [
+      "../smithers/gui/src/ui/TicketsList.tsx"
+    ],
+    "implementationNotes": [
+      "Use `glamour` or `lipgloss` to render the ticket markdown."
+    ],
+    "groupId": "content-and-prompts",
+    "groupName": "Content And Prompts"
+  },
+  {
+    "id": "feat-tickets-edit-inline",
+    "title": "Inline Ticket Editing",
+    "type": "feature",
+    "featureName": "TICKETS_EDIT_INLINE",
+    "description": "Allow users to edit existing ticket content inline directly inside the right pane.",
+    "acceptanceCriteria": [
+      "User can toggle edit mode for a selected ticket.",
+      "Content becomes editable in a textarea.",
+      "Saving persists the changes via the API.",
+      "VHS-style happy-path recording test covers editing ticket content."
+    ],
+    "dependencies": [
+      "feat-tickets-detail-view",
+      "eng-tickets-api-client"
+    ],
+    "sourceContext": [
+      "../smithers/gui/src/ui/TicketsList.tsx"
+    ],
+    "implementationNotes": [
+      "Provide an `e` keybinding to switch the detail view to an edit form.",
+      "Manage saving state and handle API errors gracefully."
+    ],
+    "groupId": "content-and-prompts",
+    "groupName": "Content And Prompts"
+  },
+  {
+    "id": "feat-tickets-list",
+    "title": "Tickets List View",
+    "type": "feature",
+    "featureName": "TICKETS_LIST",
+    "description": "Implement the main view that fetches and displays all available tickets from the backend.",
+    "acceptanceCriteria": [
+      "Displays a list of tickets fetched from the backend.",
+      "User can navigate the list using arrow keys.",
+      "Terminal E2E test covers navigating the ticket list."
+    ],
+    "dependencies": [
+      "eng-tickets-api-client"
+    ],
+    "sourceContext": [
+      "../smithers/gui/src/ui/TicketsList.tsx",
+      "internal/ui/tickets/"
+    ],
+    "implementationNotes": [
+      "Create `internal/ui/tickets/tickets.go`.",
+      "Use the `bubbles/list` component to render the ticket IDs and snippets."
+    ],
+    "groupId": "content-and-prompts",
+    "groupName": "Content And Prompts"
+  },
+  {
+    "id": "feat-tickets-split-pane",
+    "title": "Tickets Split Pane Layout",
+    "type": "feature",
+    "featureName": "TICKETS_SPLIT_PANE_LAYOUT",
+    "description": "Integrate the shared split pane component into the tickets view to show the list on the left and a detail pane on the right.",
+    "acceptanceCriteria": [
+      "Tickets list renders on the left side.",
+      "An empty or placeholder view renders on the right side if no ticket is selected."
+    ],
+    "dependencies": [
+      "feat-tickets-list",
+      "eng-split-pane-component"
+    ],
+    "sourceContext": [
+      "../smithers/gui/src/ui/TicketsList.tsx"
+    ],
+    "implementationNotes": [
+      "Wrap the tickets list in the left pane of `internal/ui/components/splitpane`."
+    ],
+    "groupId": "content-and-prompts",
+    "groupName": "Content And Prompts"
+  },
+  {
+    "id": "feat-time-travel-fork-from-snapshot",
+    "title": "Fork Run From Snapshot",
+    "type": "feature",
+    "featureName": "TIME_TRAVEL_FORK_FROM_SNAPSHOT",
+    "description": "Allow users to fork a run from the selected snapshot checkpoint.",
+    "acceptanceCriteria": [
+      "Pressing 'f' hotkey triggers a fork for the currently selected snapshot.",
+      "Application transitions to the newly created run after a successful fork.",
+      "Terminal E2E test verifies the fork command invocation and navigation."
+    ],
+    "dependencies": [
+      "feat-time-travel-timeline-view"
+    ],
+    "sourceContext": [
+      "docs/smithers-tui/01-PRD.md",
+      "docs/smithers-tui/03-ENGINEERING.md"
+    ],
+    "implementationNotes": [
+      "Send a ForkRun request via the API client.",
+      "On success, emit a Bubble Tea command to trigger a router navigation to the new run ID."
+    ],
+    "groupId": "time-travel",
+    "groupName": "Time Travel"
+  },
+  {
+    "id": "feat-time-travel-replay-from-snapshot",
+    "title": "Replay Run From Snapshot",
+    "type": "feature",
+    "featureName": "TIME_TRAVEL_REPLAY_FROM_SNAPSHOT",
+    "description": "Allow users to replay a run starting from the selected snapshot checkpoint.",
+    "acceptanceCriteria": [
+      "Pressing 'r' hotkey triggers a replay for the currently selected snapshot.",
+      "Application transitions to live replay view of the run.",
+      "Terminal E2E test verifies the replay behavior."
+    ],
+    "dependencies": [
+      "feat-time-travel-timeline-view"
+    ],
+    "sourceContext": [
+      "docs/smithers-tui/01-PRD.md",
+      "docs/smithers-tui/03-ENGINEERING.md"
+    ],
+    "implementationNotes": [
+      "Send a ReplayRun request via the API client.",
+      "Transition the UI state to handle live run updates for the new or replayed run ID."
+    ],
+    "groupId": "time-travel",
+    "groupName": "Time Travel"
+  },
+  {
+    "id": "feat-time-travel-snapshot-diff",
+    "title": "Time Travel Snapshot Diff",
+    "type": "feature",
+    "featureName": "TIME_TRAVEL_SNAPSHOT_DIFF",
+    "description": "Implement snapshot comparison allowing users to view diffs between consecutive snapshots.",
+    "acceptanceCriteria": [
+      "Pressing 'd' hotkey fetches the diff between the cursor and previous snapshot.",
+      "Diff is rendered clearly, highlighting state changes."
+    ],
+    "dependencies": [
+      "feat-time-travel-snapshot-inspector"
+    ],
+    "sourceContext": [
+      "docs/smithers-tui/02-DESIGN.md",
+      "internal/ui/diffview/diffview.go"
+    ],
+    "implementationNotes": [
+      "Call the DiffSnapshots client API when the diff hotkey is pressed.",
+      "Integrate internal/ui/diffview/diffview.go for rendering the output diff.",
+      "Handle loading states gracefully while the diff is computed/fetched."
+    ],
+    "groupId": "time-travel",
+    "groupName": "Time Travel"
+  },
+  {
+    "id": "feat-time-travel-snapshot-inspector",
+    "title": "Time Travel Snapshot Inspector",
+    "type": "feature",
+    "featureName": "TIME_TRAVEL_SNAPSHOT_INSPECTOR",
+    "description": "Render the detailed state of the currently selected snapshot below the timeline graph.",
+    "acceptanceCriteria": [
+      "When a snapshot is selected, its details (ID, associated node, partial output/state) are displayed below the timeline.",
+      "The view updates instantly as the cursor moves."
+    ],
+    "dependencies": [
+      "feat-time-travel-timeline-view"
+    ],
+    "sourceContext": [
+      "docs/smithers-tui/02-DESIGN.md"
+    ],
+    "implementationNotes": [
+      "Extract snapshot details from the currently selected `smithers.Snapshot`.",
+      "Format the output using markdown components or standard lipgloss blocks."
+    ],
+    "groupId": "time-travel",
+    "groupName": "Time Travel"
+  },
+  {
+    "id": "feat-time-travel-snapshot-markers",
+    "title": "Time Travel Snapshot Markers",
+    "type": "feature",
+    "featureName": "TIME_TRAVEL_SNAPSHOT_MARKERS",
+    "description": "Differentiate snapshot markers visually on the timeline based on run events or status.",
+    "acceptanceCriteria": [
+      "Timeline graph uses different symbols or colors for different types of snapshots (e.g., error nodes, tool calls).",
+      "Selected snapshot is clearly indicated with an arrow (▲)."
+    ],
+    "dependencies": [
+      "feat-time-travel-timeline-view"
+    ],
+    "sourceContext": [
+      "docs/smithers-tui/02-DESIGN.md",
+      "internal/ui/styles/styles.go"
+    ],
+    "implementationNotes": [
+      "Leverage internal/ui/styles for consistent marker rendering.",
+      "Update the lipgloss rendering logic to conditionally style graph nodes based on the underlying `smithers.Snapshot` data."
+    ],
+    "groupId": "time-travel",
+    "groupName": "Time Travel"
+  },
+  {
+    "id": "feat-time-travel-timeline-view",
+    "title": "Time Travel Timeline View",
+    "type": "feature",
+    "featureName": "TIME_TRAVEL_TIMELINE_VIEW",
+    "description": "Implement the horizontal visual timeline of run execution and snapshot navigation.",
+    "acceptanceCriteria": [
+      "User can view a horizontal timeline graph of snapshots (e.g. ①──②──③...).",
+      "User can navigate left and right using arrow keys to select a snapshot cursor.",
+      "A VHS-style happy path test captures timeline navigation."
+    ],
+    "dependencies": [
+      "eng-time-travel-api-and-model"
+    ],
+    "sourceContext": [
+      "docs/smithers-tui/02-DESIGN.md",
+      "docs/smithers-tui/03-ENGINEERING.md"
+    ],
+    "implementationNotes": [
+      "Use Lip Gloss to render the timeline as described in 03-ENGINEERING.md section 3.3.1.",
+      "Track `cursor` state integer for the selected snapshot.",
+      "Ensure navigation keys update the cursor and trigger view re-renders."
+    ],
+    "groupId": "time-travel",
+    "groupName": "Time Travel"
+  },
+  {
+    "id": "feat-triggers-create",
+    "title": "Create Trigger",
+    "type": "feature",
+    "featureName": "TRIGGERS_CREATE",
+    "description": "Implement a form overlay or inline input to create a new cron trigger.",
+    "acceptanceCriteria": [
+      "User can input a valid cron expression and target workflow path.",
+      "Submission creates the trigger via the Smithers API/CLI.",
+      "List is refreshed upon successful creation."
+    ],
+    "dependencies": [
+      "feat-triggers-list"
+    ],
+    "sourceContext": [
+      "internal/ui/triggers.go"
+    ],
+    "implementationNotes": [
+      "Consider using `charmbracelet/huh` for a clean form input experience."
+    ],
+    "groupId": "systems-and-analytics",
+    "groupName": "Systems And Analytics"
+  },
+  {
+    "id": "feat-triggers-delete",
+    "title": "Delete Trigger",
+    "type": "feature",
+    "featureName": "TRIGGERS_DELETE",
+    "description": "Implement functionality to delete a scheduled trigger.",
+    "acceptanceCriteria": [
+      "User can select and delete a trigger.",
+      "Prompts for confirmation before deletion.",
+      "List updates appropriately."
+    ],
+    "dependencies": [
+      "feat-triggers-list"
+    ],
+    "sourceContext": [
+      "internal/ui/triggers.go"
+    ],
+    "implementationNotes": [
+      "Simple modal or inline confirmation (y/n) is sufficient."
+    ],
+    "groupId": "systems-and-analytics",
+    "groupName": "Systems And Analytics"
+  },
+  {
+    "id": "feat-triggers-edit",
+    "title": "Edit Trigger",
+    "type": "feature",
+    "featureName": "TRIGGERS_EDIT",
+    "description": "Implement functionality to modify an existing cron trigger.",
+    "acceptanceCriteria": [
+      "User can edit the cron expression or workflow path of an existing trigger.",
+      "Changes are saved to the backend."
+    ],
+    "dependencies": [
+      "feat-triggers-list"
+    ],
+    "sourceContext": [
+      "internal/ui/triggers.go"
+    ],
+    "implementationNotes": [
+      "Reuse the form component created in TRIGGERS_CREATE, pre-populating it with existing data."
+    ],
+    "groupId": "systems-and-analytics",
+    "groupName": "Systems And Analytics"
+  },
+  {
+    "id": "feat-triggers-list",
+    "title": "Triggers List",
+    "type": "feature",
+    "featureName": "TRIGGERS_LIST",
+    "description": "Implement a list view showing all scheduled cron triggers.",
+    "acceptanceCriteria": [
+      "Displays a list of triggers including workflow path, cron pattern, and enabled status."
+    ],
+    "dependencies": [
+      "eng-triggers-scaffolding"
+    ],
+    "sourceContext": [
+      "internal/ui/triggers.go"
+    ],
+    "implementationNotes": [
+      "Use `bubbles/table` to cleanly align the cron properties."
+    ],
+    "groupId": "systems-and-analytics",
+    "groupName": "Systems And Analytics"
+  },
+  {
+    "id": "feat-triggers-toggle",
+    "title": "Toggle Trigger Status",
+    "type": "feature",
+    "featureName": "TRIGGERS_TOGGLE",
+    "description": "Add functionality to enable or disable a trigger directly from the list.",
+    "acceptanceCriteria": [
+      "Pressing 'Space' or 't' toggles the selected trigger's status.",
+      "Status update is persisted via the Smithers API/CLI."
+    ],
+    "dependencies": [
+      "feat-triggers-list"
+    ],
+    "sourceContext": [
+      "internal/ui/triggers.go"
+    ],
+    "implementationNotes": [
+      "Ensure optimistic UI updates are reverted if the backend call fails."
+    ],
+    "groupId": "systems-and-analytics",
+    "groupName": "Systems And Analytics"
+  },
+  {
+    "id": "notifications-approval-requests",
+    "title": "Show notifications for approval requests",
+    "type": "feature",
+    "featureName": "NOTIFICATIONS_APPROVAL_REQUESTS",
+    "description": "Listen for Smithers SSE events indicating a new approval gate and show a toast notification.",
+    "acceptanceCriteria": [
+      "When an `ApprovalRequested` SSE event is received, a toast appears.",
+      "Toast includes 'Approve' and 'View' action hints."
+    ],
+    "dependencies": [
+      "notifications-toast-overlays"
+    ],
+    "sourceContext": [
+      "internal/smithers/client.go",
+      "internal/ui/model/ui.go"
+    ],
+    "implementationNotes": [
+      "Subscribe to the appropriate event from `SmithersClient.StreamEvents()` and map it to the notification component."
+    ],
+    "groupId": "approvals-and-notifications",
+    "groupName": "Approvals And Notifications"
+  },
+  {
+    "id": "notifications-run-completions",
+    "title": "Show notifications for run completions",
+    "type": "feature",
+    "featureName": "NOTIFICATIONS_RUN_COMPLETIONS",
+    "description": "Show a brief toast notification when a Smithers run completes successfully.",
+    "acceptanceCriteria": [
+      "When a `RunCompleted` SSE event is received, a success toast appears."
+    ],
+    "dependencies": [
+      "notifications-toast-overlays"
+    ],
+    "sourceContext": [
+      "internal/smithers/client.go"
+    ],
+    "implementationNotes": [
+      "Format the toast with success styling (Lip Gloss green) and a short TTL."
+    ],
+    "groupId": "approvals-and-notifications",
+    "groupName": "Approvals And Notifications"
+  },
+  {
+    "id": "notifications-run-failures",
+    "title": "Show notifications for run failures",
+    "type": "feature",
+    "featureName": "NOTIFICATIONS_RUN_FAILURES",
+    "description": "Show a toast notification when a Smithers run fails.",
+    "acceptanceCriteria": [
+      "When a `RunFailed` SSE event is received, a failure toast appears."
+    ],
+    "dependencies": [
+      "notifications-toast-overlays"
+    ],
+    "sourceContext": [
+      "internal/smithers/client.go"
+    ],
+    "implementationNotes": [
+      "Format the toast with error styling (Lip Gloss red) and the run ID."
+    ],
+    "groupId": "approvals-and-notifications",
+    "groupName": "Approvals And Notifications"
+  },
+  {
+    "id": "notifications-toast-overlays",
+    "title": "Integrate toast overlays into the main TUI loop",
+    "type": "feature",
+    "featureName": "NOTIFICATIONS_TOAST_OVERLAYS",
+    "description": "Hook the new toast component into the global UI view so it renders on top of the active route.",
+    "acceptanceCriteria": [
+      "The toast overlay renders over chat, runs, or any other routed view.",
+      "Notifications can be triggered globally via the pubsub event bus."
+    ],
+    "dependencies": [
+      "eng-in-terminal-toast-component"
+    ],
+    "sourceContext": [
+      "internal/ui/model/ui.go",
+      "internal/pubsub"
+    ],
+    "implementationNotes": [
+      "Modify `UI.View()` in `internal/ui/model/ui.go` to append the rendered notification string (positioned bottom-right) after rendering the current view from the Router."
+    ],
+    "groupId": "approvals-and-notifications",
+    "groupName": "Approvals And Notifications"
+  },
+  {
+    "id": "platform-back-stack",
+    "title": "Platform: Back Stack Navigation (Esc)",
+    "type": "feature",
+    "featureName": "PLATFORM_BACK_STACK_NAVIGATION",
+    "description": "Wire the Escape key to pop the current view off the stack, providing a standard 'Back' action across the app.",
+    "acceptanceCriteria": [
+      "Pressing Esc on any view pops the stack and returns to the previous view",
+      "Pressing Esc on the Chat view does not crash or pop the Chat view",
+      "Help bar shows '[Esc] Back' when stack > 1"
+    ],
+    "dependencies": [
+      "platform-view-router"
+    ],
+    "sourceContext": [
+      "internal/ui/model/keys.go",
+      "internal/ui/model/ui.go"
+    ],
+    "implementationNotes": [
+      "Add a `Back` key binding in `keys.go`. In `ui.go`'s top-level Update, intercept `Back` and call `m.router.Pop()`, short-circuiting to avoid passing Esc to child models if they don't need it."
+    ],
+    "groupId": "platform-and-navigation",
+    "groupName": "Platform And Navigation"
+  },
+  {
+    "id": "platform-chat-first-ia",
+    "title": "Platform: Chat-First Info Architecture",
+    "type": "feature",
+    "featureName": "PLATFORM_CHAT_FIRST_INFORMATION_ARCHITECTURE",
+    "description": "Initialize the View Router with the Chat view as the root element that can never be popped, ensuring chat is always the home screen.",
+    "acceptanceCriteria": [
+      "Router initializes with Chat at index 0",
+      "Router.Pop() is a no-op if the stack size is 1",
+      "Startup opens directly to Chat"
+    ],
+    "dependencies": [
+      "platform-view-router"
+    ],
+    "sourceContext": [
+      "internal/ui/views/router.go",
+      "internal/ui/model/ui.go"
+    ],
+    "implementationNotes": [
+      "In `NewRouter`, populate the stack `[]View{chat}` and store `chat` on the router explicitly so we can access it."
+    ],
+    "groupId": "platform-and-navigation",
+    "groupName": "Platform And Navigation"
+  },
+  {
+    "id": "platform-config-namespace",
+    "title": "Platform: Update Config Namespace",
+    "type": "feature",
+    "featureName": "PLATFORM_SMITHERS_CONFIG_NAMESPACE",
+    "description": "Change configuration directories and file names from `.crush/` to `.smithers-tui/` and `.smithers-tui.json` to properly isolate state from Crush.",
+    "acceptanceCriteria": [
+      "Configuration is read from .smithers-tui.json instead of crush.json",
+      "Data directory defaults to ~/.config/smithers-tui/ or .smithers-tui/",
+      "Default model and tool settings are tailored for Smithers"
+    ],
+    "dependencies": [
+      "platform-smithers-rebrand"
+    ],
+    "sourceContext": [
+      "internal/config/config.go",
+      "internal/config/defaults.go",
+      "internal/cmd/root.go"
+    ],
+    "implementationNotes": [
+      "Modify config dir generation logic in internal/config to resolve `.smithers-tui` and `smithers-tui.json`."
+    ],
+    "groupId": "platform-and-navigation",
+    "groupName": "Platform And Navigation"
+  },
+  {
+    "id": "platform-http-api-client",
+    "title": "Platform: HTTP API Client Operations",
+    "type": "feature",
+    "featureName": "PLATFORM_HTTP_API_CLIENT",
+    "description": "Implement the HTTP operations on the Smithers client to query and mutate state via the Smithers CLI HTTP server.",
+    "acceptanceCriteria": [
+      "ListRuns, GetRun, and InspectRun methods fetch JSON from /ps and /run endpoints",
+      "Approve, Deny, and Cancel methods perform POST requests to mutate run state",
+      "Client appropriately handles HTTP errors and authorization"
+    ],
+    "dependencies": [
+      "platform-thin-frontend-layer"
+    ],
+    "sourceContext": [
+      "internal/smithers/client.go"
+    ],
+    "implementationNotes": [
+      "Implement basic net/http client requests, returning Go structs.",
+      "Pass apiToken in the Authorization: Bearer header."
+    ],
+    "groupId": "platform-and-navigation",
+    "groupName": "Platform And Navigation"
+  },
+  {
+    "id": "platform-keyboard-nav",
+    "title": "Platform: Keyboard-First Navigation",
+    "type": "feature",
+    "featureName": "PLATFORM_KEYBOARD_FIRST_NAVIGATION",
+    "description": "Register global keyboard shortcuts to immediately jump to primary views (e.g. Ctrl+R for Runs, Ctrl+A for Approvals).",
+    "acceptanceCriteria": [
+      "Ctrl+R bound to Runs Dashboard",
+      "Ctrl+A bound to Approval Queue",
+      "Other key views get corresponding shortcuts",
+      "Shortcuts push the relevant View onto the router stack"
+    ],
+    "dependencies": [
+      "platform-view-router"
+    ],
+    "sourceContext": [
+      "internal/ui/model/keys.go",
+      "internal/ui/model/ui.go"
+    ],
+    "implementationNotes": [
+      "Add `RunDashboard`, `Approvals` to `KeyMap` in `keys.go`. Add switch cases in `ui.go` to construct and push the new views."
+    ],
+    "groupId": "platform-and-navigation",
+    "groupName": "Platform And Navigation"
+  },
+  {
+    "id": "platform-mcp-transport",
+    "title": "Platform: MCP Server Config Integration",
+    "type": "feature",
+    "featureName": "PLATFORM_MCP_TRANSPORT",
+    "description": "Configure the built-in MCP client to spawn and connect to the `smithers mcp-serve` stdio server by default, granting the agent access to all Smithers CLI tools.",
+    "acceptanceCriteria": [
+      "The default config automatically spins up `smithers mcp-serve` as an MCP stdio server",
+      "Smithers tools auto-register with the chat agent",
+      "Status bar indicates the 'smithers' MCP connection is active"
+    ],
+    "dependencies": [
+      "platform-config-namespace"
+    ],
+    "sourceContext": [
+      "internal/config/defaults.go",
+      "internal/config/config.go"
+    ],
+    "implementationNotes": [
+      "Add a 'smithers' server block to DefaultTools.MCPServers specifying the 'smithers' command with 'mcp-serve' args.",
+      "Ensure unused Crush tools (e.g. sourcegraph) are moved to the Disabled tools array."
+    ],
+    "groupId": "platform-and-navigation",
+    "groupName": "Platform And Navigation"
+  },
+  {
+    "id": "platform-palette-extensions",
+    "title": "Platform: Command Palette Extensions",
+    "type": "feature",
+    "featureName": "PLATFORM_SMITHERS_COMMAND_PALETTE_EXTENSIONS",
+    "description": "Extend Crush's Command Palette (accessed via / or Ctrl+P) to include navigation commands for all Smithers views, grouped by Workspace and Systems.",
+    "acceptanceCriteria": [
+      "Palette includes options for Runs Dashboard, Workflows, Agents, etc.",
+      "Palette includes options for SQL Browser, Triggers, etc.",
+      "Selecting a palette option pushes the corresponding View"
+    ],
+    "dependencies": [
+      "platform-view-router"
+    ],
+    "sourceContext": [
+      "internal/ui/model/ui.go",
+      "internal/ui/model/commands.go"
+    ],
+    "implementationNotes": [
+      "Crush likely has a list of palette actions. Expand this list with Smithers actions, utilizing Bubble Tea messages to trigger router pushes on selection."
+    ],
+    "groupId": "platform-and-navigation",
+    "groupName": "Platform And Navigation"
+  },
+  {
+    "id": "platform-shell-out-fallback",
+    "title": "Platform: Shell Out Fallback",
+    "type": "feature",
+    "featureName": "PLATFORM_SHELL_OUT_FALLBACK",
+    "description": "Implement direct CLI shell-out methods as a fallback for mutations when the HTTP API is unavailable.",
+    "acceptanceCriteria": [
+      "Client can invoke `exec.Command(\"smithers\", ...)` for mutations",
+      "Returns parsed JSON output if the CLI is invoked with --json"
+    ],
+    "dependencies": [
+      "platform-thin-frontend-layer"
+    ],
+    "sourceContext": [
+      "internal/smithers/exec.go",
+      "internal/smithers/client.go"
+    ],
+    "implementationNotes": [
+      "Wrap os/exec calls, capturing stdout for JSON unmarshaling and mapping stderr to Go errors."
+    ],
+    "groupId": "platform-and-navigation",
+    "groupName": "Platform And Navigation"
+  },
+  {
+    "id": "platform-smithers-rebrand",
+    "title": "Platform: Rebrand TUI to Smithers",
+    "type": "feature",
+    "featureName": "PLATFORM_SMITHERS_REBRAND",
+    "description": "Fork Crush and rebrand it to Smithers TUI. This requires renaming the Go module, binary names, textual headers, and replacing Crush's ASCII art with Smithers branding.",
+    "acceptanceCriteria": [
+      "Go module is renamed to github.com/anthropic/smithers-tui",
+      "Binary is named smithers-tui",
+      "Header displays SMITHERS instead of Charm CRUSH",
+      "ASCII art logo is updated",
+      "Terminal color scheme matches Smithers brand (cyan/green/magenta palette)"
+    ],
+    "dependencies": [],
+    "sourceContext": [
+      "go.mod",
+      "main.go",
+      "internal/cmd/root.go",
+      "internal/ui/logo/logo.go",
+      "internal/ui/styles/styles.go"
+    ],
+    "implementationNotes": [
+      "Use go mod edit to change the module path.",
+      "Update the lipgloss definitions in internal/ui/styles/styles.go.",
+      "Replace the ASCII string in internal/ui/logo/logo.go."
+    ],
+    "groupId": "platform-and-navigation",
+    "groupName": "Platform And Navigation"
+  },
+  {
+    "id": "platform-split-pane",
+    "title": "Platform: Split Pane Layouts",
+    "type": "feature",
+    "featureName": "PLATFORM_SPLIT_PANE_LAYOUTS",
+    "description": "Create a reusable Split Pane Bubble Tea component that renders two sub-views side-by-side with proportional widths.",
+    "acceptanceCriteria": [
+      "SplitPane component takes a left and right tea.Model",
+      "Handles WindowSizeMsg by dividing horizontal space according to a configurable ratio (e.g. 30/70)",
+      "Passes relevant updates to both children, or focuses one"
+    ],
+    "dependencies": [],
+    "sourceContext": [
+      "internal/ui/components/splitpane.go"
+    ],
+    "implementationNotes": [
+      "Use Lip Gloss's `JoinHorizontal` to render the side-by-side panes. Pass `WindowSizeMsg` down to children after mutating the `Width` to fit their pane bounds."
+    ],
+    "groupId": "platform-and-navigation",
+    "groupName": "Platform And Navigation"
+  },
+  {
+    "id": "platform-sse-streaming",
+    "title": "Platform: SSE Event Streaming Consumer",
+    "type": "feature",
+    "featureName": "PLATFORM_SSE_EVENT_STREAMING",
+    "description": "Implement Server-Sent Events (SSE) consumption in the Smithers client to receive real-time updates for run statuses and chat streaming.",
+    "acceptanceCriteria": [
+      "Client exposes a StreamEvents(ctx) returning a channel of Event structs",
+      "Parses SSE format and decodes the inner JSON payloads",
+      "Recovers connection seamlessly on disconnection"
+    ],
+    "dependencies": [
+      "platform-thin-frontend-layer"
+    ],
+    "sourceContext": [
+      "internal/smithers/events.go",
+      "internal/smithers/client.go"
+    ],
+    "implementationNotes": [
+      "Read from the /events endpoint. Consider using an existing SSE decoder or implement a robust bufio.Scanner loop that handles 'data:' lines."
+    ],
+    "groupId": "platform-and-navigation",
+    "groupName": "Platform And Navigation"
+  },
+  {
+    "id": "platform-thin-frontend-layer",
+    "title": "Platform: Scaffold Thin Frontend Client",
+    "type": "feature",
+    "featureName": "PLATFORM_THIN_FRONTEND_TRANSPORT_LAYER",
+    "description": "Create the foundational `internal/smithers/` client package that handles communication with the Smithers CLI server via HTTP, SSE, and SQLite fallbacks.",
+    "acceptanceCriteria": [
+      "internal/smithers package exists",
+      "Client struct supports configuring an API URL, Token, and local SQLite DB path",
+      "Core data types (Run, Node, Attempt, Event) are defined matching the Smithers server schemas"
+    ],
+    "dependencies": [],
+    "sourceContext": [
+      "internal/smithers/client.go",
+      "internal/smithers/types.go"
+    ],
+    "implementationNotes": [
+      "This is just the struct and types scaffolding; actual methods will be added in subsequent tickets.",
+      "Use standard Go context.Context for all future client operations."
+    ],
+    "groupId": "platform-and-navigation",
+    "groupName": "Platform And Navigation"
+  },
+  {
+    "id": "platform-view-model",
+    "title": "Platform: View Stack Architecture",
+    "type": "feature",
+    "featureName": "PLATFORM_WORKSPACE_AND_SYSTEMS_VIEW_MODEL",
+    "description": "Introduce the View interface representing distinct TUI screens (Runs, SQL, Timeline, Chat) adhering to the Workspace/Systems separation.",
+    "acceptanceCriteria": [
+      "View interface defined with Init, Update, View, and Name methods",
+      "ShortHelp() method added to View to power contextual help bars"
+    ],
+    "dependencies": [],
+    "sourceContext": [
+      "internal/ui/views/router.go"
+    ],
+    "implementationNotes": [
+      "Define the View interface. This abstracts the generic tea.Model so we can add Smithers-specific view metadata like Name and Help keys."
+    ],
+    "groupId": "platform-and-navigation",
+    "groupName": "Platform And Navigation"
+  },
+  {
+    "id": "platform-view-router",
+    "title": "Platform: Implement View Stack Router",
+    "type": "feature",
+    "featureName": "PLATFORM_VIEW_STACK_ROUTER",
+    "description": "Build the stack-based router that manages pushing and popping Views and delegates Bubble Tea messages to the active View.",
+    "acceptanceCriteria": [
+      "Router struct tracks a stack of Views ([]View)",
+      "Push(v) and Pop() methods modify the stack",
+      "Current() returns the top of the stack",
+      "The main Bubble Tea Update and View functions delegate to Router.Current()"
+    ],
+    "dependencies": [
+      "platform-view-model"
+    ],
+    "sourceContext": [
+      "internal/ui/views/router.go",
+      "internal/ui/model/ui.go"
+    ],
+    "implementationNotes": [
+      "Modify the main `UI` struct in internal/ui/model/ui.go to embed the Router.",
+      "Pass `tea.Msg` through to `m.router.Current().Update(msg)`."
+    ],
+    "groupId": "platform-and-navigation",
+    "groupName": "Platform And Navigation"
+  },
+  {
+    "id": "runs-dag-overview",
+    "title": "Run DAG Overview",
+    "type": "feature",
+    "featureName": "RUNS_DAG_OVERVIEW",
+    "description": "Render an ASCII/Unicode visualization of the node execution graph in the Run Inspector.",
+    "acceptanceCriteria": [
+      "Shows nodes and their dependencies as a tree or graph",
+      "Highlights active and failed nodes"
+    ],
+    "dependencies": [
+      "runs-inspect-summary"
+    ],
+    "sourceContext": [
+      "internal/ui/components/dagview.go",
+      "internal/ui/views/runinspect.go"
+    ],
+    "implementationNotes": [
+      "A simple vertical tree representation (like git log --graph) may suffice for TUI."
+    ],
+    "groupId": "runs-and-inspection",
+    "groupName": "Runs And Inspection"
+  },
+  {
+    "id": "runs-dashboard",
+    "title": "Run Dashboard Base View",
+    "type": "feature",
+    "featureName": "RUNS_DASHBOARD",
+    "description": "Create the foundational Run Dashboard view to display a list of runs.",
+    "acceptanceCriteria": [
+      "Accessible via /runs or Ctrl+R from the chat",
+      "Displays a tabular list of runs fetching data via the Smithers Client",
+      "Includes basic navigation using Up/Down arrows",
+      "Includes a VHS-style happy-path test recording the view opening and basic navigation",
+      "Includes an E2E test using @microsoft/tui-test harness via ../smithers/tests/tui-helpers.ts"
+    ],
+    "dependencies": [
+      "eng-smithers-client-runs"
+    ],
+    "sourceContext": [
+      "internal/ui/views/runs.go",
+      "internal/ui/components/runtable.go",
+      "../smithers/gui/src/routes/runs/RunsList.tsx",
+      "../smithers/tests/tui.e2e.test.ts",
+      "../smithers/tests/tui-helpers.ts"
+    ],
+    "implementationNotes": [
+      "Model the view logic on Bubble Tea's viewport and table components.",
+      "Ensure the E2E test asserts table columns like 'Workflow' and 'Status' are rendered correctly."
+    ],
+    "groupId": "runs-and-inspection",
+    "groupName": "Runs And Inspection"
+  },
+  {
+    "id": "runs-filter-by-date-range",
+    "title": "Date Range Filter UI",
+    "type": "feature",
+    "featureName": "RUNS_FILTER_BY_DATE_RANGE",
+    "description": "Add a UI filter control to restrict the runs displayed by date range.",
+    "acceptanceCriteria": [
+      "Filter allows selection of standard ranges (Today, Last 7 Days, All Time)"
+    ],
+    "dependencies": [
+      "runs-dashboard"
+    ],
+    "sourceContext": [
+      "internal/ui/views/runs.go"
+    ],
+    "implementationNotes": [
+      "Combine with the Smithers API's time filters if available."
+    ],
+    "groupId": "runs-and-inspection",
+    "groupName": "Runs And Inspection"
+  },
+  {
+    "id": "runs-filter-by-status",
+    "title": "Status Filter UI",
+    "type": "feature",
+    "featureName": "RUNS_FILTER_BY_STATUS",
+    "description": "Add a UI filter control to toggle visibility of runs by status (All, Active, Completed, Failed).",
+    "acceptanceCriteria": [
+      "Filter dropdown is navigable via keyboard",
+      "List filters instantly upon selection"
+    ],
+    "dependencies": [
+      "runs-dashboard"
+    ],
+    "sourceContext": [
+      "internal/ui/views/runs.go"
+    ],
+    "implementationNotes": [
+      "Implement custom top bar navigation."
+    ],
+    "groupId": "runs-and-inspection",
+    "groupName": "Runs And Inspection"
+  },
+  {
+    "id": "runs-filter-by-workflow",
+    "title": "Workflow Filter UI",
+    "type": "feature",
+    "featureName": "RUNS_FILTER_BY_WORKFLOW",
+    "description": "Add a UI filter control to toggle visibility of runs by workflow type.",
+    "acceptanceCriteria": [
+      "Can select a specific workflow from active and completed runs",
+      "List updates to only show runs of that workflow"
+    ],
+    "dependencies": [
+      "runs-dashboard"
+    ],
+    "sourceContext": [
+      "internal/ui/views/runs.go"
+    ],
+    "implementationNotes": [
+      "Dropdown choices should be populated based on the fetched data."
+    ],
+    "groupId": "runs-and-inspection",
+    "groupName": "Runs And Inspection"
+  },
+  {
+    "id": "runs-inline-run-details",
+    "title": "Inline Run Details",
+    "type": "feature",
+    "featureName": "RUNS_INLINE_RUN_DETAILS",
+    "description": "Display secondary details below the main run row, such as the active agent name or pending gate details.",
+    "acceptanceCriteria": [
+      "Active runs show the agent executing them",
+      "Pending runs show the approval gate question",
+      "Failed runs show the error reason"
+    ],
+    "dependencies": [
+      "runs-dashboard"
+    ],
+    "sourceContext": [
+      "internal/ui/views/runs.go"
+    ],
+    "implementationNotes": [
+      "Requires dynamic row height or a multi-line row rendering approach."
+    ],
+    "groupId": "runs-and-inspection",
+    "groupName": "Runs And Inspection"
+  },
+  {
+    "id": "runs-inspect-summary",
+    "title": "Run Inspector Base View",
+    "type": "feature",
+    "featureName": "RUNS_INSPECT_SUMMARY",
+    "description": "Create the Run Inspector view, showing detailed summary and node information for a selected run.",
+    "acceptanceCriteria": [
+      "Pressing Enter on a run opens the Run Inspector",
+      "Displays run metadata (time, status, overall progress)",
+      "Includes an E2E test verifying inspector navigation using @microsoft/tui-test"
+    ],
+    "dependencies": [
+      "runs-dashboard"
+    ],
+    "sourceContext": [
+      "internal/ui/views/runinspect.go",
+      "../smithers/gui/src/routes/runs/NodeInspector.tsx",
+      "../smithers/tests/tui.e2e.test.ts"
+    ],
+    "implementationNotes": [
+      "This is the parent container for the DAG and Node detail tabs."
+    ],
+    "groupId": "runs-and-inspection",
+    "groupName": "Runs And Inspection"
+  },
+  {
+    "id": "runs-node-inspector",
+    "title": "Node Inspector Selection",
+    "type": "feature",
+    "featureName": "RUNS_NODE_INSPECTOR",
+    "description": "Allow selection of a specific node within the Run Inspector to view its specific details.",
+    "acceptanceCriteria": [
+      "Can navigate through the nodes in the DAG view",
+      "Selection drives the content of the detail tabs"
+    ],
+    "dependencies": [
+      "runs-dag-overview"
+    ],
+    "sourceContext": [
+      "internal/ui/views/runinspect.go"
+    ],
+    "implementationNotes": [
+      "Manage focused node state within the runinspect model."
+    ],
+    "groupId": "runs-and-inspection",
+    "groupName": "Runs And Inspection"
+  },
+  {
+    "id": "runs-open-live-chat",
+    "title": "Open Live Chat Keybinding",
+    "type": "feature",
+    "featureName": "RUNS_OPEN_LIVE_CHAT",
+    "description": "Allow users to press 'c' to navigate to the Live Chat Viewer for the selected run.",
+    "acceptanceCriteria": [
+      "Pressing 'c' pushes the LiveChatView onto the router stack for the run ID"
+    ],
+    "dependencies": [
+      "runs-dashboard"
+    ],
+    "sourceContext": [
+      "internal/ui/views/runs.go",
+      "internal/ui/model/ui.go"
+    ],
+    "implementationNotes": [
+      "Requires integration with the router stack manager."
+    ],
+    "groupId": "runs-and-inspection",
+    "groupName": "Runs And Inspection"
+  },
+  {
+    "id": "runs-progress-visualization",
+    "title": "Node Progress Bars",
+    "type": "feature",
+    "featureName": "RUNS_PROGRESS_VISUALIZATION",
+    "description": "Render inline progress bars (e.g., 3/5 nodes completed) for active runs.",
+    "acceptanceCriteria": [
+      "Progress bars are drawn using block characters",
+      "Completed fraction matches node completion state",
+      "Color coding maps to status (e.g., green for complete, yellow for active)"
+    ],
+    "dependencies": [
+      "runs-dashboard"
+    ],
+    "sourceContext": [
+      "internal/ui/components/progressbar.go",
+      "internal/ui/views/runs.go"
+    ],
+    "implementationNotes": [
+      "Create a reusable progress bar component utilizing Lip Gloss for styling."
+    ],
+    "groupId": "runs-and-inspection",
+    "groupName": "Runs And Inspection"
+  },
+  {
+    "id": "runs-quick-approve",
+    "title": "Quick Approve Keybinding",
+    "type": "feature",
+    "featureName": "RUNS_QUICK_APPROVE",
+    "description": "Allow users to press 'a' to quickly approve a pending gate for the currently highlighted run.",
+    "acceptanceCriteria": [
+      "Pressing 'a' on a pending run submits an approval request via the API",
+      "A visual confirmation (toast or list update) is shown upon success"
+    ],
+    "dependencies": [
+      "runs-dashboard",
+      "runs-inline-run-details"
+    ],
+    "sourceContext": [
+      "internal/ui/views/runs.go",
+      "internal/smithers/client.go"
+    ],
+    "implementationNotes": [
+      "Ensure the 'a' key is only active when the selected row has an approval gate."
+    ],
+    "groupId": "runs-and-inspection",
+    "groupName": "Runs And Inspection"
+  },
+  {
+    "id": "runs-quick-cancel",
+    "title": "Quick Cancel Keybinding",
+    "type": "feature",
+    "featureName": "RUNS_QUICK_CANCEL",
+    "description": "Allow users to press 'x' to cancel the selected active run.",
+    "acceptanceCriteria": [
+      "Pressing 'x' prompts for a quick confirmation",
+      "Confirming sends a cancel request to the API"
+    ],
+    "dependencies": [
+      "runs-dashboard"
+    ],
+    "sourceContext": [
+      "internal/ui/views/runs.go",
+      "internal/smithers/client.go"
+    ],
+    "implementationNotes": [
+      "Might require a simple overlay dialog or prompt area."
+    ],
+    "groupId": "runs-and-inspection",
+    "groupName": "Runs And Inspection"
+  },
+  {
+    "id": "runs-quick-deny",
+    "title": "Quick Deny Keybinding",
+    "type": "feature",
+    "featureName": "RUNS_QUICK_DENY",
+    "description": "Allow users to press 'd' to quickly deny a pending gate for the highlighted run.",
+    "acceptanceCriteria": [
+      "Pressing 'd' on a pending run submits a deny request",
+      "Visual state updates appropriately"
+    ],
+    "dependencies": [
+      "runs-dashboard",
+      "runs-inline-run-details"
+    ],
+    "sourceContext": [
+      "internal/ui/views/runs.go",
+      "internal/smithers/client.go"
+    ],
+    "implementationNotes": [
+      "Share logic with quick-approve where possible."
+    ],
+    "groupId": "runs-and-inspection",
+    "groupName": "Runs And Inspection"
+  },
+  {
+    "id": "runs-quick-hijack",
+    "title": "Quick Hijack Keybinding",
+    "type": "feature",
+    "featureName": "RUNS_QUICK_HIJACK",
+    "description": "Allow users to press 'h' to initiate native TUI handoff for the active run.",
+    "acceptanceCriteria": [
+      "Pressing 'h' suspends the Smithers TUI and hands off to the agent CLI via tea.ExecProcess"
+    ],
+    "dependencies": [
+      "runs-dashboard"
+    ],
+    "sourceContext": [
+      "internal/ui/views/runs.go",
+      "internal/ui/views/livechat.go"
+    ],
+    "implementationNotes": [
+      "Follow the native TUI handoff pattern defined in the design doc."
+    ],
+    "groupId": "runs-and-inspection",
+    "groupName": "Runs And Inspection"
+  },
+  {
+    "id": "runs-realtime-status-updates",
+    "title": "Stream Real-time Run Updates",
+    "type": "feature",
+    "featureName": "RUNS_REALTIME_STATUS_UPDATES",
+    "description": "Subscribe to SSE events in the Run Dashboard to update run states dynamically without polling.",
+    "acceptanceCriteria": [
+      "Dashboard subscribes to the event stream when active",
+      "Run state changes (e.g., pending -> active -> completed) reflect instantly",
+      "SSE connection is cleanly closed when navigating away"
+    ],
+    "dependencies": [
+      "runs-dashboard"
+    ],
+    "sourceContext": [
+      "internal/ui/views/runs.go",
+      "internal/smithers/events.go"
+    ],
+    "implementationNotes": [
+      "Use a Bubble Tea Cmd to listen for SSE messages and return them as tea.Msg updates."
+    ],
+    "groupId": "runs-and-inspection",
+    "groupName": "Runs And Inspection"
+  },
+  {
+    "id": "runs-search",
+    "title": "Run Text Search",
+    "type": "feature",
+    "featureName": "RUNS_SEARCH",
+    "description": "Add a search input box to fuzzy filter the run list by ID, workflow name, or inline details.",
+    "acceptanceCriteria": [
+      "Key shortcut to focus search",
+      "Typing dynamically filters the list"
+    ],
+    "dependencies": [
+      "runs-dashboard"
+    ],
+    "sourceContext": [
+      "internal/ui/views/runs.go"
+    ],
+    "implementationNotes": [
+      "Use the Bubbles textinput component."
+    ],
+    "groupId": "runs-and-inspection",
+    "groupName": "Runs And Inspection"
+  },
+  {
+    "id": "runs-status-sectioning",
+    "title": "Group Runs by Status Sections",
+    "type": "feature",
+    "featureName": "RUNS_STATUS_SECTIONING",
+    "description": "Enhance the Run Dashboard to visually group runs into sections like 'Active', 'Completed Today', and 'Failed'.",
+    "acceptanceCriteria": [
+      "Runs are partitioned by status sections",
+      "Sections map to the GUI parity layout",
+      "List navigation correctly traverses between sections"
+    ],
+    "dependencies": [
+      "runs-dashboard"
+    ],
+    "sourceContext": [
+      "internal/ui/views/runs.go"
+    ],
+    "implementationNotes": [
+      "Update the list component to support section headers that cannot be selected."
+    ],
+    "groupId": "runs-and-inspection",
+    "groupName": "Runs And Inspection"
+  },
+  {
+    "id": "runs-task-tab-chat-logs",
+    "title": "Node Chat Logs Tab",
+    "type": "feature",
+    "featureName": "RUNS_TASK_TAB_CHAT_LOGS",
+    "description": "Implement the Chat Logs tab to view detailed agent communication or raw execution logs for the node.",
+    "acceptanceCriteria": [
+      "Displays the agent interaction or system logs for the node execution",
+      "Supports scrolling through long logs"
+    ],
+    "dependencies": [
+      "runs-node-inspector"
+    ],
+    "sourceContext": [
+      "internal/ui/views/tasktabs.go"
+    ],
+    "implementationNotes": [
+      "Use Bubbles viewport for scrolling content."
+    ],
+    "groupId": "runs-and-inspection",
+    "groupName": "Runs And Inspection"
+  },
+  {
+    "id": "runs-task-tab-config",
+    "title": "Node Config Tab",
+    "type": "feature",
+    "featureName": "RUNS_TASK_TAB_CONFIG",
+    "description": "Implement the Config tab to display configuration parameters for the selected node.",
+    "acceptanceCriteria": [
+      "Shows node execution config (e.g., retries, timeout, tools allowed)"
+    ],
+    "dependencies": [
+      "runs-node-inspector"
+    ],
+    "sourceContext": [
+      "internal/ui/views/tasktabs.go"
+    ],
+    "implementationNotes": [
+      "Map from the node definition config."
+    ],
+    "groupId": "runs-and-inspection",
+    "groupName": "Runs And Inspection"
+  },
+  {
+    "id": "runs-task-tab-input",
+    "title": "Node Input Tab",
+    "type": "feature",
+    "featureName": "RUNS_TASK_TAB_INPUT",
+    "description": "Implement the Input tab to show the payload passed to the selected node.",
+    "acceptanceCriteria": [
+      "Displays JSON or structured text of the node's input payload"
+    ],
+    "dependencies": [
+      "runs-node-inspector"
+    ],
+    "sourceContext": [
+      "internal/ui/views/tasktabs.go",
+      "internal/ui/components/jsontree.go",
+      "../smithers/gui/src/routes/runs/TaskTabs.tsx"
+    ],
+    "implementationNotes": [
+      "Utilize the internal/ui/components/jsontree.go component for rendering."
+    ],
+    "groupId": "runs-and-inspection",
+    "groupName": "Runs And Inspection"
+  },
+  {
+    "id": "runs-task-tab-output",
+    "title": "Node Output Tab",
+    "type": "feature",
+    "featureName": "RUNS_TASK_TAB_OUTPUT",
+    "description": "Implement the Output tab to show the results generated by the selected node.",
+    "acceptanceCriteria": [
+      "Displays JSON or structured text of the node's output",
+      "Shows errors if the node failed"
+    ],
+    "dependencies": [
+      "runs-node-inspector"
+    ],
+    "sourceContext": [
+      "internal/ui/views/tasktabs.go"
+    ],
+    "implementationNotes": [
+      "Similar to the input tab, format the output for readability in the TUI."
+    ],
+    "groupId": "runs-and-inspection",
+    "groupName": "Runs And Inspection"
+  },
+  {
+    "id": "workflows-agent-and-schema-inspection",
+    "title": "Agent and Schema Inspection",
+    "type": "feature",
+    "featureName": "WORKFLOWS_AGENT_AND_SCHEMA_INSPECTION",
+    "description": "Expose the underlying agents and I/O schemas associated with a selected workflow for detailed inspection.",
+    "acceptanceCriteria": [
+      "Show assigned agents for specific workflow nodes.",
+      "Display the JSON structures corresponding to input and output schemas of the nodes.",
+      "Allow users to toggle schema visibility inside the node inspector."
+    ],
+    "dependencies": [
+      "workflows-list"
+    ],
+    "sourceContext": [
+      "internal/ui/views/workflows.go",
+      "../smithers/src/SmithersWorkflow.ts"
+    ],
+    "implementationNotes": [
+      "Surface the `schemaRegistry` and `zodToKeyName` data sent by the Smithers API in the node details pane."
+    ],
+    "groupId": "workflows",
+    "groupName": "Workflows"
+  },
+  {
+    "id": "workflows-dag-inspection",
+    "title": "DAG Inspection Visualizer",
+    "type": "feature",
+    "featureName": "WORKFLOWS_DAG_INSPECTION",
+    "description": "Render a visual representation of the workflow's Directed Acyclic Graph (DAG) structure.",
+    "acceptanceCriteria": [
+      "Render the DAG using ASCII/UTF-8 box-drawing characters in a left-to-right layout.",
+      "Color-code nodes based on their status (e.g., green=done, yellow=running, red=failed, gray=pending).",
+      "Display the DAG overview when inspecting a workflow or viewing an active run."
+    ],
+    "dependencies": [
+      "workflows-list"
+    ],
+    "sourceContext": [
+      "internal/ui/components/dagview.go",
+      "docs/smithers-tui/03-ENGINEERING.md"
+    ],
+    "implementationNotes": [
+      "Implement `RenderDAG(nodes []smithers.Node) string` utilizing topological sorting to group nodes by depth.",
+      "Ensure it fits within standard terminal widths without breaking layout."
+    ],
+    "groupId": "workflows",
+    "groupName": "Workflows"
+  },
+  {
+    "id": "workflows-discovery-from-project",
+    "title": "Discover Workflows From Project",
+    "type": "feature",
+    "featureName": "WORKFLOWS_DISCOVERY_FROM_PROJECT",
+    "description": "Expose the discovery mechanism to fetch and parse workflows located in the .smithers/workflows/ directory.",
+    "acceptanceCriteria": [
+      "The client successfully requests the project's discovered workflows.",
+      "Workflow metadata, including ID, displayName, entryFile, and sourceType, is correctly parsed and passed to the TUI state."
+    ],
+    "dependencies": [
+      "eng-smithers-workflows-client"
+    ],
+    "sourceContext": [
+      "internal/smithers/client.go",
+      "../smithers/src/cli/workflows.ts"
+    ],
+    "implementationNotes": [
+      "Align with how `../smithers/src/cli/workflows.ts` reads `smithers-source:` and `smithers-display-name:` markers.",
+      "Ensure we handle missing or unparseable metadata gracefully without crashing the discovery process."
+    ],
+    "groupId": "workflows",
+    "groupName": "Workflows"
+  },
+  {
+    "id": "workflows-doctor",
+    "title": "Workflow Doctor Diagnostics",
+    "type": "feature",
+    "featureName": "WORKFLOWS_DOCTOR",
+    "description": "Provide a diagnostic view for a workflow to catch misconfigurations, missing agents, or schema errors before execution.",
+    "acceptanceCriteria": [
+      "Run the 'workflow doctor' MCP tool or equivalent validation logic for a selected workflow.",
+      "Render diagnostic warnings and errors clearly in the UI.",
+      "Provide actionable suggestions if a dependency (like an API key or CLI agent) is missing."
+    ],
+    "dependencies": [
+      "workflows-list"
+    ],
+    "sourceContext": [
+      "internal/ui/views/workflows.go",
+      "../smithers/src/cli/workflow-pack.ts"
+    ],
+    "implementationNotes": [
+      "If `workflow doctor` is exposed as an MCP tool, integrate with the existing MCP transport layer.",
+      "Display the output in a split-pane or dedicated diagnostic overlay."
+    ],
+    "groupId": "workflows",
+    "groupName": "Workflows"
+  },
+  {
+    "id": "workflows-dynamic-input-forms",
+    "title": "Dynamic Input Forms for Workflows",
+    "type": "feature",
+    "featureName": "WORKFLOWS_DYNAMIC_INPUT_FORMS",
+    "description": "Generate interactive input forms for executing a workflow based on its declared input schema.",
+    "acceptanceCriteria": [
+      "Selecting a workflow dynamically generates a form corresponding to its input parameters.",
+      "Support string, number, boolean, object, and array types accurately.",
+      "Pre-fill form fields with default values derived from the workflow's definition."
+    ],
+    "dependencies": [
+      "workflows-list"
+    ],
+    "sourceContext": [
+      "internal/ui/components/form.go",
+      "internal/ui/views/workflows.go",
+      "../smithers/gui/src/ui/WorkflowsList.tsx"
+    ],
+    "implementationNotes": [
+      "Mirror the logic found in `../smithers/gui/src/ui/WorkflowsList.tsx` for parsing inputs and setting default states.",
+      "Utilize a Bubble Tea form library (like `huh`) or custom input components to render the form."
+    ],
+    "groupId": "workflows",
+    "groupName": "Workflows"
+  },
+  {
+    "id": "workflows-list",
+    "title": "Workflows List View",
+    "type": "feature",
+    "featureName": "WORKFLOWS_LIST",
+    "description": "Create the main '/workflows' view displaying all available workflows in the project, allowing users to browse them.",
+    "acceptanceCriteria": [
+      "Implement internal/ui/views/workflows.go utilizing a Bubble Tea list or table.",
+      "Display workflow ID, display name, and source type for each discovered workflow.",
+      "Allow keyboard navigation through the workflow list.",
+      "Include a VHS-style happy-path recording test for navigating the workflow list."
+    ],
+    "dependencies": [
+      "workflows-discovery-from-project"
+    ],
+    "sourceContext": [
+      "internal/ui/views/workflows.go",
+      "internal/ui/model/ui.go",
+      "../smithers/gui/src/ui/WorkflowsList.tsx"
+    ],
+    "implementationNotes": [
+      "Use Crush's imperative sub-component pattern as recommended in docs.",
+      "Follow the brand color scheme (Bright cyan for headers, etc.)."
+    ],
+    "groupId": "workflows",
+    "groupName": "Workflows"
+  },
+  {
+    "id": "workflows-run",
+    "title": "Execute Workflow",
+    "type": "feature",
+    "featureName": "WORKFLOWS_RUN",
+    "description": "Connect the dynamic form submission to the execution API, allowing users to start a workflow directly from the TUI.",
+    "acceptanceCriteria": [
+      "Pressing 'Enter' on a completed form submits the payload to the `RunWorkflow` API endpoint.",
+      "Provide immediate visual feedback (e.g., executing spinner, success toast, or error message).",
+      "On successful execution, automatically route the user to the newly created run's live chat or inspector view.",
+      "Include a terminal E2E path modeled on the upstream @microsoft/tui-test harness in ../smithers/tests/tui.e2e.test.ts"
+    ],
+    "dependencies": [
+      "workflows-dynamic-input-forms"
+    ],
+    "sourceContext": [
+      "internal/ui/views/workflows.go",
+      "internal/smithers/client.go",
+      "../smithers/tests/tui.e2e.test.ts",
+      "../smithers/tests/tui-helpers.ts"
+    ],
+    "implementationNotes": [
+      "Ensure keyboard shortcuts (like [Tab] to next field, [Esc] to cancel) match the design spec in `02-DESIGN.md`."
+    ],
+    "groupId": "workflows",
+    "groupName": "Workflows"
+  }
+]

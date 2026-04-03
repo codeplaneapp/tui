@@ -1,0 +1,207 @@
+{
+  "groupId": "workflows",
+  "groupName": "Workflows",
+  "tickets": [
+    {
+      "id": "eng-smithers-workflows-client",
+      "title": "Build Smithers Workflow API Client Subsystem",
+      "type": "engineering",
+      "featureName": null,
+      "description": "Implement the API client methods in the TUI to interact with the Smithers server's workflow endpoints, supporting workflow listing, metadata retrieval, and execution operations.",
+      "acceptanceCriteria": [
+        "Create or update internal/smithers/client.go with ListWorkflows, GetWorkflow, and RunWorkflow methods.",
+        "Ensure the client correctly deserializes workflow schemas and parameters from the Smithers HTTP API.",
+        "Add unit tests for the workflow client methods simulating API responses."
+      ],
+      "dependencies": [],
+      "sourceContext": [
+        "internal/smithers/client.go",
+        "../smithers/src/server/index.ts"
+      ],
+      "implementationNotes": [
+        "Map the HTTP API payloads to Go structs mirroring the DiscoveredWorkflow and Workflow types from Smithers.",
+        "Ensure dual-mode fallback is supported (HTTP preferred, SQLite read-only fallback) for listing."
+      ],
+      "groupId": "workflows",
+      "groupName": "Workflows"
+    },
+    {
+      "id": "workflows-agent-and-schema-inspection",
+      "title": "Agent and Schema Inspection",
+      "type": "feature",
+      "featureName": "WORKFLOWS_AGENT_AND_SCHEMA_INSPECTION",
+      "description": "Expose the underlying agents and I/O schemas associated with a selected workflow for detailed inspection.",
+      "acceptanceCriteria": [
+        "Show assigned agents for specific workflow nodes.",
+        "Display the JSON structures corresponding to input and output schemas of the nodes.",
+        "Allow users to toggle schema visibility inside the node inspector."
+      ],
+      "dependencies": [
+        "workflows-list"
+      ],
+      "sourceContext": [
+        "internal/ui/views/workflows.go",
+        "../smithers/src/SmithersWorkflow.ts"
+      ],
+      "implementationNotes": [
+        "Surface the `schemaRegistry` and `zodToKeyName` data sent by the Smithers API in the node details pane."
+      ],
+      "groupId": "workflows",
+      "groupName": "Workflows"
+    },
+    {
+      "id": "workflows-dag-inspection",
+      "title": "DAG Inspection Visualizer",
+      "type": "feature",
+      "featureName": "WORKFLOWS_DAG_INSPECTION",
+      "description": "Render a visual representation of the workflow's Directed Acyclic Graph (DAG) structure.",
+      "acceptanceCriteria": [
+        "Render the DAG using ASCII/UTF-8 box-drawing characters in a left-to-right layout.",
+        "Color-code nodes based on their status (e.g., green=done, yellow=running, red=failed, gray=pending).",
+        "Display the DAG overview when inspecting a workflow or viewing an active run."
+      ],
+      "dependencies": [
+        "workflows-list"
+      ],
+      "sourceContext": [
+        "internal/ui/components/dagview.go",
+        "docs/smithers-tui/03-ENGINEERING.md"
+      ],
+      "implementationNotes": [
+        "Implement `RenderDAG(nodes []smithers.Node) string` utilizing topological sorting to group nodes by depth.",
+        "Ensure it fits within standard terminal widths without breaking layout."
+      ],
+      "groupId": "workflows",
+      "groupName": "Workflows"
+    },
+    {
+      "id": "workflows-discovery-from-project",
+      "title": "Discover Workflows From Project",
+      "type": "feature",
+      "featureName": "WORKFLOWS_DISCOVERY_FROM_PROJECT",
+      "description": "Expose the discovery mechanism to fetch and parse workflows located in the .smithers/workflows/ directory.",
+      "acceptanceCriteria": [
+        "The client successfully requests the project's discovered workflows.",
+        "Workflow metadata, including ID, displayName, entryFile, and sourceType, is correctly parsed and passed to the TUI state."
+      ],
+      "dependencies": [
+        "eng-smithers-workflows-client"
+      ],
+      "sourceContext": [
+        "internal/smithers/client.go",
+        "../smithers/src/cli/workflows.ts"
+      ],
+      "implementationNotes": [
+        "Align with how `../smithers/src/cli/workflows.ts` reads `smithers-source:` and `smithers-display-name:` markers.",
+        "Ensure we handle missing or unparseable metadata gracefully without crashing the discovery process."
+      ],
+      "groupId": "workflows",
+      "groupName": "Workflows"
+    },
+    {
+      "id": "workflows-doctor",
+      "title": "Workflow Doctor Diagnostics",
+      "type": "feature",
+      "featureName": "WORKFLOWS_DOCTOR",
+      "description": "Provide a diagnostic view for a workflow to catch misconfigurations, missing agents, or schema errors before execution.",
+      "acceptanceCriteria": [
+        "Run the 'workflow doctor' MCP tool or equivalent validation logic for a selected workflow.",
+        "Render diagnostic warnings and errors clearly in the UI.",
+        "Provide actionable suggestions if a dependency (like an API key or CLI agent) is missing."
+      ],
+      "dependencies": [
+        "workflows-list"
+      ],
+      "sourceContext": [
+        "internal/ui/views/workflows.go",
+        "../smithers/src/cli/workflow-pack.ts"
+      ],
+      "implementationNotes": [
+        "If `workflow doctor` is exposed as an MCP tool, integrate with the existing MCP transport layer.",
+        "Display the output in a split-pane or dedicated diagnostic overlay."
+      ],
+      "groupId": "workflows",
+      "groupName": "Workflows"
+    },
+    {
+      "id": "workflows-dynamic-input-forms",
+      "title": "Dynamic Input Forms for Workflows",
+      "type": "feature",
+      "featureName": "WORKFLOWS_DYNAMIC_INPUT_FORMS",
+      "description": "Generate interactive input forms for executing a workflow based on its declared input schema.",
+      "acceptanceCriteria": [
+        "Selecting a workflow dynamically generates a form corresponding to its input parameters.",
+        "Support string, number, boolean, object, and array types accurately.",
+        "Pre-fill form fields with default values derived from the workflow's definition."
+      ],
+      "dependencies": [
+        "workflows-list"
+      ],
+      "sourceContext": [
+        "internal/ui/components/form.go",
+        "internal/ui/views/workflows.go",
+        "../smithers/gui/src/ui/WorkflowsList.tsx"
+      ],
+      "implementationNotes": [
+        "Mirror the logic found in `../smithers/gui/src/ui/WorkflowsList.tsx` for parsing inputs and setting default states.",
+        "Utilize a Bubble Tea form library (like `huh`) or custom input components to render the form."
+      ],
+      "groupId": "workflows",
+      "groupName": "Workflows"
+    },
+    {
+      "id": "workflows-list",
+      "title": "Workflows List View",
+      "type": "feature",
+      "featureName": "WORKFLOWS_LIST",
+      "description": "Create the main '/workflows' view displaying all available workflows in the project, allowing users to browse them.",
+      "acceptanceCriteria": [
+        "Implement internal/ui/views/workflows.go utilizing a Bubble Tea list or table.",
+        "Display workflow ID, display name, and source type for each discovered workflow.",
+        "Allow keyboard navigation through the workflow list.",
+        "Include a VHS-style happy-path recording test for navigating the workflow list."
+      ],
+      "dependencies": [
+        "workflows-discovery-from-project"
+      ],
+      "sourceContext": [
+        "internal/ui/views/workflows.go",
+        "internal/ui/model/ui.go",
+        "../smithers/gui/src/ui/WorkflowsList.tsx"
+      ],
+      "implementationNotes": [
+        "Use Crush's imperative sub-component pattern as recommended in docs.",
+        "Follow the brand color scheme (Bright cyan for headers, etc.)."
+      ],
+      "groupId": "workflows",
+      "groupName": "Workflows"
+    },
+    {
+      "id": "workflows-run",
+      "title": "Execute Workflow",
+      "type": "feature",
+      "featureName": "WORKFLOWS_RUN",
+      "description": "Connect the dynamic form submission to the execution API, allowing users to start a workflow directly from the TUI.",
+      "acceptanceCriteria": [
+        "Pressing 'Enter' on a completed form submits the payload to the `RunWorkflow` API endpoint.",
+        "Provide immediate visual feedback (e.g., executing spinner, success toast, or error message).",
+        "On successful execution, automatically route the user to the newly created run's live chat or inspector view.",
+        "Include a terminal E2E path modeled on the upstream @microsoft/tui-test harness in ../smithers/tests/tui.e2e.test.ts"
+      ],
+      "dependencies": [
+        "workflows-dynamic-input-forms"
+      ],
+      "sourceContext": [
+        "internal/ui/views/workflows.go",
+        "internal/smithers/client.go",
+        "../smithers/tests/tui.e2e.test.ts",
+        "../smithers/tests/tui-helpers.ts"
+      ],
+      "implementationNotes": [
+        "Ensure keyboard shortcuts (like [Tab] to next field, [Esc] to cancel) match the design spec in `02-DESIGN.md`."
+      ],
+      "groupId": "workflows",
+      "groupName": "Workflows"
+    }
+  ]
+}

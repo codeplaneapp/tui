@@ -1,0 +1,399 @@
+{
+  "groupId": "live-chat-and-hijack",
+  "groupName": "Live Chat And Hijack",
+  "tickets": [
+    {
+      "id": "eng-hijack-handoff-util",
+      "title": "Handoff Utility for Hijack",
+      "type": "engineering",
+      "featureName": null,
+      "description": "Implement a reusable wrapper around tea.ExecProcess for cleanly suspending and resuming the TUI.",
+      "acceptanceCriteria": [
+        "Provides a function to execute an external CLI.",
+        "Returns a tea.Cmd that handles the suspend and resume."
+      ],
+      "dependencies": [],
+      "sourceContext": [
+        "internal/ui/util/handoff.go"
+      ],
+      "implementationNotes": [
+        "Create `handoffToProgram(binary string, args []string, cwd string, onReturn func(error) tea.Msg) tea.Cmd`."
+      ],
+      "groupId": "live-chat-and-hijack",
+      "groupName": "Live Chat And Hijack"
+    },
+    {
+      "id": "eng-live-chat-e2e-testing",
+      "title": "Live Chat & Hijack E2E Tests",
+      "type": "engineering",
+      "featureName": null,
+      "description": "Implement E2E testing for the Live Chat and Hijack flows utilizing the Playwright TUI test harness and a VHS recording script.",
+      "acceptanceCriteria": [
+        "Playwright E2E tests exist for opening Live Chat and initiating Hijack.",
+        "A .tape VHS file exists that successfully records a happy-path chat stream."
+      ],
+      "dependencies": [
+        "feat-live-chat-viewer",
+        "feat-hijack-seamless-transition"
+      ],
+      "sourceContext": [
+        "tests/livechat.e2e.test.ts",
+        "tests/vhs/live-chat.tape"
+      ],
+      "implementationNotes": [
+        "Model the E2E tests on `tui.e2e.test.ts` from the Smithers UI v2 project.",
+        "Ensure we await terminal buffer outputs for 'Hijacking run...'."
+      ],
+      "groupId": "live-chat-and-hijack",
+      "groupName": "Live Chat And Hijack"
+    },
+    {
+      "id": "eng-live-chat-scaffolding",
+      "title": "Scaffold Live Chat View Structure",
+      "type": "engineering",
+      "featureName": null,
+      "description": "Create the baseline Bubble Tea view model for the Live Chat Viewer to be routed by the new view stack manager.",
+      "acceptanceCriteria": [
+        "LiveChatView struct implements the View interface.",
+        "Can be pushed to the Router stack."
+      ],
+      "dependencies": [],
+      "sourceContext": [
+        "internal/ui/views/livechat.go",
+        "internal/ui/views/router.go"
+      ],
+      "implementationNotes": [
+        "Define LiveChatView which will hold the runID and SmithersClient.",
+        "Ensure Init() returns a command to start streaming."
+      ],
+      "groupId": "live-chat-and-hijack",
+      "groupName": "Live Chat And Hijack"
+    },
+    {
+      "id": "feat-hijack-conversation-replay-fallback",
+      "title": "Conversation Replay Fallback",
+      "type": "feature",
+      "featureName": "HIJACK_CONVERSATION_REPLAY_FALLBACK",
+      "description": "Provide a fallback to replaying the chat in-TUI if the target agent has no native TUI resume support.",
+      "acceptanceCriteria": [
+        "If agent lacks --resume, fall back to in-TUI conversation loading.",
+        "User can still interact with the session."
+      ],
+      "dependencies": [
+        "feat-hijack-native-cli-resume"
+      ],
+      "sourceContext": [
+        "internal/ui/views/livechat.go"
+      ],
+      "implementationNotes": [
+        "Check agent metadata for resume support.",
+        "If missing, route the history into Crush's native chat model instead of executing an external process."
+      ],
+      "groupId": "live-chat-and-hijack",
+      "groupName": "Live Chat And Hijack"
+    },
+    {
+      "id": "feat-hijack-multi-engine-support",
+      "title": "Multi-Engine Support",
+      "type": "feature",
+      "featureName": "HIJACK_MULTI_ENGINE_SUPPORT",
+      "description": "Support different agent binaries and resume flag combinations for claude-code, codex, amp, etc.",
+      "acceptanceCriteria": [
+        "Agent-specific arguments (e.g., --resume <tok>) are applied correctly based on the engine."
+      ],
+      "dependencies": [
+        "feat-hijack-native-cli-resume"
+      ],
+      "sourceContext": [
+        "internal/smithers/types.go",
+        "internal/ui/views/livechat.go"
+      ],
+      "implementationNotes": [
+        "Map engine types to specific argument formatting logic inside `HijackSession.ResumeArgs()`."
+      ],
+      "groupId": "live-chat-and-hijack",
+      "groupName": "Live Chat And Hijack"
+    },
+    {
+      "id": "feat-hijack-native-cli-resume",
+      "title": "Native CLI Resume Execution",
+      "type": "feature",
+      "featureName": "HIJACK_NATIVE_CLI_RESUME",
+      "description": "Pass the appropriate resume tokens and spawn the agent CLI directly, suspending the Smithers TUI.",
+      "acceptanceCriteria": [
+        "The external CLI starts correctly with the right directory and token.",
+        "Smithers TUI fully relinquishes the TTY."
+      ],
+      "dependencies": [
+        "feat-hijack-seamless-transition"
+      ],
+      "sourceContext": [
+        "internal/ui/views/livechat.go"
+      ],
+      "implementationNotes": [
+        "Extract `AgentBinary`, `ResumeArgs()`, and `CWD` from the `HijackSession` message.",
+        "Execute using `handoffToProgram`."
+      ],
+      "groupId": "live-chat-and-hijack",
+      "groupName": "Live Chat And Hijack"
+    },
+    {
+      "id": "feat-hijack-resume-to-automation",
+      "title": "Resume to Automation on Exit",
+      "type": "feature",
+      "featureName": "HIJACK_RESUME_TO_AUTOMATION",
+      "description": "Automatically refresh the Smithers run state and chat history when the user exits the native agent TUI.",
+      "acceptanceCriteria": [
+        "Upon agent TUI exit, Live Chat Viewer immediately reflects new state.",
+        "User is not left with stale pre-hijack state."
+      ],
+      "dependencies": [
+        "feat-hijack-native-cli-resume"
+      ],
+      "sourceContext": [
+        "internal/ui/views/livechat.go"
+      ],
+      "implementationNotes": [
+        "On `hijackReturnMsg`, call `v.refreshRunState()` to pull the latest events from the Smithers API."
+      ],
+      "groupId": "live-chat-and-hijack",
+      "groupName": "Live Chat And Hijack"
+    },
+    {
+      "id": "feat-hijack-run-command",
+      "title": "Hijack Command",
+      "type": "feature",
+      "featureName": "HIJACK_RUN_COMMAND",
+      "description": "Implement the command and keybinding ('h') to initiate a run hijack.",
+      "acceptanceCriteria": [
+        "Pressing 'h' calls Client.HijackRun().",
+        "Triggers the hijack flow."
+      ],
+      "dependencies": [
+        "feat-live-chat-viewer",
+        "eng-hijack-handoff-util"
+      ],
+      "sourceContext": [
+        "internal/ui/views/livechat.go",
+        "internal/ui/views/runs.go"
+      ],
+      "implementationNotes": [
+        "Add key handler for 'h' in both LiveChatView and RunsView.",
+        "Return a `hijackSessionMsg` on success."
+      ],
+      "groupId": "live-chat-and-hijack",
+      "groupName": "Live Chat And Hijack"
+    },
+    {
+      "id": "feat-hijack-seamless-transition",
+      "title": "Seamless Hijack Transition",
+      "type": "feature",
+      "featureName": "HIJACK_SEAMLESS_TRANSITION",
+      "description": "Handle the visual transition into and out of the hijacked session smoothly, displaying status banners.",
+      "acceptanceCriteria": [
+        "Displays a 'Hijacking run...' message before handoff.",
+        "Displays a summary message when returning from the native TUI.",
+        "Must be verified with a Playwright TUI test capturing the transition text."
+      ],
+      "dependencies": [
+        "feat-hijack-run-command"
+      ],
+      "sourceContext": [
+        "internal/ui/views/livechat.go"
+      ],
+      "implementationNotes": [
+        "Update view state to render a transition banner while `tea.ExecProcess` spins up."
+      ],
+      "groupId": "live-chat-and-hijack",
+      "groupName": "Live Chat And Hijack"
+    },
+    {
+      "id": "feat-live-chat-attempt-tracking",
+      "title": "Attempt Tracking",
+      "type": "feature",
+      "featureName": "LIVE_CHAT_ATTEMPT_TRACKING",
+      "description": "Display the current attempt number in the chat header for the running node.",
+      "acceptanceCriteria": [
+        "Header updates dynamically to show 'Attempt: N'."
+      ],
+      "dependencies": [
+        "feat-live-chat-viewer"
+      ],
+      "sourceContext": [
+        "internal/ui/views/livechat.go"
+      ],
+      "implementationNotes": [
+        "Extract attempt count from the running Node details via the Client."
+      ],
+      "groupId": "live-chat-and-hijack",
+      "groupName": "Live Chat And Hijack"
+    },
+    {
+      "id": "feat-live-chat-follow-mode",
+      "title": "Follow Mode",
+      "type": "feature",
+      "featureName": "LIVE_CHAT_FOLLOW_MODE",
+      "description": "Add an auto-scroll 'follow mode' toggled by pressing 'f'.",
+      "acceptanceCriteria": [
+        "Pressing 'f' toggles follow mode.",
+        "When active, the viewport automatically scrolls to the bottom on new messages.",
+        "When inactive, scrolling is manual."
+      ],
+      "dependencies": [
+        "feat-live-chat-streaming-output"
+      ],
+      "sourceContext": [
+        "internal/ui/views/livechat.go"
+      ],
+      "implementationNotes": [
+        "Add a `following bool` to LiveChatView.",
+        "Call `viewport.GotoBottom()` during Update if following is true."
+      ],
+      "groupId": "live-chat-and-hijack",
+      "groupName": "Live Chat And Hijack"
+    },
+    {
+      "id": "feat-live-chat-relative-timestamps",
+      "title": "Relative Timestamps",
+      "type": "feature",
+      "featureName": "LIVE_CHAT_RELATIVE_TIMESTAMPS",
+      "description": "Render timestamps on chat messages relative to the start of the run (e.g., [00:02]).",
+      "acceptanceCriteria": [
+        "Each message block shows a relative timestamp.",
+        "Calculated accurately from the run's start time."
+      ],
+      "dependencies": [
+        "feat-live-chat-streaming-output"
+      ],
+      "sourceContext": [
+        "internal/ui/views/livechat.go"
+      ],
+      "implementationNotes": [
+        "Calculate time.Since(run.Started) for each block.",
+        "Format as [MM:SS]."
+      ],
+      "groupId": "live-chat-and-hijack",
+      "groupName": "Live Chat And Hijack"
+    },
+    {
+      "id": "feat-live-chat-retry-history",
+      "title": "Retry History",
+      "type": "feature",
+      "featureName": "LIVE_CHAT_RETRY_HISTORY",
+      "description": "Allow navigation between different attempts if retries occurred for the node.",
+      "acceptanceCriteria": [
+        "Users can page through previous attempts' chat logs.",
+        "UI indicates if viewing a historical attempt."
+      ],
+      "dependencies": [
+        "feat-live-chat-attempt-tracking"
+      ],
+      "sourceContext": [
+        "internal/ui/views/livechat.go"
+      ],
+      "implementationNotes": [
+        "Add keybindings to fetch previous attempts via the HTTP API.",
+        "Cache previous attempts locally in the view state."
+      ],
+      "groupId": "live-chat-and-hijack",
+      "groupName": "Live Chat And Hijack"
+    },
+    {
+      "id": "feat-live-chat-side-by-side",
+      "title": "Side by Side Context",
+      "type": "feature",
+      "featureName": "LIVE_CHAT_SIDE_BY_SIDE_CONTEXT",
+      "description": "Multi-pane layout supporting viewing chat alongside the run status list.",
+      "acceptanceCriteria": [
+        "Users can toggle a split pane showing the dashboard and the live chat simultaneously."
+      ],
+      "dependencies": [
+        "feat-live-chat-viewer"
+      ],
+      "sourceContext": [
+        "internal/ui/views/livechat.go",
+        "internal/ui/components/splitpane.go"
+      ],
+      "implementationNotes": [
+        "Integrate with `internal/ui/components/splitpane.go`.",
+        "Render Dashboard on the left and LiveChatView on the right."
+      ],
+      "groupId": "live-chat-and-hijack",
+      "groupName": "Live Chat And Hijack"
+    },
+    {
+      "id": "feat-live-chat-streaming-output",
+      "title": "Streaming Chat Output",
+      "type": "feature",
+      "featureName": "LIVE_CHAT_STREAMING_OUTPUT",
+      "description": "Render real-time streaming of agent prompt, stdout, stderr, and response via Smithers SSE events.",
+      "acceptanceCriteria": [
+        "Chat blocks are appended in real time.",
+        "UI does not block while waiting for events.",
+        "E2E test verifies that text from a background agent run appears in the TUI stream."
+      ],
+      "dependencies": [
+        "feat-live-chat-viewer"
+      ],
+      "sourceContext": [
+        "internal/ui/views/livechat.go",
+        "internal/smithers/client.go"
+      ],
+      "implementationNotes": [
+        "Map Smithers ChatAttempt structures to Crush's chat.Message model.",
+        "Stream via Client.StreamChat(ctx, runID)."
+      ],
+      "groupId": "live-chat-and-hijack",
+      "groupName": "Live Chat And Hijack"
+    },
+    {
+      "id": "feat-live-chat-tool-call-rendering",
+      "title": "Tool Call Rendering",
+      "type": "feature",
+      "featureName": "LIVE_CHAT_TOOL_CALL_RENDERING",
+      "description": "Map Smithers tool calls (from NDJSON) to Crush's tool renderers so they appear correctly in the stream.",
+      "acceptanceCriteria": [
+        "Tool calls render as styled boxes rather than raw JSON.",
+        "Reuses existing Crush tool renderers."
+      ],
+      "dependencies": [
+        "feat-live-chat-streaming-output"
+      ],
+      "sourceContext": [
+        "internal/ui/views/livechat.go",
+        "internal/ui/chat/"
+      ],
+      "implementationNotes": [
+        "Convert Smithers tool calls to mcp.ToolCall and mcp.ToolResult.",
+        "Feed them into Crush's chat renderer component."
+      ],
+      "groupId": "live-chat-and-hijack",
+      "groupName": "Live Chat And Hijack"
+    },
+    {
+      "id": "feat-live-chat-viewer",
+      "title": "Live Chat Viewer UI",
+      "type": "feature",
+      "featureName": "LIVE_CHAT_VIEWER",
+      "description": "Base UI frame for viewing a running agent's chat, showing the run ID, agent name, node, and elapsed time.",
+      "acceptanceCriteria": [
+        "Header displays Run ID, Agent Name, Node, and Time.",
+        "Pressing 'c' on Run Dashboard opens this view.",
+        "Covered by a Playwright-style E2E test verifying header text.",
+        "Covered by a VHS-style recording test displaying the chat."
+      ],
+      "dependencies": [
+        "eng-live-chat-scaffolding"
+      ],
+      "sourceContext": [
+        "internal/ui/views/livechat.go"
+      ],
+      "implementationNotes": [
+        "Follow 02-DESIGN.md section 3.3 for the layout.",
+        "Use Lip Gloss for the header styling."
+      ],
+      "groupId": "live-chat-and-hijack",
+      "groupName": "Live Chat And Hijack"
+    }
+  ]
+}

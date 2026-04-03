@@ -1,0 +1,207 @@
+[
+  {
+    "id": "platform-and-navigation",
+    "name": "Platform And Navigation",
+    "featureNames": [
+      "PLATFORM_SMITHERS_REBRAND",
+      "PLATFORM_SMITHERS_CONFIG_NAMESPACE",
+      "PLATFORM_THIN_FRONTEND_TRANSPORT_LAYER",
+      "PLATFORM_HTTP_API_CLIENT",
+      "PLATFORM_SSE_EVENT_STREAMING",
+      "PLATFORM_MCP_TRANSPORT",
+      "PLATFORM_SHELL_OUT_FALLBACK",
+      "PLATFORM_TUI_HANDOFF_TRANSPORT",
+      "PLATFORM_CHAT_FIRST_INFORMATION_ARCHITECTURE",
+      "PLATFORM_WORKSPACE_AND_SYSTEMS_VIEW_MODEL",
+      "PLATFORM_VIEW_STACK_ROUTER",
+      "PLATFORM_BACK_STACK_NAVIGATION",
+      "PLATFORM_KEYBOARD_FIRST_NAVIGATION",
+      "PLATFORM_SMITHERS_COMMAND_PALETTE_EXTENSIONS",
+      "PLATFORM_SPLIT_PANE_LAYOUTS"
+    ]
+  },
+  {
+    "id": "chat-and-console",
+    "name": "Chat And Console",
+    "featureNames": [
+      "CHAT_SMITHERS_DEFAULT_CONSOLE",
+      "CHAT_SMITHERS_SPECIALIZED_AGENT",
+      "CHAT_SMITHERS_DOMAIN_SYSTEM_PROMPT",
+      "CHAT_SMITHERS_WORKSPACE_CONTEXT_DISCOVERY",
+      "CHAT_SMITHERS_ACTIVE_RUN_SUMMARY",
+      "CHAT_SMITHERS_PENDING_APPROVAL_SUMMARY",
+      "CHAT_SMITHERS_MCP_CONNECTION_STATUS",
+      "CHAT_SMITHERS_HELPBAR_SHORTCUTS",
+      "CHAT_SMITHERS_CUSTOM_TOOL_RENDERERS"
+    ]
+  },
+  {
+    "id": "runs-and-inspection",
+    "name": "Runs And Inspection",
+    "featureNames": [
+      "RUNS_DASHBOARD",
+      "RUNS_STATUS_SECTIONING",
+      "RUNS_REALTIME_STATUS_UPDATES",
+      "RUNS_INLINE_RUN_DETAILS",
+      "RUNS_PROGRESS_VISUALIZATION",
+      "RUNS_FILTER_BY_STATUS",
+      "RUNS_FILTER_BY_WORKFLOW",
+      "RUNS_FILTER_BY_DATE_RANGE",
+      "RUNS_SEARCH",
+      "RUNS_QUICK_APPROVE",
+      "RUNS_QUICK_DENY",
+      "RUNS_QUICK_CANCEL",
+      "RUNS_QUICK_HIJACK",
+      "RUNS_OPEN_LIVE_CHAT",
+      "RUNS_INSPECT_SUMMARY",
+      "RUNS_DAG_OVERVIEW",
+      "RUNS_NODE_INSPECTOR",
+      "RUNS_TASK_TAB_INPUT",
+      "RUNS_TASK_TAB_OUTPUT",
+      "RUNS_TASK_TAB_CONFIG",
+      "RUNS_TASK_TAB_CHAT_LOGS"
+    ]
+  },
+  {
+    "id": "live-chat-and-hijack",
+    "name": "Live Chat And Hijack",
+    "featureNames": [
+      "LIVE_CHAT_VIEWER",
+      "LIVE_CHAT_STREAMING_OUTPUT",
+      "LIVE_CHAT_RELATIVE_TIMESTAMPS",
+      "LIVE_CHAT_ATTEMPT_TRACKING",
+      "LIVE_CHAT_RETRY_HISTORY",
+      "LIVE_CHAT_TOOL_CALL_RENDERING",
+      "LIVE_CHAT_FOLLOW_MODE",
+      "LIVE_CHAT_SIDE_BY_SIDE_CONTEXT",
+      "HIJACK_RUN_COMMAND",
+      "HIJACK_TUI_SUSPEND_RESUME",
+      "HIJACK_NATIVE_CLI_RESUME",
+      "HIJACK_CONVERSATION_REPLAY_FALLBACK",
+      "HIJACK_MULTI_ENGINE_SUPPORT",
+      "HIJACK_RESUME_TO_AUTOMATION",
+      "HIJACK_PRE_HANDOFF_STATUS_SCREEN",
+      "HIJACK_POST_RETURN_STATE_REFRESH",
+      "HIJACK_POST_RETURN_SUMMARY",
+      "HIJACK_AGENT_RESUME_FLAG_MATRIX"
+    ]
+  },
+  {
+    "id": "approvals-and-notifications",
+    "name": "Approvals And Notifications",
+    "featureNames": [
+      "APPROVALS_PENDING_BADGES",
+      "APPROVALS_QUEUE",
+      "APPROVALS_INLINE_APPROVE",
+      "APPROVALS_INLINE_DENY",
+      "APPROVALS_CONTEXT_DISPLAY",
+      "APPROVALS_RECENT_DECISIONS",
+      "NOTIFICATIONS_TOAST_OVERLAYS",
+      "NOTIFICATIONS_APPROVAL_REQUESTS",
+      "NOTIFICATIONS_RUN_FAILURES",
+      "NOTIFICATIONS_RUN_COMPLETIONS"
+    ]
+  },
+  {
+    "id": "time-travel",
+    "name": "Time Travel",
+    "featureNames": [
+      "TIME_TRAVEL_TIMELINE_VIEW",
+      "TIME_TRAVEL_SNAPSHOT_MARKERS",
+      "TIME_TRAVEL_SNAPSHOT_INSPECTOR",
+      "TIME_TRAVEL_SNAPSHOT_DIFF",
+      "TIME_TRAVEL_FORK_FROM_SNAPSHOT",
+      "TIME_TRAVEL_REPLAY_FROM_SNAPSHOT"
+    ]
+  },
+  {
+    "id": "workflows",
+    "name": "Workflows",
+    "featureNames": [
+      "WORKFLOWS_LIST",
+      "WORKFLOWS_DISCOVERY_FROM_PROJECT",
+      "WORKFLOWS_RUN",
+      "WORKFLOWS_DYNAMIC_INPUT_FORMS",
+      "WORKFLOWS_DAG_INSPECTION",
+      "WORKFLOWS_AGENT_AND_SCHEMA_INSPECTION",
+      "WORKFLOWS_DOCTOR"
+    ]
+  },
+  {
+    "id": "agents",
+    "name": "Agents",
+    "featureNames": [
+      "AGENTS_BROWSER",
+      "AGENTS_CLI_DETECTION",
+      "AGENTS_BINARY_PATH_DISPLAY",
+      "AGENTS_AVAILABILITY_STATUS",
+      "AGENTS_AUTH_STATUS_CLASSIFICATION",
+      "AGENTS_ROLE_DISPLAY",
+      "AGENTS_NATIVE_TUI_LAUNCH"
+    ]
+  },
+  {
+    "id": "content-and-prompts",
+    "name": "Content And Prompts",
+    "featureNames": [
+      "TICKETS_LIST",
+      "TICKETS_DETAIL_VIEW",
+      "TICKETS_CREATE",
+      "TICKETS_EDIT_INLINE",
+      "TICKETS_EXTERNAL_EDITOR_HANDOFF",
+      "TICKETS_SPLIT_PANE_LAYOUT",
+      "PROMPTS_LIST",
+      "PROMPTS_SOURCE_EDIT",
+      "PROMPTS_EXTERNAL_EDITOR_HANDOFF",
+      "PROMPTS_PROPS_DISCOVERY",
+      "PROMPTS_LIVE_PREVIEW",
+      "PROMPTS_SAVE"
+    ]
+  },
+  {
+    "id": "systems-and-analytics",
+    "name": "Systems And Analytics",
+    "featureNames": [
+      "SQL_BROWSER",
+      "SQL_TABLE_SIDEBAR",
+      "SQL_QUERY_EDITOR",
+      "SQL_RESULTS_TABLE",
+      "TRIGGERS_LIST",
+      "TRIGGERS_TOGGLE",
+      "TRIGGERS_CREATE",
+      "TRIGGERS_EDIT",
+      "TRIGGERS_DELETE",
+      "SCORES_AND_ROI_DASHBOARD",
+      "SCORES_RUN_EVALUATIONS",
+      "SCORES_TOKEN_USAGE_METRICS",
+      "SCORES_TOOL_CALL_METRICS",
+      "SCORES_LATENCY_METRICS",
+      "SCORES_CACHE_EFFICIENCY_METRICS",
+      "SCORES_DAILY_AND_WEEKLY_SUMMARIES",
+      "SCORES_COST_TRACKING",
+      "MEMORY_BROWSER",
+      "MEMORY_FACT_LIST",
+      "MEMORY_SEMANTIC_RECALL",
+      "MEMORY_CROSS_RUN_MESSAGE_HISTORY"
+    ]
+  },
+  {
+    "id": "mcp-integration",
+    "name": "Mcp Integration",
+    "featureNames": [
+      "MCP_TOOL_DISCOVERY_FROM_SMITHERS_SERVER",
+      "MCP_RUNS_TOOLS",
+      "MCP_OBSERVABILITY_TOOLS",
+      "MCP_CONTROL_TOOLS",
+      "MCP_TIME_TRAVEL_TOOLS",
+      "MCP_WORKFLOW_TOOLS",
+      "MCP_AGENT_TOOLS",
+      "MCP_TICKET_TOOLS",
+      "MCP_PROMPT_TOOLS",
+      "MCP_MEMORY_TOOLS",
+      "MCP_SCORING_TOOLS",
+      "MCP_CRON_TOOLS",
+      "MCP_SQL_TOOLS"
+    ]
+  }
+]

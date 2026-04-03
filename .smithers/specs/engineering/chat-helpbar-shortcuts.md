@@ -1,0 +1,1 @@
+.smithers/tickets/chat-helpbar-shortcuts.md

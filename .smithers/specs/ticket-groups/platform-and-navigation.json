@@ -1,0 +1,343 @@
+{
+  "groupId": "platform-and-navigation",
+  "groupName": "Platform And Navigation",
+  "tickets": [
+    {
+      "id": "platform-back-stack",
+      "title": "Platform: Back Stack Navigation (Esc)",
+      "type": "feature",
+      "featureName": "PLATFORM_BACK_STACK_NAVIGATION",
+      "description": "Wire the Escape key to pop the current view off the stack, providing a standard 'Back' action across the app.",
+      "acceptanceCriteria": [
+        "Pressing Esc on any view pops the stack and returns to the previous view",
+        "Pressing Esc on the Chat view does not crash or pop the Chat view",
+        "Help bar shows '[Esc] Back' when stack > 1"
+      ],
+      "dependencies": [
+        "platform-view-router"
+      ],
+      "sourceContext": [
+        "internal/ui/model/keys.go",
+        "internal/ui/model/ui.go"
+      ],
+      "implementationNotes": [
+        "Add a `Back` key binding in `keys.go`. In `ui.go`'s top-level Update, intercept `Back` and call `m.router.Pop()`, short-circuiting to avoid passing Esc to child models if they don't need it."
+      ],
+      "groupId": "platform-and-navigation",
+      "groupName": "Platform And Navigation"
+    },
+    {
+      "id": "platform-chat-first-ia",
+      "title": "Platform: Chat-First Info Architecture",
+      "type": "feature",
+      "featureName": "PLATFORM_CHAT_FIRST_INFORMATION_ARCHITECTURE",
+      "description": "Initialize the View Router with the Chat view as the root element that can never be popped, ensuring chat is always the home screen.",
+      "acceptanceCriteria": [
+        "Router initializes with Chat at index 0",
+        "Router.Pop() is a no-op if the stack size is 1",
+        "Startup opens directly to Chat"
+      ],
+      "dependencies": [
+        "platform-view-router"
+      ],
+      "sourceContext": [
+        "internal/ui/views/router.go",
+        "internal/ui/model/ui.go"
+      ],
+      "implementationNotes": [
+        "In `NewRouter`, populate the stack `[]View{chat}` and store `chat` on the router explicitly so we can access it."
+      ],
+      "groupId": "platform-and-navigation",
+      "groupName": "Platform And Navigation"
+    },
+    {
+      "id": "platform-config-namespace",
+      "title": "Platform: Update Config Namespace",
+      "type": "feature",
+      "featureName": "PLATFORM_SMITHERS_CONFIG_NAMESPACE",
+      "description": "Change configuration directories and file names from `.crush/` to `.smithers-tui/` and `.smithers-tui.json` to properly isolate state from Crush.",
+      "acceptanceCriteria": [
+        "Configuration is read from .smithers-tui.json instead of crush.json",
+        "Data directory defaults to ~/.config/smithers-tui/ or .smithers-tui/",
+        "Default model and tool settings are tailored for Smithers"
+      ],
+      "dependencies": [
+        "platform-smithers-rebrand"
+      ],
+      "sourceContext": [
+        "internal/config/config.go",
+        "internal/config/defaults.go",
+        "internal/cmd/root.go"
+      ],
+      "implementationNotes": [
+        "Modify config dir generation logic in internal/config to resolve `.smithers-tui` and `smithers-tui.json`."
+      ],
+      "groupId": "platform-and-navigation",
+      "groupName": "Platform And Navigation"
+    },
+    {
+      "id": "platform-http-api-client",
+      "title": "Platform: HTTP API Client Operations",
+      "type": "feature",
+      "featureName": "PLATFORM_HTTP_API_CLIENT",
+      "description": "Implement the HTTP operations on the Smithers client to query and mutate state via the Smithers CLI HTTP server.",
+      "acceptanceCriteria": [
+        "ListRuns, GetRun, and InspectRun methods fetch JSON from /ps and /run endpoints",
+        "Approve, Deny, and Cancel methods perform POST requests to mutate run state",
+        "Client appropriately handles HTTP errors and authorization"
+      ],
+      "dependencies": [
+        "platform-thin-frontend-layer"
+      ],
+      "sourceContext": [
+        "internal/smithers/client.go"
+      ],
+      "implementationNotes": [
+        "Implement basic net/http client requests, returning Go structs.",
+        "Pass apiToken in the Authorization: Bearer header."
+      ],
+      "groupId": "platform-and-navigation",
+      "groupName": "Platform And Navigation"
+    },
+    {
+      "id": "platform-keyboard-nav",
+      "title": "Platform: Keyboard-First Navigation",
+      "type": "feature",
+      "featureName": "PLATFORM_KEYBOARD_FIRST_NAVIGATION",
+      "description": "Register global keyboard shortcuts to immediately jump to primary views (e.g. Ctrl+R for Runs, Ctrl+A for Approvals).",
+      "acceptanceCriteria": [
+        "Ctrl+R bound to Runs Dashboard",
+        "Ctrl+A bound to Approval Queue",
+        "Other key views get corresponding shortcuts",
+        "Shortcuts push the relevant View onto the router stack"
+      ],
+      "dependencies": [
+        "platform-view-router"
+      ],
+      "sourceContext": [
+        "internal/ui/model/keys.go",
+        "internal/ui/model/ui.go"
+      ],
+      "implementationNotes": [
+        "Add `RunDashboard`, `Approvals` to `KeyMap` in `keys.go`. Add switch cases in `ui.go` to construct and push the new views."
+      ],
+      "groupId": "platform-and-navigation",
+      "groupName": "Platform And Navigation"
+    },
+    {
+      "id": "platform-mcp-transport",
+      "title": "Platform: MCP Server Config Integration",
+      "type": "feature",
+      "featureName": "PLATFORM_MCP_TRANSPORT",
+      "description": "Configure the built-in MCP client to spawn and connect to the `smithers mcp-serve` stdio server by default, granting the agent access to all Smithers CLI tools.",
+      "acceptanceCriteria": [
+        "The default config automatically spins up `smithers mcp-serve` as an MCP stdio server",
+        "Smithers tools auto-register with the chat agent",
+        "Status bar indicates the 'smithers' MCP connection is active"
+      ],
+      "dependencies": [
+        "platform-config-namespace"
+      ],
+      "sourceContext": [
+        "internal/config/defaults.go",
+        "internal/config/config.go"
+      ],
+      "implementationNotes": [
+        "Add a 'smithers' server block to DefaultTools.MCPServers specifying the 'smithers' command with 'mcp-serve' args.",
+        "Ensure unused Crush tools (e.g. sourcegraph) are moved to the Disabled tools array."
+      ],
+      "groupId": "platform-and-navigation",
+      "groupName": "Platform And Navigation"
+    },
+    {
+      "id": "platform-palette-extensions",
+      "title": "Platform: Command Palette Extensions",
+      "type": "feature",
+      "featureName": "PLATFORM_SMITHERS_COMMAND_PALETTE_EXTENSIONS",
+      "description": "Extend Crush's Command Palette (accessed via / or Ctrl+P) to include navigation commands for all Smithers views, grouped by Workspace and Systems.",
+      "acceptanceCriteria": [
+        "Palette includes options for Runs Dashboard, Workflows, Agents, etc.",
+        "Palette includes options for SQL Browser, Triggers, etc.",
+        "Selecting a palette option pushes the corresponding View"
+      ],
+      "dependencies": [
+        "platform-view-router"
+      ],
+      "sourceContext": [
+        "internal/ui/model/ui.go",
+        "internal/ui/model/commands.go"
+      ],
+      "implementationNotes": [
+        "Crush likely has a list of palette actions. Expand this list with Smithers actions, utilizing Bubble Tea messages to trigger router pushes on selection."
+      ],
+      "groupId": "platform-and-navigation",
+      "groupName": "Platform And Navigation"
+    },
+    {
+      "id": "platform-shell-out-fallback",
+      "title": "Platform: Shell Out Fallback",
+      "type": "feature",
+      "featureName": "PLATFORM_SHELL_OUT_FALLBACK",
+      "description": "Implement direct CLI shell-out methods as a fallback for mutations when the HTTP API is unavailable.",
+      "acceptanceCriteria": [
+        "Client can invoke `exec.Command(\"smithers\", ...)` for mutations",
+        "Returns parsed JSON output if the CLI is invoked with --json"
+      ],
+      "dependencies": [
+        "platform-thin-frontend-layer"
+      ],
+      "sourceContext": [
+        "internal/smithers/exec.go",
+        "internal/smithers/client.go"
+      ],
+      "implementationNotes": [
+        "Wrap os/exec calls, capturing stdout for JSON unmarshaling and mapping stderr to Go errors."
+      ],
+      "groupId": "platform-and-navigation",
+      "groupName": "Platform And Navigation"
+    },
+    {
+      "id": "platform-smithers-rebrand",
+      "title": "Platform: Rebrand TUI to Smithers",
+      "type": "feature",
+      "featureName": "PLATFORM_SMITHERS_REBRAND",
+      "description": "Fork Crush and rebrand it to Smithers TUI. This requires renaming the Go module, binary names, textual headers, and replacing Crush's ASCII art with Smithers branding.",
+      "acceptanceCriteria": [
+        "Go module is renamed to github.com/anthropic/smithers-tui",
+        "Binary is named smithers-tui",
+        "Header displays SMITHERS instead of Charm CRUSH",
+        "ASCII art logo is updated",
+        "Terminal color scheme matches Smithers brand (cyan/green/magenta palette)"
+      ],
+      "dependencies": [],
+      "sourceContext": [
+        "go.mod",
+        "main.go",
+        "internal/cmd/root.go",
+        "internal/ui/logo/logo.go",
+        "internal/ui/styles/styles.go"
+      ],
+      "implementationNotes": [
+        "Use go mod edit to change the module path.",
+        "Update the lipgloss definitions in internal/ui/styles/styles.go.",
+        "Replace the ASCII string in internal/ui/logo/logo.go."
+      ],
+      "groupId": "platform-and-navigation",
+      "groupName": "Platform And Navigation"
+    },
+    {
+      "id": "platform-split-pane",
+      "title": "Platform: Split Pane Layouts",
+      "type": "feature",
+      "featureName": "PLATFORM_SPLIT_PANE_LAYOUTS",
+      "description": "Create a reusable Split Pane Bubble Tea component that renders two sub-views side-by-side with proportional widths.",
+      "acceptanceCriteria": [
+        "SplitPane component takes a left and right tea.Model",
+        "Handles WindowSizeMsg by dividing horizontal space according to a configurable ratio (e.g. 30/70)",
+        "Passes relevant updates to both children, or focuses one"
+      ],
+      "dependencies": [],
+      "sourceContext": [
+        "internal/ui/components/splitpane.go"
+      ],
+      "implementationNotes": [
+        "Use Lip Gloss's `JoinHorizontal` to render the side-by-side panes. Pass `WindowSizeMsg` down to children after mutating the `Width` to fit their pane bounds."
+      ],
+      "groupId": "platform-and-navigation",
+      "groupName": "Platform And Navigation"
+    },
+    {
+      "id": "platform-sse-streaming",
+      "title": "Platform: SSE Event Streaming Consumer",
+      "type": "feature",
+      "featureName": "PLATFORM_SSE_EVENT_STREAMING",
+      "description": "Implement Server-Sent Events (SSE) consumption in the Smithers client to receive real-time updates for run statuses and chat streaming.",
+      "acceptanceCriteria": [
+        "Client exposes a StreamEvents(ctx) returning a channel of Event structs",
+        "Parses SSE format and decodes the inner JSON payloads",
+        "Recovers connection seamlessly on disconnection"
+      ],
+      "dependencies": [
+        "platform-thin-frontend-layer"
+      ],
+      "sourceContext": [
+        "internal/smithers/events.go",
+        "internal/smithers/client.go"
+      ],
+      "implementationNotes": [
+        "Read from the /events endpoint. Consider using an existing SSE decoder or implement a robust bufio.Scanner loop that handles 'data:' lines."
+      ],
+      "groupId": "platform-and-navigation",
+      "groupName": "Platform And Navigation"
+    },
+    {
+      "id": "platform-thin-frontend-layer",
+      "title": "Platform: Scaffold Thin Frontend Client",
+      "type": "feature",
+      "featureName": "PLATFORM_THIN_FRONTEND_TRANSPORT_LAYER",
+      "description": "Create the foundational `internal/smithers/` client package that handles communication with the Smithers CLI server via HTTP, SSE, and SQLite fallbacks.",
+      "acceptanceCriteria": [
+        "internal/smithers package exists",
+        "Client struct supports configuring an API URL, Token, and local SQLite DB path",
+        "Core data types (Run, Node, Attempt, Event) are defined matching the Smithers server schemas"
+      ],
+      "dependencies": [],
+      "sourceContext": [
+        "internal/smithers/client.go",
+        "internal/smithers/types.go"
+      ],
+      "implementationNotes": [
+        "This is just the struct and types scaffolding; actual methods will be added in subsequent tickets.",
+        "Use standard Go context.Context for all future client operations."
+      ],
+      "groupId": "platform-and-navigation",
+      "groupName": "Platform And Navigation"
+    },
+    {
+      "id": "platform-view-model",
+      "title": "Platform: View Stack Architecture",
+      "type": "feature",
+      "featureName": "PLATFORM_WORKSPACE_AND_SYSTEMS_VIEW_MODEL",
+      "description": "Introduce the View interface representing distinct TUI screens (Runs, SQL, Timeline, Chat) adhering to the Workspace/Systems separation.",
+      "acceptanceCriteria": [
+        "View interface defined with Init, Update, View, and Name methods",
+        "ShortHelp() method added to View to power contextual help bars"
+      ],
+      "dependencies": [],
+      "sourceContext": [
+        "internal/ui/views/router.go"
+      ],
+      "implementationNotes": [
+        "Define the View interface. This abstracts the generic tea.Model so we can add Smithers-specific view metadata like Name and Help keys."
+      ],
+      "groupId": "platform-and-navigation",
+      "groupName": "Platform And Navigation"
+    },
+    {
+      "id": "platform-view-router",
+      "title": "Platform: Implement View Stack Router",
+      "type": "feature",
+      "featureName": "PLATFORM_VIEW_STACK_ROUTER",
+      "description": "Build the stack-based router that manages pushing and popping Views and delegates Bubble Tea messages to the active View.",
+      "acceptanceCriteria": [
+        "Router struct tracks a stack of Views ([]View)",
+        "Push(v) and Pop() methods modify the stack",
+        "Current() returns the top of the stack",
+        "The main Bubble Tea Update and View functions delegate to Router.Current()"
+      ],
+      "dependencies": [
+        "platform-view-model"
+      ],
+      "sourceContext": [
+        "internal/ui/views/router.go",
+        "internal/ui/model/ui.go"
+      ],
+      "implementationNotes": [
+        "Modify the main `UI` struct in internal/ui/model/ui.go to embed the Router.",
+        "Pass `tea.Msg` through to `m.router.Current().Update(msg)`."
+      ],
+      "groupId": "platform-and-navigation",
+      "groupName": "Platform And Navigation"
+    }
+  ]
+}
