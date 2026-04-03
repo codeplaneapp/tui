@@ -383,3 +383,46 @@ func TestUpdateParentSessionCost(t *testing.T) {
 		assert.InDelta(t, 0.0, updated.Cost, 1e-9)
 	})
 }
+
+func TestCoordinatorResolveAgent(t *testing.T) {
+	t.Run("prefers smithers agent when configured", func(t *testing.T) {
+		cfg, err := config.Init(t.TempDir(), "", false)
+		require.NoError(t, err)
+
+		cfg.Config().Smithers = &config.SmithersConfig{
+			WorkflowDir: ".smithers/workflows",
+		}
+		cfg.SetupAgents()
+
+		coord := &coordinator{}
+		agentName, agentCfg, err := coord.resolveAgent(cfg)
+		require.NoError(t, err)
+		assert.Equal(t, config.AgentSmithers, agentName)
+		assert.Equal(t, config.AgentSmithers, agentCfg.ID)
+	})
+
+	t.Run("falls back to coder agent when smithers is not configured", func(t *testing.T) {
+		cfg, err := config.Init(t.TempDir(), "", false)
+		require.NoError(t, err)
+
+		cfg.Config().Smithers = nil
+		cfg.SetupAgents()
+
+		coord := &coordinator{}
+		agentName, agentCfg, err := coord.resolveAgent(cfg)
+		require.NoError(t, err)
+		assert.Equal(t, config.AgentCoder, agentName)
+		assert.Equal(t, config.AgentCoder, agentCfg.ID)
+	})
+
+	t.Run("returns an error when no supported agent exists", func(t *testing.T) {
+		cfg, err := config.Init(t.TempDir(), "", false)
+		require.NoError(t, err)
+
+		cfg.Config().Agents = map[string]config.Agent{}
+
+		coord := &coordinator{}
+		_, _, err = coord.resolveAgent(cfg)
+		require.ErrorIs(t, err, errCoderAgentNotConfigured)
+	})
+}

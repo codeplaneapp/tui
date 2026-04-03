@@ -26,4 +26,28 @@ func TestConfig_AgentIDs(t *testing.T) {
 		require.True(t, ok)
 		assert.Equal(t, AgentTask, taskAgent.ID, "Task agent ID should be '%s'", AgentTask)
 	})
+
+	t.Run("Smithers agent should not exist without smithers config", func(t *testing.T) {
+		_, ok := cfg.Agents[AgentSmithers]
+		assert.False(t, ok)
+	})
+}
+
+func TestConfig_AgentIDsWithSmithers(t *testing.T) {
+	cfg := &Config{
+		Options: &Options{
+			DisabledTools: []string{},
+		},
+		Smithers: &SmithersConfig{
+			WorkflowDir: ".smithers/workflows",
+		},
+	}
+	cfg.SetupAgents()
+
+	t.Run("Smithers agent should have correct ID", func(t *testing.T) {
+		smithersAgent, ok := cfg.Agents[AgentSmithers]
+		require.True(t, ok)
+		assert.Equal(t, AgentSmithers, smithersAgent.ID, "Smithers agent ID should be '%s'", AgentSmithers)
+		assert.Equal(t, "Smithers", smithersAgent.Name)
+	})
 }

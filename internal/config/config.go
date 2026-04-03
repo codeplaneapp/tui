@@ -59,8 +59,9 @@ const (
 )
 
 const (
-	AgentCoder string = "coder"
-	AgentTask  string = "task"
+	AgentCoder    string = "coder"
+	AgentTask     string = "task"
+	AgentSmithers string = "smithers"
 )
 
 type SelectedModel struct {
@@ -369,6 +370,13 @@ func (t ToolGrep) GetTimeout() time.Duration {
 	return ptrValOr(t.Timeout, 5*time.Second)
 }
 
+type SmithersConfig struct {
+	DBPath      string `json:"dbPath,omitempty" jsonschema:"description=Path to the Smithers SQLite database file,example=.smithers/smithers.db"`
+	APIURL      string `json:"apiUrl,omitempty" jsonschema:"description=Base URL for the Smithers HTTP API,example=http://localhost:7331"`
+	APIToken    string `json:"apiToken,omitempty" jsonschema:"description=Bearer token used for the Smithers HTTP API"`
+	WorkflowDir string `json:"workflowDir,omitempty" jsonschema:"description=Path to Smithers workflow definitions,example=.smithers/workflows"`
+}
+
 // Config holds the configuration for crush.
 type Config struct {
 	Schema string `json:"$schema,omitempty"`
@@ -391,6 +399,8 @@ type Config struct {
 	Permissions *Permissions `json:"permissions,omitempty" jsonschema:"description=Permission settings for tool usage"`
 
 	Tools Tools `json:"tools,omitzero" jsonschema:"description=Tool configurations"`
+
+	Smithers *SmithersConfig `json:"smithers,omitempty" jsonschema:"description=Smithers integration settings"`
 
 	Agents map[string]Agent `json:"-"`
 }
@@ -533,6 +543,17 @@ func (c *Config) SetupAgents() {
 			// NO MCPs or LSPs by default
 			AllowedMCP: map[string][]string{},
 		},
+	}
+
+	if c.Smithers != nil {
+		agents[AgentSmithers] = Agent{
+			ID:           AgentSmithers,
+			Name:         "Smithers",
+			Description:  "A specialized agent for managing Smithers AI workflows.",
+			Model:        SelectedModelTypeLarge,
+			ContextPaths: c.Options.ContextPaths,
+			AllowedTools: allowedTools,
+		}
 	}
 	c.Agents = agents
 }
