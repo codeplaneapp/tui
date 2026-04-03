@@ -88,6 +88,12 @@ type (
 	ActionEnableDockerMCP struct{}
 	// ActionDisableDockerMCP is a message to disable Docker MCP.
 	ActionDisableDockerMCP struct{}
+	// ActionOpenAgentsView is a message to navigate to the agents view.
+	ActionOpenAgentsView struct{}
+	// ActionOpenTicketsView is a message to navigate to the tickets view.
+	ActionOpenTicketsView struct{}
+	// ActionOpenApprovalsView is a message to navigate to the approvals view.
+	ActionOpenApprovalsView struct{}
 )
 
 // Messages for API key input dialog.
