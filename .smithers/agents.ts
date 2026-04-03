@@ -12,8 +12,8 @@ export const providers = {
 
 export const roleChains = {
   spec: [providers.claude, providers.codex],
-  research: [providers.gemini, providers.kimi, providers.codex, providers.claude],
-  plan: [providers.gemini, providers.codex, providers.claude, providers.kimi],
+  research: [providers.codex, providers.kimi, providers.gemini, providers.claude],
+  plan: [providers.codex, providers.gemini, providers.claude, providers.kimi],
   implement: [providers.codex, providers.amp, providers.gemini, providers.claude, providers.kimi],
   validate: [providers.codex, providers.amp, providers.gemini],
   review: [providers.claude, providers.amp, providers.codex],
