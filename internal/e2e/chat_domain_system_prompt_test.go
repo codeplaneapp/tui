@@ -12,12 +12,12 @@ import (
 func writeGlobalConfig(t *testing.T, dir, body string) {
 	t.Helper()
 	require.NoError(t, os.MkdirAll(dir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "crush.json"), []byte(body), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "smithers-tui.json"), []byte(body), 0o644))
 }
 
 func TestSmithersDomainSystemPrompt_TUI(t *testing.T) {
-	if os.Getenv("CRUSH_TUI_E2E") != "1" {
-		t.Skip("set CRUSH_TUI_E2E=1 to run terminal E2E tests")
+	if os.Getenv("SMITHERS_TUI_E2E") != "1" {
+		t.Skip("set SMITHERS_TUI_E2E=1 to run terminal E2E tests")
 	}
 
 	configDir := t.TempDir()
@@ -29,8 +29,8 @@ func TestSmithersDomainSystemPrompt_TUI(t *testing.T) {
   }
 }`)
 
-	t.Setenv("CRUSH_GLOBAL_CONFIG", configDir)
-	t.Setenv("CRUSH_GLOBAL_DATA", dataDir)
+	t.Setenv("SMITHERS_TUI_GLOBAL_CONFIG", configDir)
+	t.Setenv("SMITHERS_TUI_GLOBAL_DATA", dataDir)
 
 	tui := launchTUI(t)
 	defer tui.Terminate()
@@ -39,16 +39,16 @@ func TestSmithersDomainSystemPrompt_TUI(t *testing.T) {
 }
 
 func TestSmithersDomainSystemPrompt_CoderFallback_TUI(t *testing.T) {
-	if os.Getenv("CRUSH_TUI_E2E") != "1" {
-		t.Skip("set CRUSH_TUI_E2E=1 to run terminal E2E tests")
+	if os.Getenv("SMITHERS_TUI_E2E") != "1" {
+		t.Skip("set SMITHERS_TUI_E2E=1 to run terminal E2E tests")
 	}
 
 	configDir := t.TempDir()
 	dataDir := t.TempDir()
 	writeGlobalConfig(t, configDir, `{}`)
 
-	t.Setenv("CRUSH_GLOBAL_CONFIG", configDir)
-	t.Setenv("CRUSH_GLOBAL_DATA", dataDir)
+	t.Setenv("SMITHERS_TUI_GLOBAL_CONFIG", configDir)
+	t.Setenv("SMITHERS_TUI_GLOBAL_DATA", dataDir)
 
 	tui := launchTUI(t)
 	defer tui.Terminate()
