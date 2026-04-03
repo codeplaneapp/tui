@@ -25,8 +25,8 @@ type ConfigStore struct {
 	config         *Config
 	workingDir     string
 	resolver       VariableResolver
-	globalDataPath string // ~/.local/share/crush/crush.json
-	workspacePath  string // .crush/crush.json
+	globalDataPath string // ~/.local/share/smithers-tui/smithers-tui.json
+	workspacePath  string // .smithers-tui/smithers-tui.json
 	knownProviders []catwalk.Provider
 }
 
