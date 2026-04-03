@@ -60,6 +60,18 @@ func TestConfig_setDefaults(t *testing.T) {
 	}
 }
 
+func TestConfig_setDefaultsWithSmithers(t *testing.T) {
+	cfg := &Config{
+		Smithers: &SmithersConfig{},
+	}
+
+	cfg.setDefaults("/tmp", "")
+
+	require.NotNil(t, cfg.Smithers)
+	require.Equal(t, filepath.Join(".smithers", "smithers.db"), cfg.Smithers.DBPath)
+	require.Equal(t, filepath.Join(".smithers", "workflows"), cfg.Smithers.WorkflowDir)
+}
+
 func TestConfig_configureProviders(t *testing.T) {
 	knownProviders := []catwalk.Provider{
 		{
@@ -473,6 +485,25 @@ func TestConfig_setupAgentsWithNoDisabledTools(t *testing.T) {
 	taskAgent, ok := cfg.Agents[AgentTask]
 	require.True(t, ok)
 	assert.Equal(t, []string{"glob", "grep", "ls", "sourcegraph", "view"}, taskAgent.AllowedTools)
+}
+
+func TestConfig_setupAgentsWithSmithers(t *testing.T) {
+	cfg := &Config{
+		Options: &Options{
+			DisabledTools: []string{},
+		},
+		Smithers: &SmithersConfig{
+			WorkflowDir: ".smithers/workflows",
+		},
+	}
+
+	cfg.SetupAgents()
+
+	smithersAgent, ok := cfg.Agents[AgentSmithers]
+	require.True(t, ok)
+	assert.Equal(t, AgentSmithers, smithersAgent.ID)
+	assert.Equal(t, "Smithers", smithersAgent.Name)
+	assert.Equal(t, allToolNames(), smithersAgent.AllowedTools)
 }
 
 func TestConfig_setupAgentsWithDisabledTools(t *testing.T) {

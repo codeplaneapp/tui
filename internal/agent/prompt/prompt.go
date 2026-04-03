@@ -20,24 +20,30 @@ import (
 
 // Prompt represents a template-based prompt generator.
 type Prompt struct {
-	name       string
-	template   string
-	now        func() time.Time
-	platform   string
-	workingDir string
+	name                string
+	template            string
+	now                 func() time.Time
+	platform            string
+	workingDir          string
+	smithersMode        bool
+	smithersWorkflowDir string
+	smithersMCPServer   string
 }
 
 type PromptDat struct {
-	Provider      string
-	Model         string
-	Config        config.Config
-	WorkingDir    string
-	IsGitRepo     bool
-	Platform      string
-	Date          string
-	GitStatus     string
-	ContextFiles  []ContextFile
-	AvailSkillXML string
+	Provider            string
+	Model               string
+	Config              config.Config
+	WorkingDir          string
+	IsGitRepo           bool
+	Platform            string
+	Date                string
+	GitStatus           string
+	ContextFiles        []ContextFile
+	AvailSkillXML       string
+	SmithersMode        bool
+	SmithersWorkflowDir string
+	SmithersMCPServer   string
 }
 
 type ContextFile struct {
@@ -62,6 +68,14 @@ func WithPlatform(platform string) Option {
 func WithWorkingDir(workingDir string) Option {
 	return func(p *Prompt) {
 		p.workingDir = workingDir
+	}
+}
+
+func WithSmithersMode(workflowDir, mcpServer string) Option {
+	return func(p *Prompt) {
+		p.smithersMode = true
+		p.smithersWorkflowDir = workflowDir
+		p.smithersMCPServer = mcpServer
 	}
 }
 
@@ -202,14 +216,17 @@ func (p *Prompt) promptData(ctx context.Context, provider, model string, store *
 
 	isGit := isGitRepo(store.WorkingDir())
 	data := PromptDat{
-		Provider:      provider,
-		Model:         model,
-		Config:        *cfg,
-		WorkingDir:    filepath.ToSlash(workingDir),
-		IsGitRepo:     isGit,
-		Platform:      platform,
-		Date:          p.now().Format("1/2/2006"),
-		AvailSkillXML: availSkillXML,
+		Provider:            provider,
+		Model:               model,
+		Config:              *cfg,
+		WorkingDir:          filepath.ToSlash(workingDir),
+		IsGitRepo:           isGit,
+		Platform:            platform,
+		Date:                p.now().Format("1/2/2006"),
+		AvailSkillXML:       availSkillXML,
+		SmithersMode:        p.smithersMode,
+		SmithersWorkflowDir: p.smithersWorkflowDir,
+		SmithersMCPServer:   p.smithersMCPServer,
 	}
 	if isGit {
 		var err error

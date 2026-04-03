@@ -83,8 +83,9 @@ type coordinator struct {
 	lspManager  *lsp.Manager
 	notify      pubsub.Publisher[notify.Notification]
 
-	currentAgent SessionAgent
-	agents       map[string]SessionAgent
+	currentAgent     SessionAgent
+	currentAgentName string
+	agents           map[string]SessionAgent
 
 	readyWg errgroup.Group
 }
@@ -112,24 +113,45 @@ func NewCoordinator(
 		agents:      make(map[string]SessionAgent),
 	}
 
-	agentCfg, ok := cfg.Config().Agents[config.AgentCoder]
-	if !ok {
-		return nil, errCoderAgentNotConfigured
-	}
-
-	// TODO: make this dynamic when we support multiple agents
-	prompt, err := coderPrompt(prompt.WithWorkingDir(c.cfg.WorkingDir()))
+	agentName, agentCfg, err := c.resolveAgent(cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	agent, err := c.buildAgent(ctx, prompt, agentCfg, false)
+	promptOpts := []prompt.Option{prompt.WithWorkingDir(c.cfg.WorkingDir())}
+	var systemPrompt *prompt.Prompt
+	switch agentName {
+	case config.AgentSmithers:
+		workflowDir := ""
+		if smithersCfg := cfg.Config().Smithers; smithersCfg != nil {
+			workflowDir = smithersCfg.WorkflowDir
+		}
+		systemPrompt, err = smithersPrompt(append(promptOpts, prompt.WithSmithersMode(workflowDir, "smithers"))...)
+	default:
+		systemPrompt, err = coderPrompt(promptOpts...)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	agent, err := c.buildAgent(ctx, systemPrompt, agentCfg, false)
 	if err != nil {
 		return nil, err
 	}
 	c.currentAgent = agent
-	c.agents[config.AgentCoder] = agent
+	c.currentAgentName = agentName
+	c.agents[agentName] = agent
 	return c, nil
+}
+
+func (c *coordinator) resolveAgent(cfg *config.ConfigStore) (string, config.Agent, error) {
+	if agentCfg, ok := cfg.Config().Agents[config.AgentSmithers]; ok {
+		return config.AgentSmithers, agentCfg, nil
+	}
+	if agentCfg, ok := cfg.Config().Agents[config.AgentCoder]; ok {
+		return config.AgentCoder, agentCfg, nil
+	}
+	return "", config.Agent{}, errCoderAgentNotConfigured
 }
 
 // Run implements Coordinator.
@@ -890,9 +912,13 @@ func (c *coordinator) UpdateModels(ctx context.Context) error {
 	}
 	c.currentAgent.SetModels(large, small)
 
-	agentCfg, ok := c.cfg.Config().Agents[config.AgentCoder]
+	agentCfg, ok := c.cfg.Config().Agents[c.currentAgentName]
 	if !ok {
-		return errCoderAgentNotConfigured
+		_, resolvedAgentCfg, err := c.resolveAgent(c.cfg)
+		if err != nil {
+			return err
+		}
+		agentCfg = resolvedAgentCfg
 	}
 
 	tools, err := c.buildTools(ctx, agentCfg)

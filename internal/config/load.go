@@ -391,6 +391,10 @@ func (c *Config) setDefaults(workingDir, dataDir string) {
 	if c.LSP == nil {
 		c.LSP = make(map[string]LSPConfig)
 	}
+	if c.Smithers != nil {
+		c.Smithers.DBPath = cmp.Or(c.Smithers.DBPath, filepath.Join(".smithers", "smithers.db"))
+		c.Smithers.WorkflowDir = cmp.Or(c.Smithers.WorkflowDir, filepath.Join(".smithers", "workflows"))
+	}
 
 	// Apply defaults to LSP configurations
 	c.applyLSPDefaults()
