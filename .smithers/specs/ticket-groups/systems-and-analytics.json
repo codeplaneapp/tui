@@ -1,0 +1,665 @@
+{
+  "groupId": "systems-and-analytics",
+  "groupName": "Systems And Analytics",
+  "tickets": [
+    {
+      "id": "eng-memory-e2e",
+      "title": "Memory Browser E2E Tests",
+      "type": "engineering",
+      "featureName": null,
+      "description": "Create automated tests for the Memory Browser to ensure recall and facts list work.",
+      "acceptanceCriteria": [
+        "Includes a terminal E2E Playwright-style test.",
+        "Includes a VHS-style happy-path recording demonstrating semantic recall."
+      ],
+      "dependencies": [
+        "feat-memory-fact-list",
+        "feat-memory-semantic-recall",
+        "feat-memory-cross-run-message-history"
+      ],
+      "sourceContext": [
+        "../smithers/tests/tui.e2e.test.ts"
+      ],
+      "implementationNotes": [],
+      "groupId": "systems-and-analytics",
+      "groupName": "Systems And Analytics"
+    },
+    {
+      "id": "eng-memory-scaffolding",
+      "title": "Scaffold Memory Browser View",
+      "type": "engineering",
+      "featureName": null,
+      "description": "Create the base Bubble Tea model and routing for the `/memory` view.",
+      "acceptanceCriteria": [
+        "internal/ui/memory.go is created.",
+        "Routing to `/memory` is enabled."
+      ],
+      "dependencies": [
+        "eng-systems-api-client"
+      ],
+      "sourceContext": [
+        "internal/ui/memory.go"
+      ],
+      "implementationNotes": [],
+      "groupId": "systems-and-analytics",
+      "groupName": "Systems And Analytics"
+    },
+    {
+      "id": "eng-scores-e2e",
+      "title": "Scores Dashboard E2E Tests",
+      "type": "engineering",
+      "featureName": null,
+      "description": "Create automated tests for the Scores Dashboard to ensure data renders correctly.",
+      "acceptanceCriteria": [
+        "Includes a terminal E2E Playwright-style test.",
+        "Includes a VHS-style happy-path recording."
+      ],
+      "dependencies": [
+        "feat-scores-daily-and-weekly-summaries",
+        "feat-scores-run-evaluations",
+        "feat-scores-token-usage-metrics",
+        "feat-scores-tool-call-metrics",
+        "feat-scores-latency-metrics",
+        "feat-scores-cache-efficiency-metrics",
+        "feat-scores-cost-tracking"
+      ],
+      "sourceContext": [
+        "../smithers/tests/tui.e2e.test.ts"
+      ],
+      "implementationNotes": [
+        "Mock the GetScores client method to provide consistent metrics."
+      ],
+      "groupId": "systems-and-analytics",
+      "groupName": "Systems And Analytics"
+    },
+    {
+      "id": "eng-scores-scaffolding",
+      "title": "Scaffold Scores Dashboard View",
+      "type": "engineering",
+      "featureName": null,
+      "description": "Create the base Bubble Tea model and routing for the `/scores` view.",
+      "acceptanceCriteria": [
+        "internal/ui/scores.go is created.",
+        "Routing to `/scores` is enabled."
+      ],
+      "dependencies": [
+        "eng-systems-api-client"
+      ],
+      "sourceContext": [
+        "internal/ui/scores.go"
+      ],
+      "implementationNotes": [
+        "This view acts as a static dashboard. Focus on layout configuration with lipgloss."
+      ],
+      "groupId": "systems-and-analytics",
+      "groupName": "Systems And Analytics"
+    },
+    {
+      "id": "eng-sql-e2e",
+      "title": "SQL Browser E2E Tests",
+      "type": "engineering",
+      "featureName": null,
+      "description": "Create automated tests for the SQL Browser view to ensure regressions are not introduced.",
+      "acceptanceCriteria": [
+        "Includes a terminal E2E test modeled on the upstream `@microsoft/tui-test` harness in `../smithers/tests/tui.e2e.test.ts`.",
+        "Includes at least one VHS-style happy-path recording test verifying table selection and query execution."
+      ],
+      "dependencies": [
+        "feat-sql-table-sidebar",
+        "feat-sql-results-table"
+      ],
+      "sourceContext": [
+        "../smithers/tests/tui.e2e.test.ts",
+        "../smithers/tests/tui-helpers.ts"
+      ],
+      "implementationNotes": [
+        "Mock the Smithers API client to return deterministic database results for testing."
+      ],
+      "groupId": "systems-and-analytics",
+      "groupName": "Systems And Analytics"
+    },
+    {
+      "id": "eng-sql-scaffolding",
+      "title": "Scaffold SQL Browser View",
+      "type": "engineering",
+      "featureName": null,
+      "description": "Create the base Bubble Tea model and routing for the `/sql` view. This establishes the UI shell that will hold the table sidebar, query editor, and results table.",
+      "acceptanceCriteria": [
+        "internal/ui/sqlbrowser.go is created with a base Bubble Tea model.",
+        "Typing `/sql` in the console or selecting it from the palette navigates to this view.",
+        "Escape key pops the view off the back stack."
+      ],
+      "dependencies": [
+        "eng-systems-api-client"
+      ],
+      "sourceContext": [
+        "internal/ui/sqlbrowser.go",
+        "internal/ui/model/"
+      ],
+      "implementationNotes": [
+        "Follow the established UI architecture in `internal/ui`. Use `tea.Model` patterns."
+      ],
+      "groupId": "systems-and-analytics",
+      "groupName": "Systems And Analytics"
+    },
+    {
+      "id": "eng-systems-api-client",
+      "title": "Implement Systems and Analytics API Client Methods",
+      "type": "engineering",
+      "featureName": null,
+      "description": "Expand the Smithers HTTP/SQLite client to include methods required for the Systems and Analytics views. This includes API bindings for executing raw SQL queries, retrieving scores and metrics, memory recall/listing, and cron/trigger CRUD operations. Must support dual-mode access (HTTP when server running, SQLite fallback when direct db is present) for read operations where applicable.",
+      "acceptanceCriteria": [
+        "Client struct includes ExecuteSQL, GetScores, ListMemoryFacts, RecallMemory, and cron management methods.",
+        "Methods use HTTP API when available, falling back to direct SQLite access for read operations if possible.",
+        "Unit tests confirm requests are routed to the correct transport layer."
+      ],
+      "dependencies": [],
+      "sourceContext": [
+        "internal/app/",
+        "../smithers/src/server/"
+      ],
+      "implementationNotes": [
+        "Refer to PRD Section 6.11-6.15 and Engineering Section 3.1.2.",
+        "Cron management might need to shell out (`exec.Command`) to `smithers cron` if explicit HTTP endpoints don't exist."
+      ],
+      "groupId": "systems-and-analytics",
+      "groupName": "Systems And Analytics"
+    },
+    {
+      "id": "eng-triggers-e2e",
+      "title": "Triggers E2E Tests",
+      "type": "engineering",
+      "featureName": null,
+      "description": "Create automated tests for the Triggers Manager to ensure CRUD operations work.",
+      "acceptanceCriteria": [
+        "Includes a terminal E2E test modeled on the upstream `@microsoft/tui-test` harness.",
+        "Includes a VHS-style happy-path recording demonstrating toggle, edit, and delete."
+      ],
+      "dependencies": [
+        "feat-triggers-toggle",
+        "feat-triggers-create",
+        "feat-triggers-edit",
+        "feat-triggers-delete"
+      ],
+      "sourceContext": [
+        "../smithers/tests/tui.e2e.test.ts"
+      ],
+      "implementationNotes": [],
+      "groupId": "systems-and-analytics",
+      "groupName": "Systems And Analytics"
+    },
+    {
+      "id": "eng-triggers-scaffolding",
+      "title": "Scaffold Triggers Manager View",
+      "type": "engineering",
+      "featureName": null,
+      "description": "Create the base Bubble Tea model and routing for the `/triggers` view.",
+      "acceptanceCriteria": [
+        "internal/ui/triggers.go is created with a base model.",
+        "Routing to `/triggers` is enabled."
+      ],
+      "dependencies": [
+        "eng-systems-api-client"
+      ],
+      "sourceContext": [
+        "internal/ui/triggers.go"
+      ],
+      "implementationNotes": [
+        "Review `../smithers/gui-ref/src/ui/tabs/TriggersList.tsx` for state inspiration."
+      ],
+      "groupId": "systems-and-analytics",
+      "groupName": "Systems And Analytics"
+    },
+    {
+      "id": "feat-memory-browser",
+      "title": "Memory Browser Layout",
+      "type": "feature",
+      "featureName": "MEMORY_BROWSER",
+      "description": "Implement the core structural layout for the Memory Browser, supporting lists and detail panes.",
+      "acceptanceCriteria": [
+        "Layout supports a list pane on one side and a detail pane on the other."
+      ],
+      "dependencies": [
+        "eng-memory-scaffolding"
+      ],
+      "sourceContext": [
+        "internal/ui/memory.go"
+      ],
+      "implementationNotes": [
+        "Use lipgloss to structure a responsive 2-pane UI."
+      ],
+      "groupId": "systems-and-analytics",
+      "groupName": "Systems And Analytics"
+    },
+    {
+      "id": "feat-memory-cross-run-message-history",
+      "title": "Cross-Run Message History",
+      "type": "feature",
+      "featureName": "MEMORY_CROSS_RUN_MESSAGE_HISTORY",
+      "description": "Implement the detail pane showing the contextual conversation threads across runs associated with a memory fact.",
+      "acceptanceCriteria": [
+        "When a fact is selected, its context/history thread is displayed.",
+        "Content is wrapped and scrollable."
+      ],
+      "dependencies": [
+        "feat-memory-browser"
+      ],
+      "sourceContext": [
+        "internal/ui/memory.go"
+      ],
+      "implementationNotes": [
+        "Use `bubbles/viewport` to display long message threads."
+      ],
+      "groupId": "systems-and-analytics",
+      "groupName": "Systems And Analytics"
+    },
+    {
+      "id": "feat-memory-fact-list",
+      "title": "Memory Fact List",
+      "type": "feature",
+      "featureName": "MEMORY_FACT_LIST",
+      "description": "Implement a view listing cross-run memory facts retrieved from the API.",
+      "acceptanceCriteria": [
+        "Displays a paginated or scrolling list of memory facts.",
+        "Selecting a fact highlights it for detail viewing."
+      ],
+      "dependencies": [
+        "feat-memory-browser"
+      ],
+      "sourceContext": [
+        "internal/ui/memory.go"
+      ],
+      "implementationNotes": [
+        "Use `bubbles/list`."
+      ],
+      "groupId": "systems-and-analytics",
+      "groupName": "Systems And Analytics"
+    },
+    {
+      "id": "feat-memory-semantic-recall",
+      "title": "Memory Semantic Recall",
+      "type": "feature",
+      "featureName": "MEMORY_SEMANTIC_RECALL",
+      "description": "Add a search input field to query the memory system via natural language.",
+      "acceptanceCriteria": [
+        "Search input filters or queries the memory list.",
+        "Executes a semantic recall request against the Smithers client."
+      ],
+      "dependencies": [
+        "feat-memory-browser"
+      ],
+      "sourceContext": [
+        "internal/ui/memory.go"
+      ],
+      "implementationNotes": [
+        "Use `bubbles/textinput` embedded above the list."
+      ],
+      "groupId": "systems-and-analytics",
+      "groupName": "Systems And Analytics"
+    },
+    {
+      "id": "feat-scores-and-roi-dashboard",
+      "title": "Scores and ROI Dashboard Layout",
+      "type": "feature",
+      "featureName": "SCORES_AND_ROI_DASHBOARD",
+      "description": "Implement the structural layout for the Scores and ROI dashboard to hold summary and metrics panes.",
+      "acceptanceCriteria": [
+        "View is segmented into distinct visual areas for daily summaries, evaluations, and usage metrics.",
+        "Responsive to terminal resizing."
+      ],
+      "dependencies": [
+        "eng-scores-scaffolding"
+      ],
+      "sourceContext": [
+        "internal/ui/scores.go"
+      ],
+      "implementationNotes": [
+        "Refer to Design Doc 3.16 for the specific layout expectations."
+      ],
+      "groupId": "systems-and-analytics",
+      "groupName": "Systems And Analytics"
+    },
+    {
+      "id": "feat-scores-cache-efficiency-metrics",
+      "title": "Cache Efficiency Metrics",
+      "type": "feature",
+      "featureName": "SCORES_CACHE_EFFICIENCY_METRICS",
+      "description": "Display metrics on cache hits vs misses.",
+      "acceptanceCriteria": [
+        "Shows percentage of cache hits and overall efficiency."
+      ],
+      "dependencies": [
+        "feat-scores-and-roi-dashboard"
+      ],
+      "sourceContext": [
+        "internal/ui/scores.go"
+      ],
+      "implementationNotes": [],
+      "groupId": "systems-and-analytics",
+      "groupName": "Systems And Analytics"
+    },
+    {
+      "id": "feat-scores-cost-tracking",
+      "title": "Cost Tracking Metrics",
+      "type": "feature",
+      "featureName": "SCORES_COST_TRACKING",
+      "description": "Display estimated monetary costs for runs and workflows based on token usage.",
+      "acceptanceCriteria": [
+        "Shows estimated total cost and cost per workflow run."
+      ],
+      "dependencies": [
+        "feat-scores-and-roi-dashboard"
+      ],
+      "sourceContext": [
+        "internal/ui/scores.go"
+      ],
+      "implementationNotes": [],
+      "groupId": "systems-and-analytics",
+      "groupName": "Systems And Analytics"
+    },
+    {
+      "id": "feat-scores-daily-and-weekly-summaries",
+      "title": "Scores Daily & Weekly Summaries",
+      "type": "feature",
+      "featureName": "SCORES_DAILY_AND_WEEKLY_SUMMARIES",
+      "description": "Implement top-level aggregation metrics showing runs, success counts, and running states for today and the week.",
+      "acceptanceCriteria": [
+        "Displays total runs, successful runs, running jobs, and failures aggregated by day/week.",
+        "Metrics update when the view is loaded."
+      ],
+      "dependencies": [
+        "feat-scores-and-roi-dashboard"
+      ],
+      "sourceContext": [
+        "internal/ui/scores.go"
+      ],
+      "implementationNotes": [
+        "Use lipgloss to create a visually distinct header section."
+      ],
+      "groupId": "systems-and-analytics",
+      "groupName": "Systems And Analytics"
+    },
+    {
+      "id": "feat-scores-latency-metrics",
+      "title": "Latency Metrics",
+      "type": "feature",
+      "featureName": "SCORES_LATENCY_METRICS",
+      "description": "Display execution latencies for workflows and tools.",
+      "acceptanceCriteria": [
+        "Shows average latency and p95 latency for recent runs."
+      ],
+      "dependencies": [
+        "feat-scores-and-roi-dashboard"
+      ],
+      "sourceContext": [
+        "internal/ui/scores.go"
+      ],
+      "implementationNotes": [],
+      "groupId": "systems-and-analytics",
+      "groupName": "Systems And Analytics"
+    },
+    {
+      "id": "feat-scores-run-evaluations",
+      "title": "Run Evaluations View",
+      "type": "feature",
+      "featureName": "SCORES_RUN_EVALUATIONS",
+      "description": "Implement a section displaying evaluation scores for completed runs.",
+      "acceptanceCriteria": [
+        "Displays a table or list of recent runs with their corresponding evaluation scores."
+      ],
+      "dependencies": [
+        "feat-scores-and-roi-dashboard"
+      ],
+      "sourceContext": [
+        "internal/ui/scores.go"
+      ],
+      "implementationNotes": [
+        "Align columns so scores are easily readable."
+      ],
+      "groupId": "systems-and-analytics",
+      "groupName": "Systems And Analytics"
+    },
+    {
+      "id": "feat-scores-token-usage-metrics",
+      "title": "Token Usage Metrics",
+      "type": "feature",
+      "featureName": "SCORES_TOKEN_USAGE_METRICS",
+      "description": "Display token usage metrics across runs in the dashboard.",
+      "acceptanceCriteria": [
+        "Shows aggregated prompt and completion tokens."
+      ],
+      "dependencies": [
+        "feat-scores-and-roi-dashboard"
+      ],
+      "sourceContext": [
+        "internal/ui/scores.go"
+      ],
+      "implementationNotes": [],
+      "groupId": "systems-and-analytics",
+      "groupName": "Systems And Analytics"
+    },
+    {
+      "id": "feat-scores-tool-call-metrics",
+      "title": "Tool Call Metrics",
+      "type": "feature",
+      "featureName": "SCORES_TOOL_CALL_METRICS",
+      "description": "Display metrics regarding tool usage and success rates in the dashboard.",
+      "acceptanceCriteria": [
+        "Shows count of tool calls.",
+        "Highlights frequency of most used tools or error rates."
+      ],
+      "dependencies": [
+        "feat-scores-and-roi-dashboard"
+      ],
+      "sourceContext": [
+        "internal/ui/scores.go"
+      ],
+      "implementationNotes": [],
+      "groupId": "systems-and-analytics",
+      "groupName": "Systems And Analytics"
+    },
+    {
+      "id": "feat-sql-browser",
+      "title": "SQL Browser Layout and Activation",
+      "type": "feature",
+      "featureName": "SQL_BROWSER",
+      "description": "Implement the core layout and pane management for the SQL Browser view, setting up the structural grid that will contain the sidebar and main query areas.",
+      "acceptanceCriteria": [
+        "Layout splits the terminal window into a left sidebar and a main right area.",
+        "Focus can be toggled between the sidebar and the main area.",
+        "UI reflects the design in Design Document Section 3.10."
+      ],
+      "dependencies": [
+        "eng-sql-scaffolding"
+      ],
+      "sourceContext": [
+        "internal/ui/sqlbrowser.go",
+        "../smithers/gui-ref/src/ui/tabs/SqlBrowser.tsx"
+      ],
+      "implementationNotes": [
+        "Use lipgloss for layout boundaries and borders."
+      ],
+      "groupId": "systems-and-analytics",
+      "groupName": "Systems And Analytics"
+    },
+    {
+      "id": "feat-sql-query-editor",
+      "title": "SQL Query Editor",
+      "type": "feature",
+      "featureName": "SQL_QUERY_EDITOR",
+      "description": "Implement a text input area for users to write raw SQL queries against the Smithers database.",
+      "acceptanceCriteria": [
+        "Multiline text area accepts SQL input.",
+        "Pressing Ctrl+Enter executes the query via the API client.",
+        "Displays execution errors elegantly in the UI."
+      ],
+      "dependencies": [
+        "feat-sql-browser"
+      ],
+      "sourceContext": [
+        "internal/ui/sqlbrowser.go"
+      ],
+      "implementationNotes": [
+        "Use `bubbles/textarea` for the input component."
+      ],
+      "groupId": "systems-and-analytics",
+      "groupName": "Systems And Analytics"
+    },
+    {
+      "id": "feat-sql-results-table",
+      "title": "SQL Results Table",
+      "type": "feature",
+      "featureName": "SQL_RESULTS_TABLE",
+      "description": "Implement a dynamic table view to render the results of the executed SQL queries.",
+      "acceptanceCriteria": [
+        "Results are displayed in a table format.",
+        "Columns are dynamically detected from the SQL result set keys.",
+        "Horizontal scrolling is supported for wide result sets."
+      ],
+      "dependencies": [
+        "feat-sql-query-editor"
+      ],
+      "sourceContext": [
+        "internal/ui/sqlbrowser.go"
+      ],
+      "implementationNotes": [
+        "Use `bubbles/table` and update its columns and rows based on the JSON response from the SQL execution."
+      ],
+      "groupId": "systems-and-analytics",
+      "groupName": "Systems And Analytics"
+    },
+    {
+      "id": "feat-sql-table-sidebar",
+      "title": "SQL Table Sidebar",
+      "type": "feature",
+      "featureName": "SQL_TABLE_SIDEBAR",
+      "description": "Implement the clickable list of available database tables in the SQL Browser sidebar.",
+      "acceptanceCriteria": [
+        "Sidebar displays `_smithers_runs`, `_smithers_nodes`, `_smithers_events`, `_smithers_chat_attempts`, `_smithers_memory`.",
+        "Selecting a table populates the query editor with `SELECT * FROM table LIMIT 50;`."
+      ],
+      "dependencies": [
+        "feat-sql-browser"
+      ],
+      "sourceContext": [
+        "internal/ui/sqlbrowser.go"
+      ],
+      "implementationNotes": [
+        "Use `bubbles/list` for the sidebar component."
+      ],
+      "groupId": "systems-and-analytics",
+      "groupName": "Systems And Analytics"
+    },
+    {
+      "id": "feat-triggers-create",
+      "title": "Create Trigger",
+      "type": "feature",
+      "featureName": "TRIGGERS_CREATE",
+      "description": "Implement a form overlay or inline input to create a new cron trigger.",
+      "acceptanceCriteria": [
+        "User can input a valid cron expression and target workflow path.",
+        "Submission creates the trigger via the Smithers API/CLI.",
+        "List is refreshed upon successful creation."
+      ],
+      "dependencies": [
+        "feat-triggers-list"
+      ],
+      "sourceContext": [
+        "internal/ui/triggers.go"
+      ],
+      "implementationNotes": [
+        "Consider using `charmbracelet/huh` for a clean form input experience."
+      ],
+      "groupId": "systems-and-analytics",
+      "groupName": "Systems And Analytics"
+    },
+    {
+      "id": "feat-triggers-delete",
+      "title": "Delete Trigger",
+      "type": "feature",
+      "featureName": "TRIGGERS_DELETE",
+      "description": "Implement functionality to delete a scheduled trigger.",
+      "acceptanceCriteria": [
+        "User can select and delete a trigger.",
+        "Prompts for confirmation before deletion.",
+        "List updates appropriately."
+      ],
+      "dependencies": [
+        "feat-triggers-list"
+      ],
+      "sourceContext": [
+        "internal/ui/triggers.go"
+      ],
+      "implementationNotes": [
+        "Simple modal or inline confirmation (y/n) is sufficient."
+      ],
+      "groupId": "systems-and-analytics",
+      "groupName": "Systems And Analytics"
+    },
+    {
+      "id": "feat-triggers-edit",
+      "title": "Edit Trigger",
+      "type": "feature",
+      "featureName": "TRIGGERS_EDIT",
+      "description": "Implement functionality to modify an existing cron trigger.",
+      "acceptanceCriteria": [
+        "User can edit the cron expression or workflow path of an existing trigger.",
+        "Changes are saved to the backend."
+      ],
+      "dependencies": [
+        "feat-triggers-list"
+      ],
+      "sourceContext": [
+        "internal/ui/triggers.go"
+      ],
+      "implementationNotes": [
+        "Reuse the form component created in TRIGGERS_CREATE, pre-populating it with existing data."
+      ],
+      "groupId": "systems-and-analytics",
+      "groupName": "Systems And Analytics"
+    },
+    {
+      "id": "feat-triggers-list",
+      "title": "Triggers List",
+      "type": "feature",
+      "featureName": "TRIGGERS_LIST",
+      "description": "Implement a list view showing all scheduled cron triggers.",
+      "acceptanceCriteria": [
+        "Displays a list of triggers including workflow path, cron pattern, and enabled status."
+      ],
+      "dependencies": [
+        "eng-triggers-scaffolding"
+      ],
+      "sourceContext": [
+        "internal/ui/triggers.go"
+      ],
+      "implementationNotes": [
+        "Use `bubbles/table` to cleanly align the cron properties."
+      ],
+      "groupId": "systems-and-analytics",
+      "groupName": "Systems And Analytics"
+    },
+    {
+      "id": "feat-triggers-toggle",
+      "title": "Toggle Trigger Status",
+      "type": "feature",
+      "featureName": "TRIGGERS_TOGGLE",
+      "description": "Add functionality to enable or disable a trigger directly from the list.",
+      "acceptanceCriteria": [
+        "Pressing 'Space' or 't' toggles the selected trigger's status.",
+        "Status update is persisted via the Smithers API/CLI."
+      ],
+      "dependencies": [
+        "feat-triggers-list"
+      ],
+      "sourceContext": [
+        "internal/ui/triggers.go"
+      ],
+      "implementationNotes": [
+        "Ensure optimistic UI updates are reverted if the backend call fails."
+      ],
+      "groupId": "systems-and-analytics",
+      "groupName": "Systems And Analytics"
+    }
+  ]
+}

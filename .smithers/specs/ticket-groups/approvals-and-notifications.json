@@ -1,0 +1,298 @@
+{
+  "groupId": "approvals-and-notifications",
+  "groupName": "Approvals And Notifications",
+  "tickets": [
+    {
+      "id": "approvals-context-display",
+      "title": "Display context for the selected approval",
+      "type": "feature",
+      "featureName": "APPROVALS_CONTEXT_DISPLAY",
+      "description": "Show the task, inputs, and workflow context for the currently highlighted approval in the queue.",
+      "acceptanceCriteria": [
+        "A details pane updates as the user moves the cursor through the queue.",
+        "Details include the specific question/gate and any relevant payload."
+      ],
+      "dependencies": [
+        "approvals-queue"
+      ],
+      "sourceContext": [
+        "internal/ui/views/approvals.go"
+      ],
+      "implementationNotes": [
+        "Consider a split-pane layout within the approvals view (list on left, details on right or bottom)."
+      ],
+      "groupId": "approvals-and-notifications",
+      "groupName": "Approvals And Notifications"
+    },
+    {
+      "id": "approvals-inline-approve",
+      "title": "Implement inline approval action",
+      "type": "feature",
+      "featureName": "APPROVALS_INLINE_APPROVE",
+      "description": "Allow the user to approve a gate directly from the TUI.",
+      "acceptanceCriteria": [
+        "Pressing the configured key (e.g., 'a') sends an approve API request.",
+        "Upon success, the item is removed from the pending queue."
+      ],
+      "dependencies": [
+        "approvals-context-display"
+      ],
+      "sourceContext": [
+        "internal/ui/views/approvals.go",
+        "internal/smithers/client.go"
+      ],
+      "implementationNotes": [
+        "Show a loading indicator while the API request is inflight."
+      ],
+      "groupId": "approvals-and-notifications",
+      "groupName": "Approvals And Notifications"
+    },
+    {
+      "id": "approvals-inline-deny",
+      "title": "Implement inline deny action",
+      "type": "feature",
+      "featureName": "APPROVALS_INLINE_DENY",
+      "description": "Allow the user to deny a gate directly from the TUI.",
+      "acceptanceCriteria": [
+        "Pressing the configured key (e.g., 'd' or 'x') sends a deny API request.",
+        "Upon success, the item is removed from the pending queue."
+      ],
+      "dependencies": [
+        "approvals-context-display"
+      ],
+      "sourceContext": [
+        "internal/ui/views/approvals.go",
+        "internal/smithers/client.go"
+      ],
+      "implementationNotes": [
+        "Provide an optional input field for a denial reason if supported by the Smithers API."
+      ],
+      "groupId": "approvals-and-notifications",
+      "groupName": "Approvals And Notifications"
+    },
+    {
+      "id": "approvals-pending-badges",
+      "title": "Show pending approval badges in global UI",
+      "type": "feature",
+      "featureName": "APPROVALS_PENDING_BADGES",
+      "description": "Display a visual indicator in the main UI (e.g., header or status bar) when approvals are pending.",
+      "acceptanceCriteria": [
+        "If `pending_count > 0`, a badge is visible on the main screen.",
+        "Badge updates dynamically via SSE events."
+      ],
+      "dependencies": [
+        "approvals-queue"
+      ],
+      "sourceContext": [
+        "internal/ui/model/status.go",
+        "internal/ui/model/header.go"
+      ],
+      "implementationNotes": [
+        "Integrate with Crush's existing status bar (`internal/ui/model/status.go`) to add the badge."
+      ],
+      "groupId": "approvals-and-notifications",
+      "groupName": "Approvals And Notifications"
+    },
+    {
+      "id": "approvals-queue",
+      "title": "Build the pending approvals queue",
+      "type": "feature",
+      "featureName": "APPROVALS_QUEUE",
+      "description": "Fetch and display a list of all pending approval gates from the Smithers API/DB.",
+      "acceptanceCriteria": [
+        "The view shows a selectable list/table of pending approvals.",
+        "List dynamically updates if new approvals arrive via SSE."
+      ],
+      "dependencies": [
+        "eng-approvals-view-scaffolding"
+      ],
+      "sourceContext": [
+        "internal/ui/views/approvals.go",
+        "internal/smithers/client.go"
+      ],
+      "implementationNotes": [
+        "Use Bubble Tea's `list` or `table` component. Fetch data via the Smithers API client."
+      ],
+      "groupId": "approvals-and-notifications",
+      "groupName": "Approvals And Notifications"
+    },
+    {
+      "id": "approvals-recent-decisions",
+      "title": "Show recent approval decisions",
+      "type": "feature",
+      "featureName": "APPROVALS_RECENT_DECISIONS",
+      "description": "Display a history of recently approved or denied gates in the approvals view.",
+      "acceptanceCriteria": [
+        "A section or toggleable view shows historical decisions.",
+        "Each entry shows the decision made and timestamps."
+      ],
+      "dependencies": [
+        "eng-approvals-view-scaffolding"
+      ],
+      "sourceContext": [
+        "internal/ui/views/approvals.go"
+      ],
+      "implementationNotes": [
+        "This might be a separate tab within the approvals view or a section below the pending queue."
+      ],
+      "groupId": "approvals-and-notifications",
+      "groupName": "Approvals And Notifications"
+    },
+    {
+      "id": "eng-approvals-e2e-tests",
+      "title": "Add E2E tests for approvals and notifications",
+      "type": "engineering",
+      "featureName": null,
+      "description": "Implement automated testing for the approvals flow using both the terminal E2E harness and VHS recordings.",
+      "acceptanceCriteria": [
+        "Playwright-style E2E test added covering the notification -> queue -> approve flow.",
+        "VHS script created demonstrating a happy-path approval."
+      ],
+      "dependencies": [
+        "approvals-inline-approve",
+        "approvals-inline-deny",
+        "notifications-approval-requests"
+      ],
+      "sourceContext": [
+        "../smithers/tests/tui.e2e.test.ts",
+        "../smithers/tests/tui-helpers.ts"
+      ],
+      "implementationNotes": [
+        "Mock the Smithers HTTP server in the E2E test to emit the `ApprovalRequested` SSE event and respond to the approval POST."
+      ],
+      "groupId": "approvals-and-notifications",
+      "groupName": "Approvals And Notifications"
+    },
+    {
+      "id": "eng-approvals-view-scaffolding",
+      "title": "Scaffold the approvals TUI view",
+      "type": "engineering",
+      "featureName": null,
+      "description": "Create the base `approvals` view and register it in the router with the `ctrl+a` keybinding.",
+      "acceptanceCriteria": [
+        "Pressing `ctrl+a` navigates to the empty approvals view.",
+        "Pressing `esc` returns to the previous view."
+      ],
+      "dependencies": [],
+      "sourceContext": [
+        "internal/ui/views/approvals.go",
+        "internal/ui/model/ui.go",
+        "internal/ui/model/keys.go"
+      ],
+      "implementationNotes": [
+        "Follow the new Router pattern defined in `03-ENGINEERING.md`. Add `Approvals` key to `keys.go`."
+      ],
+      "groupId": "approvals-and-notifications",
+      "groupName": "Approvals And Notifications"
+    },
+    {
+      "id": "eng-in-terminal-toast-component",
+      "title": "Build in-terminal toast notification component",
+      "type": "engineering",
+      "featureName": null,
+      "description": "Create an in-terminal toast overlay component designed to render at the bottom-right of the TUI.",
+      "acceptanceCriteria": [
+        "Component supports rendering Title, Body, and action hints.",
+        "Component respects a TTL for auto-dismissal.",
+        "Component structure lives in internal/ui/components/notification.go."
+      ],
+      "dependencies": [],
+      "sourceContext": [
+        "internal/ui/components/notification.go"
+      ],
+      "implementationNotes": [
+        "Unlike the existing Crush native notifications (in internal/ui/notification), this needs to be an in-terminal Bubble Tea component drawn via Lip Gloss over the existing views."
+      ],
+      "groupId": "approvals-and-notifications",
+      "groupName": "Approvals And Notifications"
+    },
+    {
+      "id": "notifications-approval-requests",
+      "title": "Show notifications for approval requests",
+      "type": "feature",
+      "featureName": "NOTIFICATIONS_APPROVAL_REQUESTS",
+      "description": "Listen for Smithers SSE events indicating a new approval gate and show a toast notification.",
+      "acceptanceCriteria": [
+        "When an `ApprovalRequested` SSE event is received, a toast appears.",
+        "Toast includes 'Approve' and 'View' action hints."
+      ],
+      "dependencies": [
+        "notifications-toast-overlays"
+      ],
+      "sourceContext": [
+        "internal/smithers/client.go",
+        "internal/ui/model/ui.go"
+      ],
+      "implementationNotes": [
+        "Subscribe to the appropriate event from `SmithersClient.StreamEvents()` and map it to the notification component."
+      ],
+      "groupId": "approvals-and-notifications",
+      "groupName": "Approvals And Notifications"
+    },
+    {
+      "id": "notifications-run-completions",
+      "title": "Show notifications for run completions",
+      "type": "feature",
+      "featureName": "NOTIFICATIONS_RUN_COMPLETIONS",
+      "description": "Show a brief toast notification when a Smithers run completes successfully.",
+      "acceptanceCriteria": [
+        "When a `RunCompleted` SSE event is received, a success toast appears."
+      ],
+      "dependencies": [
+        "notifications-toast-overlays"
+      ],
+      "sourceContext": [
+        "internal/smithers/client.go"
+      ],
+      "implementationNotes": [
+        "Format the toast with success styling (Lip Gloss green) and a short TTL."
+      ],
+      "groupId": "approvals-and-notifications",
+      "groupName": "Approvals And Notifications"
+    },
+    {
+      "id": "notifications-run-failures",
+      "title": "Show notifications for run failures",
+      "type": "feature",
+      "featureName": "NOTIFICATIONS_RUN_FAILURES",
+      "description": "Show a toast notification when a Smithers run fails.",
+      "acceptanceCriteria": [
+        "When a `RunFailed` SSE event is received, a failure toast appears."
+      ],
+      "dependencies": [
+        "notifications-toast-overlays"
+      ],
+      "sourceContext": [
+        "internal/smithers/client.go"
+      ],
+      "implementationNotes": [
+        "Format the toast with error styling (Lip Gloss red) and the run ID."
+      ],
+      "groupId": "approvals-and-notifications",
+      "groupName": "Approvals And Notifications"
+    },
+    {
+      "id": "notifications-toast-overlays",
+      "title": "Integrate toast overlays into the main TUI loop",
+      "type": "feature",
+      "featureName": "NOTIFICATIONS_TOAST_OVERLAYS",
+      "description": "Hook the new toast component into the global UI view so it renders on top of the active route.",
+      "acceptanceCriteria": [
+        "The toast overlay renders over chat, runs, or any other routed view.",
+        "Notifications can be triggered globally via the pubsub event bus."
+      ],
+      "dependencies": [
+        "eng-in-terminal-toast-component"
+      ],
+      "sourceContext": [
+        "internal/ui/model/ui.go",
+        "internal/pubsub"
+      ],
+      "implementationNotes": [
+        "Modify `UI.View()` in `internal/ui/model/ui.go` to append the rendered notification string (positioned bottom-right) after rendering the current view from the Router."
+      ],
+      "groupId": "approvals-and-notifications",
+      "groupName": "Approvals And Notifications"
+    }
+  ]
+}

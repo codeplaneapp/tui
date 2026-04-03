@@ -1,0 +1,333 @@
+{
+  "groupId": "content-and-prompts",
+  "groupName": "Content And Prompts",
+  "tickets": [
+    {
+      "id": "eng-prompts-api-client",
+      "title": "Implement Prompts API Client Methods",
+      "type": "engineering",
+      "featureName": null,
+      "description": "Add HTTP or MCP client methods to fetch prompts, update prompt sources, and render prompt previews.",
+      "acceptanceCriteria": [
+        "Client exposes `ListPrompts`, `UpdatePromptSource`, and `RenderPromptPreview` operations.",
+        "Terminal E2E test verifying API client capabilities for prompts."
+      ],
+      "dependencies": [],
+      "sourceContext": [
+        "../smithers/gui/src/api/transport.ts"
+      ],
+      "implementationNotes": [
+        "Mirror `fetchPrompts`, `updatePromptSource`, and `renderPromptPreview` from the GUI transport.",
+        "Ensure `RenderPromptPreview` correctly passes down a map of key-value props."
+      ],
+      "groupId": "content-and-prompts",
+      "groupName": "Content And Prompts"
+    },
+    {
+      "id": "eng-split-pane-component",
+      "title": "Create Shared Split Pane Layout Component",
+      "type": "engineering",
+      "featureName": null,
+      "description": "Implement a reusable Bubble Tea component for side-by-side layouts, supporting a fixed-width left pane and a responsive right pane.",
+      "acceptanceCriteria": [
+        "Component can render arbitrary left and right Bubble Tea views.",
+        "Handles viewport resizing correctly."
+      ],
+      "dependencies": [],
+      "sourceContext": [
+        "docs/smithers-tui/03-ENGINEERING.md"
+      ],
+      "implementationNotes": [
+        "Create `internal/ui/components/splitpane.go`.",
+        "Use `lipgloss.JoinHorizontal` to stitch views. The left view should typically have a hardcoded max width."
+      ],
+      "groupId": "content-and-prompts",
+      "groupName": "Content And Prompts"
+    },
+    {
+      "id": "eng-tickets-api-client",
+      "title": "Implement Tickets API Client Methods",
+      "type": "engineering",
+      "featureName": null,
+      "description": "Add HTTP or MCP client methods to fetch, create, and update tickets based on the `.smithers/tickets` directory.",
+      "acceptanceCriteria": [
+        "Client exposes `ListTickets`, `CreateTicket`, and `UpdateTicket` operations.",
+        "Operations serialize and deserialize payloads correctly according to the backend schema.",
+        "Terminal E2E test verifying API client capabilities for tickets."
+      ],
+      "dependencies": [],
+      "sourceContext": [
+        "../smithers/gui/src/api/transport.ts"
+      ],
+      "implementationNotes": [
+        "Mirror the functionality of `fetchTickets`, `createTicket`, and `updateTicket` found in the GUI transport layer.",
+        "Add these methods to the `internal/app/smithers` client wrapper."
+      ],
+      "groupId": "content-and-prompts",
+      "groupName": "Content And Prompts"
+    },
+    {
+      "id": "feat-prompts-external-editor-handoff",
+      "title": "External Editor Handoff for Prompts",
+      "type": "feature",
+      "featureName": "PROMPTS_EXTERNAL_EDITOR_HANDOFF",
+      "description": "Implement `Ctrl+O` handoff to suspend the TUI and launch `$EDITOR` on the prompt file.",
+      "acceptanceCriteria": [
+        "Pressing `Ctrl+O` launches `$EDITOR`.",
+        "TUI suspends correctly and resumes when the editor closes.",
+        "Prompt data is reloaded on resume.",
+        "Terminal E2E test verifying external editor handoff."
+      ],
+      "dependencies": [
+        "feat-prompts-source-edit"
+      ],
+      "sourceContext": [
+        "docs/smithers-tui/03-ENGINEERING.md"
+      ],
+      "implementationNotes": [
+        "Use `tea.ExecProcess` configured with the path to the physical prompt file.",
+        "Watch for `tea.ExecFinishedMsg` to trigger a refetch of the prompt."
+      ],
+      "groupId": "content-and-prompts",
+      "groupName": "Content And Prompts"
+    },
+    {
+      "id": "feat-prompts-list",
+      "title": "Prompts List View",
+      "type": "feature",
+      "featureName": "PROMPTS_LIST",
+      "description": "Implement the `/prompts` view showing a side-by-side list of available prompts.",
+      "acceptanceCriteria": [
+        "Prompts are fetched from the API and listed on the left pane.",
+        "Terminal E2E test navigating the prompts list."
+      ],
+      "dependencies": [
+        "eng-prompts-api-client",
+        "eng-split-pane-component"
+      ],
+      "sourceContext": [
+        "../smithers/gui/src/ui/PromptsList.tsx",
+        "internal/ui/prompts/"
+      ],
+      "implementationNotes": [
+        "Create `internal/ui/prompts/prompts.go`.",
+        "Use `bubbles/list` for the left pane and the shared split pane component for the layout."
+      ],
+      "groupId": "content-and-prompts",
+      "groupName": "Content And Prompts"
+    },
+    {
+      "id": "feat-prompts-live-preview",
+      "title": "Prompt Live Preview Rendering",
+      "type": "feature",
+      "featureName": "PROMPTS_LIVE_PREVIEW",
+      "description": "Call the render API with inputted props to preview the prompt output.",
+      "acceptanceCriteria": [
+        "A 'Render Preview' action triggers the backend preview endpoint.",
+        "The output is displayed in a dedicated preview section.",
+        "VHS-style happy-path recording test covers live preview."
+      ],
+      "dependencies": [
+        "feat-prompts-props-discovery",
+        "eng-prompts-api-client"
+      ],
+      "sourceContext": [
+        "../smithers/gui/src/ui/PromptsList.tsx"
+      ],
+      "implementationNotes": [
+        "Bind a shortcut to invoke the `RenderPromptPreview` API with the state gathered from the prop inputs."
+      ],
+      "groupId": "content-and-prompts",
+      "groupName": "Content And Prompts"
+    },
+    {
+      "id": "feat-prompts-props-discovery",
+      "title": "Prompt Props Discovery and Input",
+      "type": "feature",
+      "featureName": "PROMPTS_PROPS_DISCOVERY",
+      "description": "Dynamically render input fields for discovered props required by the prompt.",
+      "acceptanceCriteria": [
+        "A list of text inputs is rendered based on the prompt's `inputs` schema.",
+        "Users can enter test values for the prompt variables."
+      ],
+      "dependencies": [
+        "feat-prompts-source-edit"
+      ],
+      "sourceContext": [
+        "../smithers/gui/src/ui/PromptsList.tsx"
+      ],
+      "implementationNotes": [
+        "Iterate over the `inputs` property from the backend payload and generate `bubbles/textinput` instances."
+      ],
+      "groupId": "content-and-prompts",
+      "groupName": "Content And Prompts"
+    },
+    {
+      "id": "feat-prompts-save",
+      "title": "Save Prompt Source Changes",
+      "type": "feature",
+      "featureName": "PROMPTS_SAVE",
+      "description": "Save modifications made to the prompt source back to disk via the backend API.",
+      "acceptanceCriteria": [
+        "Pressing `Ctrl+S` saves the inline edits to the backend.",
+        "Success or error message is shown."
+      ],
+      "dependencies": [
+        "feat-prompts-source-edit",
+        "eng-prompts-api-client"
+      ],
+      "sourceContext": [
+        "../smithers/gui/src/ui/PromptsList.tsx"
+      ],
+      "implementationNotes": [
+        "Hook `Ctrl+S` keybinding to the `UpdatePromptSource` API wrapper."
+      ],
+      "groupId": "content-and-prompts",
+      "groupName": "Content And Prompts"
+    },
+    {
+      "id": "feat-prompts-source-edit",
+      "title": "Prompt Source Editor",
+      "type": "feature",
+      "featureName": "PROMPTS_SOURCE_EDIT",
+      "description": "Display and allow editing of the selected prompt's `.mdx` source in the right pane.",
+      "acceptanceCriteria": [
+        "Selecting a prompt shows its source code in an editable textarea.",
+        "User can type and modify the source directly."
+      ],
+      "dependencies": [
+        "feat-prompts-list"
+      ],
+      "sourceContext": [
+        "../smithers/gui/src/ui/PromptsList.tsx"
+      ],
+      "implementationNotes": [
+        "Use `bubbles/textarea` for rendering and editing the prompt source."
+      ],
+      "groupId": "content-and-prompts",
+      "groupName": "Content And Prompts"
+    },
+    {
+      "id": "feat-tickets-create",
+      "title": "Create New Ticket Form",
+      "type": "feature",
+      "featureName": "TICKETS_CREATE",
+      "description": "Add functionality to create a new ticket from within the TUI.",
+      "acceptanceCriteria": [
+        "User can open a form to enter a new Ticket ID and markdown content.",
+        "Submitting the form creates the ticket via the API and refreshes the list.",
+        "Terminal E2E test verifying ticket creation."
+      ],
+      "dependencies": [
+        "feat-tickets-split-pane",
+        "eng-tickets-api-client"
+      ],
+      "sourceContext": [
+        "../smithers/gui/src/ui/TicketsList.tsx"
+      ],
+      "implementationNotes": [
+        "Provide a keybinding (e.g., `n`) to switch the right pane to a creation form.",
+        "Use `bubbles/textinput` for the ID and `bubbles/textarea` for the body."
+      ],
+      "groupId": "content-and-prompts",
+      "groupName": "Content And Prompts"
+    },
+    {
+      "id": "feat-tickets-detail-view",
+      "title": "Ticket Detail View",
+      "type": "feature",
+      "featureName": "TICKETS_DETAIL_VIEW",
+      "description": "Render the full markdown content of the selected ticket in the right pane.",
+      "acceptanceCriteria": [
+        "Selecting a ticket updates the right pane with its markdown content.",
+        "Markdown is formatted properly.",
+        "VHS-style happy-path recording test verifying ticket selection."
+      ],
+      "dependencies": [
+        "feat-tickets-split-pane"
+      ],
+      "sourceContext": [
+        "../smithers/gui/src/ui/TicketsList.tsx"
+      ],
+      "implementationNotes": [
+        "Use `glamour` or `lipgloss` to render the ticket markdown."
+      ],
+      "groupId": "content-and-prompts",
+      "groupName": "Content And Prompts"
+    },
+    {
+      "id": "feat-tickets-edit-inline",
+      "title": "Inline Ticket Editing",
+      "type": "feature",
+      "featureName": "TICKETS_EDIT_INLINE",
+      "description": "Allow users to edit existing ticket content inline directly inside the right pane.",
+      "acceptanceCriteria": [
+        "User can toggle edit mode for a selected ticket.",
+        "Content becomes editable in a textarea.",
+        "Saving persists the changes via the API.",
+        "VHS-style happy-path recording test covers editing ticket content."
+      ],
+      "dependencies": [
+        "feat-tickets-detail-view",
+        "eng-tickets-api-client"
+      ],
+      "sourceContext": [
+        "../smithers/gui/src/ui/TicketsList.tsx"
+      ],
+      "implementationNotes": [
+        "Provide an `e` keybinding to switch the detail view to an edit form.",
+        "Manage saving state and handle API errors gracefully."
+      ],
+      "groupId": "content-and-prompts",
+      "groupName": "Content And Prompts"
+    },
+    {
+      "id": "feat-tickets-list",
+      "title": "Tickets List View",
+      "type": "feature",
+      "featureName": "TICKETS_LIST",
+      "description": "Implement the main view that fetches and displays all available tickets from the backend.",
+      "acceptanceCriteria": [
+        "Displays a list of tickets fetched from the backend.",
+        "User can navigate the list using arrow keys.",
+        "Terminal E2E test covers navigating the ticket list."
+      ],
+      "dependencies": [
+        "eng-tickets-api-client"
+      ],
+      "sourceContext": [
+        "../smithers/gui/src/ui/TicketsList.tsx",
+        "internal/ui/tickets/"
+      ],
+      "implementationNotes": [
+        "Create `internal/ui/tickets/tickets.go`.",
+        "Use the `bubbles/list` component to render the ticket IDs and snippets."
+      ],
+      "groupId": "content-and-prompts",
+      "groupName": "Content And Prompts"
+    },
+    {
+      "id": "feat-tickets-split-pane",
+      "title": "Tickets Split Pane Layout",
+      "type": "feature",
+      "featureName": "TICKETS_SPLIT_PANE_LAYOUT",
+      "description": "Integrate the shared split pane component into the tickets view to show the list on the left and a detail pane on the right.",
+      "acceptanceCriteria": [
+        "Tickets list renders on the left side.",
+        "An empty or placeholder view renders on the right side if no ticket is selected."
+      ],
+      "dependencies": [
+        "feat-tickets-list",
+        "eng-split-pane-component"
+      ],
+      "sourceContext": [
+        "../smithers/gui/src/ui/TicketsList.tsx"
+      ],
+      "implementationNotes": [
+        "Wrap the tickets list in the left pane of `internal/ui/components/splitpane`."
+      ],
+      "groupId": "content-and-prompts",
+      "groupName": "Content And Prompts"
+    }
+  ]
+}

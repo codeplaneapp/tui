@@ -1,0 +1,179 @@
+{
+  "groupId": "time-travel",
+  "groupName": "Time Travel",
+  "tickets": [
+    {
+      "id": "eng-time-travel-api-and-model",
+      "title": "Time Travel API Client and Model Scaffolding",
+      "type": "engineering",
+      "featureName": null,
+      "description": "Add Smithers client methods for snapshot operations and basic Bubble Tea model scaffolding for the Timeline view.",
+      "acceptanceCriteria": [
+        "Client contains ListSnapshots, DiffSnapshots, ForkRun, and ReplayRun methods.",
+        "Timeline struct and essential Bubble Tea Msg types are defined.",
+        "E2E test mock is available for the snapshot APIs."
+      ],
+      "dependencies": [],
+      "sourceContext": [
+        "docs/smithers-tui/03-ENGINEERING.md",
+        "internal/app/provider.go",
+        "../smithers/tests/tui.e2e.test.ts"
+      ],
+      "implementationNotes": [
+        "Model the client APIs after the mock definitions in 03-ENGINEERING.md (ListSnapshots, DiffSnapshots, ForkRun, ReplayRun).",
+        "Create base Bubble Tea structs in internal/ui/model/timeline.go or internal/ui/views/timeline.go.",
+        "Include mock implementations for terminal E2E tests modeled on ../smithers/tests/tui-helpers.ts."
+      ],
+      "groupId": "time-travel",
+      "groupName": "Time Travel"
+    },
+    {
+      "id": "feat-time-travel-fork-from-snapshot",
+      "title": "Fork Run From Snapshot",
+      "type": "feature",
+      "featureName": "TIME_TRAVEL_FORK_FROM_SNAPSHOT",
+      "description": "Allow users to fork a run from the selected snapshot checkpoint.",
+      "acceptanceCriteria": [
+        "Pressing 'f' hotkey triggers a fork for the currently selected snapshot.",
+        "Application transitions to the newly created run after a successful fork.",
+        "Terminal E2E test verifies the fork command invocation and navigation."
+      ],
+      "dependencies": [
+        "feat-time-travel-timeline-view"
+      ],
+      "sourceContext": [
+        "docs/smithers-tui/01-PRD.md",
+        "docs/smithers-tui/03-ENGINEERING.md"
+      ],
+      "implementationNotes": [
+        "Send a ForkRun request via the API client.",
+        "On success, emit a Bubble Tea command to trigger a router navigation to the new run ID."
+      ],
+      "groupId": "time-travel",
+      "groupName": "Time Travel"
+    },
+    {
+      "id": "feat-time-travel-replay-from-snapshot",
+      "title": "Replay Run From Snapshot",
+      "type": "feature",
+      "featureName": "TIME_TRAVEL_REPLAY_FROM_SNAPSHOT",
+      "description": "Allow users to replay a run starting from the selected snapshot checkpoint.",
+      "acceptanceCriteria": [
+        "Pressing 'r' hotkey triggers a replay for the currently selected snapshot.",
+        "Application transitions to live replay view of the run.",
+        "Terminal E2E test verifies the replay behavior."
+      ],
+      "dependencies": [
+        "feat-time-travel-timeline-view"
+      ],
+      "sourceContext": [
+        "docs/smithers-tui/01-PRD.md",
+        "docs/smithers-tui/03-ENGINEERING.md"
+      ],
+      "implementationNotes": [
+        "Send a ReplayRun request via the API client.",
+        "Transition the UI state to handle live run updates for the new or replayed run ID."
+      ],
+      "groupId": "time-travel",
+      "groupName": "Time Travel"
+    },
+    {
+      "id": "feat-time-travel-snapshot-diff",
+      "title": "Time Travel Snapshot Diff",
+      "type": "feature",
+      "featureName": "TIME_TRAVEL_SNAPSHOT_DIFF",
+      "description": "Implement snapshot comparison allowing users to view diffs between consecutive snapshots.",
+      "acceptanceCriteria": [
+        "Pressing 'd' hotkey fetches the diff between the cursor and previous snapshot.",
+        "Diff is rendered clearly, highlighting state changes."
+      ],
+      "dependencies": [
+        "feat-time-travel-snapshot-inspector"
+      ],
+      "sourceContext": [
+        "docs/smithers-tui/02-DESIGN.md",
+        "internal/ui/diffview/diffview.go"
+      ],
+      "implementationNotes": [
+        "Call the DiffSnapshots client API when the diff hotkey is pressed.",
+        "Integrate internal/ui/diffview/diffview.go for rendering the output diff.",
+        "Handle loading states gracefully while the diff is computed/fetched."
+      ],
+      "groupId": "time-travel",
+      "groupName": "Time Travel"
+    },
+    {
+      "id": "feat-time-travel-snapshot-inspector",
+      "title": "Time Travel Snapshot Inspector",
+      "type": "feature",
+      "featureName": "TIME_TRAVEL_SNAPSHOT_INSPECTOR",
+      "description": "Render the detailed state of the currently selected snapshot below the timeline graph.",
+      "acceptanceCriteria": [
+        "When a snapshot is selected, its details (ID, associated node, partial output/state) are displayed below the timeline.",
+        "The view updates instantly as the cursor moves."
+      ],
+      "dependencies": [
+        "feat-time-travel-timeline-view"
+      ],
+      "sourceContext": [
+        "docs/smithers-tui/02-DESIGN.md"
+      ],
+      "implementationNotes": [
+        "Extract snapshot details from the currently selected `smithers.Snapshot`.",
+        "Format the output using markdown components or standard lipgloss blocks."
+      ],
+      "groupId": "time-travel",
+      "groupName": "Time Travel"
+    },
+    {
+      "id": "feat-time-travel-snapshot-markers",
+      "title": "Time Travel Snapshot Markers",
+      "type": "feature",
+      "featureName": "TIME_TRAVEL_SNAPSHOT_MARKERS",
+      "description": "Differentiate snapshot markers visually on the timeline based on run events or status.",
+      "acceptanceCriteria": [
+        "Timeline graph uses different symbols or colors for different types of snapshots (e.g., error nodes, tool calls).",
+        "Selected snapshot is clearly indicated with an arrow (▲)."
+      ],
+      "dependencies": [
+        "feat-time-travel-timeline-view"
+      ],
+      "sourceContext": [
+        "docs/smithers-tui/02-DESIGN.md",
+        "internal/ui/styles/styles.go"
+      ],
+      "implementationNotes": [
+        "Leverage internal/ui/styles for consistent marker rendering.",
+        "Update the lipgloss rendering logic to conditionally style graph nodes based on the underlying `smithers.Snapshot` data."
+      ],
+      "groupId": "time-travel",
+      "groupName": "Time Travel"
+    },
+    {
+      "id": "feat-time-travel-timeline-view",
+      "title": "Time Travel Timeline View",
+      "type": "feature",
+      "featureName": "TIME_TRAVEL_TIMELINE_VIEW",
+      "description": "Implement the horizontal visual timeline of run execution and snapshot navigation.",
+      "acceptanceCriteria": [
+        "User can view a horizontal timeline graph of snapshots (e.g. ①──②──③...).",
+        "User can navigate left and right using arrow keys to select a snapshot cursor.",
+        "A VHS-style happy path test captures timeline navigation."
+      ],
+      "dependencies": [
+        "eng-time-travel-api-and-model"
+      ],
+      "sourceContext": [
+        "docs/smithers-tui/02-DESIGN.md",
+        "docs/smithers-tui/03-ENGINEERING.md"
+      ],
+      "implementationNotes": [
+        "Use Lip Gloss to render the timeline as described in 03-ENGINEERING.md section 3.3.1.",
+        "Track `cursor` state integer for the selected snapshot.",
+        "Ensure navigation keys update the cursor and trigger view re-renders."
+      ],
+      "groupId": "time-travel",
+      "groupName": "Time Travel"
+    }
+  ]
+}

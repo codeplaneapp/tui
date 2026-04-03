@@ -1,0 +1,11 @@
+The research document is largely accurate on the Crush side — file paths, struct names, and the hardcoded AgentCoder selection in coordinator.go all check out. However, it has several significant problems that prevent approval:
+
+1. The upstream Smithers reference is mislocated. The document says `../smithers/src/cli/ask.ts` — the actual file in this repo is `smithers_tmp/src/cli/ask.ts` (verified). It also fails to reference the GUI daemon's http-client (`smithers_tmp/gui-ref/apps/daemon/src/integrations/smithers/http-client.ts`) which is the actual upstream integration surface Crush would need to bridge to.
+
+2. The testing recommendation references `tui_helpers_test.go` with PTY/terminal recordings, but no such file exists anywhere in the repo. This appears fabricated. The document should have surveyed the actual test patterns (e.g., `coordinator_test.go`, `common_test.go`) and proposed a concrete test strategy grounded in what exists.
+
+3. The recommended direction proposes a `SmithersConfig` struct and `AgentSmithers` constant but ignores the existing MCP infrastructure (`internal/agent/tools/mcp/`) which is already the mechanism for connecting to external tool servers. The Smithers upstream `ask.ts` itself works by configuring MCP servers — the research should have identified that Crush already has MCP plumbing and that the Smithers agent could reuse it rather than requiring a parallel config path.
+
+4. The document ignores the GUI reference daemon entirely (`smithers_tmp/gui-ref/apps/daemon/`), which contains the actual service layer (workflow-service, run-event-service, smithers-service) that a Crush TUI integration would need to interact with. This is a major omission.
+
+5. The 'Gaps' section hand-waves about 'Transport / Architectural Gap' without specifying what transport Crush would actually use to talk to a running Smithers server (HTTP? MCP stdio? SSE?). The upstream references show both HTTP client and MCP stdio patterns — the research should have evaluated both.

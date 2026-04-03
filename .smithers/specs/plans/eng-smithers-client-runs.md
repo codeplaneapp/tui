@@ -1,0 +1,53 @@
+## Goal
+Deliver a non-breaking Smithers runs client in Crush that supports list/detail reads, SSE status streaming, approve/deny/cancel mutations, and hijack requests, while preserving existing client behavior and adding automated coverage that can be reused by follow-on runs UI tickets.
+
+## Steps
+1. Lock the real API contract first from current upstream sources (`/v1/runs`, `/v1/runs/:id`, `/v1/runs/:id/events`, approve/deny/cancel) and codify fixture payloads in tests before code changes.
+2. Extend the runs domain model in `internal/smithers/types.go` with `RunStatus`, `Run`, `RunDetail`, `RunNode`, `Attempt`, `Approval`, `RunFilter`, and `SmithersEvent`, plus Tea message envelopes for async result delivery.
+3. Add direct-JSON HTTP helpers in `internal/smithers/client.go` that parse current `{ error: { code, message, details } }` responses and map to typed Go errors, while keeping the existing `{ok,data,error}` helper path intact for already-shipped methods.
+4. Implement read methods in `internal/smithers/client.go` in regression-safe order: `ListRuns` first, then `GetRun`, then optional detail enrichment (nodes/attempts/approvals) via SQLite or `smithers inspect --format json` fallback when HTTP payloads are summary-only.
+5. Implement mutations in `internal/smithers/client.go`: approve, deny, cancel via HTTP; `HijackRun` via CLI fallback (`smithers hijack --launch=false --format json`) until/if a dedicated REST hijack endpoint exists.
+6. Add SSE support in a new `internal/smithers/events.go`: parse `event: smithers` frames, ignore heartbeat comments, track `afterSeq`, support reconnect/backoff, and emit Tea-friendly event/error/done messages.
+7. Expand package-level tests (`types`, `client`, `events`) before UI-facing work so transport and parsing behavior are stable and independently verifiable.
+8. Add a terminal E2E harness in this repo modeled on upstream `../smithers/tests/tui.e2e.test.ts` and `../smithers/tests/tui-helpers.ts` semantics (`launch`, `waitForText`, `waitForNoText`, `sendKeys`, `snapshot`, `terminate`) and add one smoke test path for Crush TUI lifecycle.
+9. Add one VHS happy-path tape for Crush TUI and wire explicit commands/tasks so E2E plus VHS can run repeatedly without manual setup drift.
+
+## File Plan
+- [internal/smithers/types.go](/Users/williamcory/crush/internal/smithers/types.go)
+- [internal/smithers/client.go](/Users/williamcory/crush/internal/smithers/client.go)
+- [internal/smithers/events.go](/Users/williamcory/crush/internal/smithers/events.go) (new)
+- [internal/smithers/types_test.go](/Users/williamcory/crush/internal/smithers/types_test.go) (new)
+- [internal/smithers/client_test.go](/Users/williamcory/crush/internal/smithers/client_test.go)
+- [internal/smithers/events_test.go](/Users/williamcory/crush/internal/smithers/events_test.go) (new)
+- [tests/tui/helpers_test.go](/Users/williamcory/crush/tests/tui/helpers_test.go) (new)
+- [tests/tui/smithers_client_runs_e2e_test.go](/Users/williamcory/crush/tests/tui/smithers_client_runs_e2e_test.go) (new)
+- [tests/vhs/smithers-client-runs-happy-path.tape](/Users/williamcory/crush/tests/vhs/smithers-client-runs-happy-path.tape) (new)
+- [tests/vhs/README.md](/Users/williamcory/crush/tests/vhs/README.md) (new)
+- [Taskfile.yaml](/Users/williamcory/crush/Taskfile.yaml)
+
+## Validation
+1. `gofumpt -w internal/smithers tests/tui`
+2. `go test ./internal/smithers -count=1`
+3. `go test ./internal/smithers -run 'TestListRuns|TestGetRun|TestApprove|TestDeny|TestCancel|TestHijackRun|TestStreamRunEvents' -count=1 -v`
+4. `go test ./tests/tui -run TestSmithersClientRunsTerminalSmoke -count=1 -v -timeout 90s` (modeled on upstream harness behavior in `../smithers/tests/tui.e2e.test.ts` and `../smithers/tests/tui-helpers.ts`)
+5. `vhs tests/vhs/smithers-client-runs-happy-path.tape`
+6. `go test ./...`
+7. Manual live-server check:
+8. `cd /Users/williamcory/smithers && bun run src/cli/index.ts up examples/fan-out-fan-in.tsx -d`
+9. `cd /Users/williamcory/smithers && bun run src/cli/index.ts serve --root . --port 7331`
+10. `curl -s http://127.0.0.1:7331/v1/runs`
+11. `curl -N 'http://127.0.0.1:7331/v1/runs/<run-id>/events?afterSeq=-1'`
+
+## Open Questions
+1. The ticket acceptance still says `/api/runs`; should this be formally corrected to `/v1/runs` to match current upstream server behavior?
+2. `GET /v1/runs/:id` currently returns summary metadata, not full DAG/nodes; should this ticket compose detail from SQLite/CLI `inspect`, or wait for a richer server endpoint?
+3. There is no dedicated REST hijack route in current server code; is CLI-based hijack (`smithers hijack --launch=false`) the expected implementation for this ticket?
+4. As of April 3, 2026, `../smithers/gui/src` and `../smithers/gui-ref` are not present in this checkout; should `../smithers/src` plus `../smithers/src/cli/tui*` be treated as the canonical implementation reference for this pass?
+5. Should Smithers API URL/token/db config wiring be included here, or deferred to the platform config-namespace ticket to keep this ticket transport-focused?
+6. For this ticket’s required terminal E2E and VHS checks, should the smoke path target existing shipped views only (harness-first), with runs-view behavioral assertions deferred to `runs-dashboard`?
+
+```json
+{
+  "document": "## Goal\nDeliver a non-breaking Smithers runs client in Crush that supports list/detail reads, SSE status streaming, approve/deny/cancel mutations, and hijack requests, while preserving existing client behavior and adding automated coverage that can be reused by follow-on runs UI tickets.\n\n## Steps\n1. Lock the real API contract first from current upstream sources (`/v1/runs`, `/v1/runs/:id`, `/v1/runs/:id/events`, approve/deny/cancel) and codify fixture payloads in tests before code changes.\n2. Extend the runs domain model in `internal/smithers/types.go` with `RunStatus`, `Run`, `RunDetail`, `RunNode`, `Attempt`, `Approval`, `RunFilter`, and `SmithersEvent`, plus Tea message envelopes for async result delivery.\n3. Add direct-JSON HTTP helpers in `internal/smithers/client.go` that parse current `{ error: { code, message, details } }` responses and map to typed Go errors, while keeping the existing `{ok,data,error}` helper path intact for already-shipped methods.\n4. Implement read methods in `internal/smithers/client.go` in regression-safe order: `ListRuns` first, then `GetRun`, then optional detail enrichment (nodes/attempts/approvals) via SQLite or `smithers inspect --format json` fallback when HTTP payloads are summary-only.\n5. Implement mutations in `internal/smithers/client.go`: approve, deny, cancel via HTTP; `HijackRun` via CLI fallback (`smithers hijack --launch=false --format json`) until/if a dedicated REST hijack endpoint exists.\n6. Add SSE support in a new `internal/smithers/events.go`: parse `event: smithers` frames, ignore heartbeat comments, track `afterSeq`, support reconnect/backoff, and emit Tea-friendly event/error/done messages.\n7. Expand package-level tests (`types`, `client`, `events`) before UI-facing work so transport and parsing behavior are stable and independently verifiable.\n8. Add a terminal E2E harness in this repo modeled on upstream `../smithers/tests/tui.e2e.test.ts` and `../smithers/tests/tui-helpers.ts` semantics (`launch`, `waitForText`, `waitForNoText`, `sendKeys`, `snapshot`, `terminate`) and add one smoke test path for Crush TUI lifecycle.\n9. Add one VHS happy-path tape for Crush TUI and wire explicit commands/tasks so E2E plus VHS can run repeatedly without manual setup drift.\n\n## File Plan\n- [internal/smithers/types.go](/Users/williamcory/crush/internal/smithers/types.go)\n- [internal/smithers/client.go](/Users/williamcory/crush/internal/smithers/client.go)\n- [internal/smithers/events.go](/Users/williamcory/crush/internal/smithers/events.go) (new)\n- [internal/smithers/types_test.go](/Users/williamcory/crush/internal/smithers/types_test.go) (new)\n- [internal/smithers/client_test.go](/Users/williamcory/crush/internal/smithers/client_test.go)\n- [internal/smithers/events_test.go](/Users/williamcory/crush/internal/smithers/events_test.go) (new)\n- [tests/tui/helpers_test.go](/Users/williamcory/crush/tests/tui/helpers_test.go) (new)\n- [tests/tui/smithers_client_runs_e2e_test.go](/Users/williamcory/crush/tests/tui/smithers_client_runs_e2e_test.go) (new)\n- [tests/vhs/smithers-client-runs-happy-path.tape](/Users/williamcory/crush/tests/vhs/smithers-client-runs-happy-path.tape) (new)\n- [tests/vhs/README.md](/Users/williamcory/crush/tests/vhs/README.md) (new)\n- [Taskfile.yaml](/Users/williamcory/crush/Taskfile.yaml)\n\n## Validation\n1. `gofumpt -w internal/smithers tests/tui`\n2. `go test ./internal/smithers -count=1`\n3. `go test ./internal/smithers -run 'TestListRuns|TestGetRun|TestApprove|TestDeny|TestCancel|TestHijackRun|TestStreamRunEvents' -count=1 -v`\n4. `go test ./tests/tui -run TestSmithersClientRunsTerminalSmoke -count=1 -v -timeout 90s` (modeled on upstream harness behavior in `../smithers/tests/tui.e2e.test.ts` and `../smithers/tests/tui-helpers.ts`)\n5. `vhs tests/vhs/smithers-client-runs-happy-path.tape`\n6. `go test ./...`\n7. Manual live-server check:\n8. `cd /Users/williamcory/smithers && bun run src/cli/index.ts up examples/fan-out-fan-in.tsx -d`\n9. `cd /Users/williamcory/smithers && bun run src/cli/index.ts serve --root . --port 7331`\n10. `curl -s http://127.0.0.1:7331/v1/runs`\n11. `curl -N 'http://127.0.0.1:7331/v1/runs/<run-id>/events?afterSeq=-1'`\n\n## Open Questions\n1. The ticket acceptance still says `/api/runs`; should this be formally corrected to `/v1/runs` to match current upstream server behavior?\n2. `GET /v1/runs/:id` currently returns summary metadata, not full DAG/nodes; should this ticket compose detail from SQLite/CLI `inspect`, or wait for a richer server endpoint?\n3. There is no dedicated REST hijack route in current server code; is CLI-based hijack (`smithers hijack --launch=false`) the expected implementation for this ticket?\n4. As of April 3, 2026, `../smithers/gui/src` and `../smithers/gui-ref` are not present in this checkout; should `../smithers/src` plus `../smithers/src/cli/tui*` be treated as the canonical implementation reference for this pass?\n5. Should Smithers API URL/token/db config wiring be included here, or deferred to the platform config-namespace ticket to keep this ticket transport-focused?\n6. For this ticket’s required terminal E2E and VHS checks, should the smoke path target existing shipped views only (harness-first), with runs-view behavioral assertions deferred to `runs-dashboard`?"
+}
+```

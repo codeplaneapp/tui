@@ -1,0 +1,516 @@
+{
+  "groupId": "runs-and-inspection",
+  "groupName": "Runs And Inspection",
+  "tickets": [
+    {
+      "id": "eng-smithers-client-runs",
+      "title": "Implement HTTP Client for Runs API",
+      "type": "engineering",
+      "featureName": null,
+      "description": "Implement the Smithers HTTP client and SSE event stream consumer to support fetching run state and real-time updates.",
+      "acceptanceCriteria": [
+        "Client can fetch the list of runs from /api/runs",
+        "Client can fetch specific run details and DAG from /api/runs/:id",
+        "Client can stream SSE events for run status updates",
+        "Client exposes Approve, Deny, Cancel, and Hijack mutations",
+        "Unit tests cover client serialization and API errors"
+      ],
+      "dependencies": [],
+      "sourceContext": [
+        "internal/smithers/client.go",
+        "internal/smithers/types.go",
+        "../smithers/src/server/routes/runs.ts"
+      ],
+      "implementationNotes": [
+        "Ensure dual-mode access (HTTP if running, SQLite fallback if direct db exists).",
+        "Events should be translated into tea.Msg types for easy consumption by the TUI loop."
+      ],
+      "groupId": "runs-and-inspection",
+      "groupName": "Runs And Inspection"
+    },
+    {
+      "id": "runs-dag-overview",
+      "title": "Run DAG Overview",
+      "type": "feature",
+      "featureName": "RUNS_DAG_OVERVIEW",
+      "description": "Render an ASCII/Unicode visualization of the node execution graph in the Run Inspector.",
+      "acceptanceCriteria": [
+        "Shows nodes and their dependencies as a tree or graph",
+        "Highlights active and failed nodes"
+      ],
+      "dependencies": [
+        "runs-inspect-summary"
+      ],
+      "sourceContext": [
+        "internal/ui/components/dagview.go",
+        "internal/ui/views/runinspect.go"
+      ],
+      "implementationNotes": [
+        "A simple vertical tree representation (like git log --graph) may suffice for TUI."
+      ],
+      "groupId": "runs-and-inspection",
+      "groupName": "Runs And Inspection"
+    },
+    {
+      "id": "runs-dashboard",
+      "title": "Run Dashboard Base View",
+      "type": "feature",
+      "featureName": "RUNS_DASHBOARD",
+      "description": "Create the foundational Run Dashboard view to display a list of runs.",
+      "acceptanceCriteria": [
+        "Accessible via /runs or Ctrl+R from the chat",
+        "Displays a tabular list of runs fetching data via the Smithers Client",
+        "Includes basic navigation using Up/Down arrows",
+        "Includes a VHS-style happy-path test recording the view opening and basic navigation",
+        "Includes an E2E test using @microsoft/tui-test harness via ../smithers/tests/tui-helpers.ts"
+      ],
+      "dependencies": [
+        "eng-smithers-client-runs"
+      ],
+      "sourceContext": [
+        "internal/ui/views/runs.go",
+        "internal/ui/components/runtable.go",
+        "../smithers/gui/src/routes/runs/RunsList.tsx",
+        "../smithers/tests/tui.e2e.test.ts",
+        "../smithers/tests/tui-helpers.ts"
+      ],
+      "implementationNotes": [
+        "Model the view logic on Bubble Tea's viewport and table components.",
+        "Ensure the E2E test asserts table columns like 'Workflow' and 'Status' are rendered correctly."
+      ],
+      "groupId": "runs-and-inspection",
+      "groupName": "Runs And Inspection"
+    },
+    {
+      "id": "runs-filter-by-date-range",
+      "title": "Date Range Filter UI",
+      "type": "feature",
+      "featureName": "RUNS_FILTER_BY_DATE_RANGE",
+      "description": "Add a UI filter control to restrict the runs displayed by date range.",
+      "acceptanceCriteria": [
+        "Filter allows selection of standard ranges (Today, Last 7 Days, All Time)"
+      ],
+      "dependencies": [
+        "runs-dashboard"
+      ],
+      "sourceContext": [
+        "internal/ui/views/runs.go"
+      ],
+      "implementationNotes": [
+        "Combine with the Smithers API's time filters if available."
+      ],
+      "groupId": "runs-and-inspection",
+      "groupName": "Runs And Inspection"
+    },
+    {
+      "id": "runs-filter-by-status",
+      "title": "Status Filter UI",
+      "type": "feature",
+      "featureName": "RUNS_FILTER_BY_STATUS",
+      "description": "Add a UI filter control to toggle visibility of runs by status (All, Active, Completed, Failed).",
+      "acceptanceCriteria": [
+        "Filter dropdown is navigable via keyboard",
+        "List filters instantly upon selection"
+      ],
+      "dependencies": [
+        "runs-dashboard"
+      ],
+      "sourceContext": [
+        "internal/ui/views/runs.go"
+      ],
+      "implementationNotes": [
+        "Implement custom top bar navigation."
+      ],
+      "groupId": "runs-and-inspection",
+      "groupName": "Runs And Inspection"
+    },
+    {
+      "id": "runs-filter-by-workflow",
+      "title": "Workflow Filter UI",
+      "type": "feature",
+      "featureName": "RUNS_FILTER_BY_WORKFLOW",
+      "description": "Add a UI filter control to toggle visibility of runs by workflow type.",
+      "acceptanceCriteria": [
+        "Can select a specific workflow from active and completed runs",
+        "List updates to only show runs of that workflow"
+      ],
+      "dependencies": [
+        "runs-dashboard"
+      ],
+      "sourceContext": [
+        "internal/ui/views/runs.go"
+      ],
+      "implementationNotes": [
+        "Dropdown choices should be populated based on the fetched data."
+      ],
+      "groupId": "runs-and-inspection",
+      "groupName": "Runs And Inspection"
+    },
+    {
+      "id": "runs-inline-run-details",
+      "title": "Inline Run Details",
+      "type": "feature",
+      "featureName": "RUNS_INLINE_RUN_DETAILS",
+      "description": "Display secondary details below the main run row, such as the active agent name or pending gate details.",
+      "acceptanceCriteria": [
+        "Active runs show the agent executing them",
+        "Pending runs show the approval gate question",
+        "Failed runs show the error reason"
+      ],
+      "dependencies": [
+        "runs-dashboard"
+      ],
+      "sourceContext": [
+        "internal/ui/views/runs.go"
+      ],
+      "implementationNotes": [
+        "Requires dynamic row height or a multi-line row rendering approach."
+      ],
+      "groupId": "runs-and-inspection",
+      "groupName": "Runs And Inspection"
+    },
+    {
+      "id": "runs-inspect-summary",
+      "title": "Run Inspector Base View",
+      "type": "feature",
+      "featureName": "RUNS_INSPECT_SUMMARY",
+      "description": "Create the Run Inspector view, showing detailed summary and node information for a selected run.",
+      "acceptanceCriteria": [
+        "Pressing Enter on a run opens the Run Inspector",
+        "Displays run metadata (time, status, overall progress)",
+        "Includes an E2E test verifying inspector navigation using @microsoft/tui-test"
+      ],
+      "dependencies": [
+        "runs-dashboard"
+      ],
+      "sourceContext": [
+        "internal/ui/views/runinspect.go",
+        "../smithers/gui/src/routes/runs/NodeInspector.tsx",
+        "../smithers/tests/tui.e2e.test.ts"
+      ],
+      "implementationNotes": [
+        "This is the parent container for the DAG and Node detail tabs."
+      ],
+      "groupId": "runs-and-inspection",
+      "groupName": "Runs And Inspection"
+    },
+    {
+      "id": "runs-node-inspector",
+      "title": "Node Inspector Selection",
+      "type": "feature",
+      "featureName": "RUNS_NODE_INSPECTOR",
+      "description": "Allow selection of a specific node within the Run Inspector to view its specific details.",
+      "acceptanceCriteria": [
+        "Can navigate through the nodes in the DAG view",
+        "Selection drives the content of the detail tabs"
+      ],
+      "dependencies": [
+        "runs-dag-overview"
+      ],
+      "sourceContext": [
+        "internal/ui/views/runinspect.go"
+      ],
+      "implementationNotes": [
+        "Manage focused node state within the runinspect model."
+      ],
+      "groupId": "runs-and-inspection",
+      "groupName": "Runs And Inspection"
+    },
+    {
+      "id": "runs-open-live-chat",
+      "title": "Open Live Chat Keybinding",
+      "type": "feature",
+      "featureName": "RUNS_OPEN_LIVE_CHAT",
+      "description": "Allow users to press 'c' to navigate to the Live Chat Viewer for the selected run.",
+      "acceptanceCriteria": [
+        "Pressing 'c' pushes the LiveChatView onto the router stack for the run ID"
+      ],
+      "dependencies": [
+        "runs-dashboard"
+      ],
+      "sourceContext": [
+        "internal/ui/views/runs.go",
+        "internal/ui/model/ui.go"
+      ],
+      "implementationNotes": [
+        "Requires integration with the router stack manager."
+      ],
+      "groupId": "runs-and-inspection",
+      "groupName": "Runs And Inspection"
+    },
+    {
+      "id": "runs-progress-visualization",
+      "title": "Node Progress Bars",
+      "type": "feature",
+      "featureName": "RUNS_PROGRESS_VISUALIZATION",
+      "description": "Render inline progress bars (e.g., 3/5 nodes completed) for active runs.",
+      "acceptanceCriteria": [
+        "Progress bars are drawn using block characters",
+        "Completed fraction matches node completion state",
+        "Color coding maps to status (e.g., green for complete, yellow for active)"
+      ],
+      "dependencies": [
+        "runs-dashboard"
+      ],
+      "sourceContext": [
+        "internal/ui/components/progressbar.go",
+        "internal/ui/views/runs.go"
+      ],
+      "implementationNotes": [
+        "Create a reusable progress bar component utilizing Lip Gloss for styling."
+      ],
+      "groupId": "runs-and-inspection",
+      "groupName": "Runs And Inspection"
+    },
+    {
+      "id": "runs-quick-approve",
+      "title": "Quick Approve Keybinding",
+      "type": "feature",
+      "featureName": "RUNS_QUICK_APPROVE",
+      "description": "Allow users to press 'a' to quickly approve a pending gate for the currently highlighted run.",
+      "acceptanceCriteria": [
+        "Pressing 'a' on a pending run submits an approval request via the API",
+        "A visual confirmation (toast or list update) is shown upon success"
+      ],
+      "dependencies": [
+        "runs-dashboard",
+        "runs-inline-run-details"
+      ],
+      "sourceContext": [
+        "internal/ui/views/runs.go",
+        "internal/smithers/client.go"
+      ],
+      "implementationNotes": [
+        "Ensure the 'a' key is only active when the selected row has an approval gate."
+      ],
+      "groupId": "runs-and-inspection",
+      "groupName": "Runs And Inspection"
+    },
+    {
+      "id": "runs-quick-cancel",
+      "title": "Quick Cancel Keybinding",
+      "type": "feature",
+      "featureName": "RUNS_QUICK_CANCEL",
+      "description": "Allow users to press 'x' to cancel the selected active run.",
+      "acceptanceCriteria": [
+        "Pressing 'x' prompts for a quick confirmation",
+        "Confirming sends a cancel request to the API"
+      ],
+      "dependencies": [
+        "runs-dashboard"
+      ],
+      "sourceContext": [
+        "internal/ui/views/runs.go",
+        "internal/smithers/client.go"
+      ],
+      "implementationNotes": [
+        "Might require a simple overlay dialog or prompt area."
+      ],
+      "groupId": "runs-and-inspection",
+      "groupName": "Runs And Inspection"
+    },
+    {
+      "id": "runs-quick-deny",
+      "title": "Quick Deny Keybinding",
+      "type": "feature",
+      "featureName": "RUNS_QUICK_DENY",
+      "description": "Allow users to press 'd' to quickly deny a pending gate for the highlighted run.",
+      "acceptanceCriteria": [
+        "Pressing 'd' on a pending run submits a deny request",
+        "Visual state updates appropriately"
+      ],
+      "dependencies": [
+        "runs-dashboard",
+        "runs-inline-run-details"
+      ],
+      "sourceContext": [
+        "internal/ui/views/runs.go",
+        "internal/smithers/client.go"
+      ],
+      "implementationNotes": [
+        "Share logic with quick-approve where possible."
+      ],
+      "groupId": "runs-and-inspection",
+      "groupName": "Runs And Inspection"
+    },
+    {
+      "id": "runs-quick-hijack",
+      "title": "Quick Hijack Keybinding",
+      "type": "feature",
+      "featureName": "RUNS_QUICK_HIJACK",
+      "description": "Allow users to press 'h' to initiate native TUI handoff for the active run.",
+      "acceptanceCriteria": [
+        "Pressing 'h' suspends the Smithers TUI and hands off to the agent CLI via tea.ExecProcess"
+      ],
+      "dependencies": [
+        "runs-dashboard"
+      ],
+      "sourceContext": [
+        "internal/ui/views/runs.go",
+        "internal/ui/views/livechat.go"
+      ],
+      "implementationNotes": [
+        "Follow the native TUI handoff pattern defined in the design doc."
+      ],
+      "groupId": "runs-and-inspection",
+      "groupName": "Runs And Inspection"
+    },
+    {
+      "id": "runs-realtime-status-updates",
+      "title": "Stream Real-time Run Updates",
+      "type": "feature",
+      "featureName": "RUNS_REALTIME_STATUS_UPDATES",
+      "description": "Subscribe to SSE events in the Run Dashboard to update run states dynamically without polling.",
+      "acceptanceCriteria": [
+        "Dashboard subscribes to the event stream when active",
+        "Run state changes (e.g., pending -> active -> completed) reflect instantly",
+        "SSE connection is cleanly closed when navigating away"
+      ],
+      "dependencies": [
+        "runs-dashboard"
+      ],
+      "sourceContext": [
+        "internal/ui/views/runs.go",
+        "internal/smithers/events.go"
+      ],
+      "implementationNotes": [
+        "Use a Bubble Tea Cmd to listen for SSE messages and return them as tea.Msg updates."
+      ],
+      "groupId": "runs-and-inspection",
+      "groupName": "Runs And Inspection"
+    },
+    {
+      "id": "runs-search",
+      "title": "Run Text Search",
+      "type": "feature",
+      "featureName": "RUNS_SEARCH",
+      "description": "Add a search input box to fuzzy filter the run list by ID, workflow name, or inline details.",
+      "acceptanceCriteria": [
+        "Key shortcut to focus search",
+        "Typing dynamically filters the list"
+      ],
+      "dependencies": [
+        "runs-dashboard"
+      ],
+      "sourceContext": [
+        "internal/ui/views/runs.go"
+      ],
+      "implementationNotes": [
+        "Use the Bubbles textinput component."
+      ],
+      "groupId": "runs-and-inspection",
+      "groupName": "Runs And Inspection"
+    },
+    {
+      "id": "runs-status-sectioning",
+      "title": "Group Runs by Status Sections",
+      "type": "feature",
+      "featureName": "RUNS_STATUS_SECTIONING",
+      "description": "Enhance the Run Dashboard to visually group runs into sections like 'Active', 'Completed Today', and 'Failed'.",
+      "acceptanceCriteria": [
+        "Runs are partitioned by status sections",
+        "Sections map to the GUI parity layout",
+        "List navigation correctly traverses between sections"
+      ],
+      "dependencies": [
+        "runs-dashboard"
+      ],
+      "sourceContext": [
+        "internal/ui/views/runs.go"
+      ],
+      "implementationNotes": [
+        "Update the list component to support section headers that cannot be selected."
+      ],
+      "groupId": "runs-and-inspection",
+      "groupName": "Runs And Inspection"
+    },
+    {
+      "id": "runs-task-tab-chat-logs",
+      "title": "Node Chat Logs Tab",
+      "type": "feature",
+      "featureName": "RUNS_TASK_TAB_CHAT_LOGS",
+      "description": "Implement the Chat Logs tab to view detailed agent communication or raw execution logs for the node.",
+      "acceptanceCriteria": [
+        "Displays the agent interaction or system logs for the node execution",
+        "Supports scrolling through long logs"
+      ],
+      "dependencies": [
+        "runs-node-inspector"
+      ],
+      "sourceContext": [
+        "internal/ui/views/tasktabs.go"
+      ],
+      "implementationNotes": [
+        "Use Bubbles viewport for scrolling content."
+      ],
+      "groupId": "runs-and-inspection",
+      "groupName": "Runs And Inspection"
+    },
+    {
+      "id": "runs-task-tab-config",
+      "title": "Node Config Tab",
+      "type": "feature",
+      "featureName": "RUNS_TASK_TAB_CONFIG",
+      "description": "Implement the Config tab to display configuration parameters for the selected node.",
+      "acceptanceCriteria": [
+        "Shows node execution config (e.g., retries, timeout, tools allowed)"
+      ],
+      "dependencies": [
+        "runs-node-inspector"
+      ],
+      "sourceContext": [
+        "internal/ui/views/tasktabs.go"
+      ],
+      "implementationNotes": [
+        "Map from the node definition config."
+      ],
+      "groupId": "runs-and-inspection",
+      "groupName": "Runs And Inspection"
+    },
+    {
+      "id": "runs-task-tab-input",
+      "title": "Node Input Tab",
+      "type": "feature",
+      "featureName": "RUNS_TASK_TAB_INPUT",
+      "description": "Implement the Input tab to show the payload passed to the selected node.",
+      "acceptanceCriteria": [
+        "Displays JSON or structured text of the node's input payload"
+      ],
+      "dependencies": [
+        "runs-node-inspector"
+      ],
+      "sourceContext": [
+        "internal/ui/views/tasktabs.go",
+        "internal/ui/components/jsontree.go",
+        "../smithers/gui/src/routes/runs/TaskTabs.tsx"
+      ],
+      "implementationNotes": [
+        "Utilize the internal/ui/components/jsontree.go component for rendering."
+      ],
+      "groupId": "runs-and-inspection",
+      "groupName": "Runs And Inspection"
+    },
+    {
+      "id": "runs-task-tab-output",
+      "title": "Node Output Tab",
+      "type": "feature",
+      "featureName": "RUNS_TASK_TAB_OUTPUT",
+      "description": "Implement the Output tab to show the results generated by the selected node.",
+      "acceptanceCriteria": [
+        "Displays JSON or structured text of the node's output",
+        "Shows errors if the node failed"
+      ],
+      "dependencies": [
+        "runs-node-inspector"
+      ],
+      "sourceContext": [
+        "internal/ui/views/tasktabs.go"
+      ],
+      "implementationNotes": [
+        "Similar to the input tab, format the output for readability in the TUI."
+      ],
+      "groupId": "runs-and-inspection",
+      "groupName": "Runs And Inspection"
+    }
+  ]
+}

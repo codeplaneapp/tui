@@ -1,0 +1,226 @@
+{
+  "groupId": "agents",
+  "groupName": "Agents",
+  "tickets": [
+    {
+      "id": "eng-agents-e2e-tests",
+      "title": "Engineering: Agents View E2E and Visual Tests",
+      "type": "engineering",
+      "featureName": null,
+      "description": "Add comprehensive end-to-end testing and terminal recording for the Agents view functionality.",
+      "acceptanceCriteria": [
+        "Add a test in ../smithers/tests/tui.e2e.test.ts that navigates to the /agents view and verifies the rendering of the agent list.",
+        "Simulate an Enter keypress in the E2E test to verify the TUI correctly attempts a handoff.",
+        "Create a VHS tape recording (.tape file) demonstrating navigation to the Agents view, scrolling, and launching an agent."
+      ],
+      "dependencies": [
+        "feat-agents-binary-path-display",
+        "feat-agents-availability-status",
+        "feat-agents-auth-status-classification",
+        "feat-agents-role-display",
+        "feat-agents-native-tui-launch"
+      ],
+      "sourceContext": [
+        "../smithers/tests/tui.e2e.test.ts",
+        "../smithers/tests/tui-helpers.ts"
+      ],
+      "implementationNotes": [
+        "Model the E2E test on the existing fan-out-fan-in runs dashboard test. You may need to mock the smithers API or ensure the test environment exposes mock agents."
+      ],
+      "groupId": "agents",
+      "groupName": "Agents"
+    },
+    {
+      "id": "eng-agents-view-scaffolding",
+      "title": "Engineering: Scaffolding for Agents View",
+      "type": "engineering",
+      "featureName": null,
+      "description": "Create the structural boilerplate for the Agents view and establish the internal client method to fetch agent data from the Smithers CLI.",
+      "acceptanceCriteria": [
+        "Create internal/ui/views/agents.go implementing the base View interface.",
+        "Add a ListAgents() stub to internal/smithers/client.go.",
+        "Register the /agents route in the main view router so it can be navigated to."
+      ],
+      "dependencies": [],
+      "sourceContext": [
+        "internal/ui/views/router.go",
+        "internal/smithers/client.go",
+        "internal/ui/model/ui.go"
+      ],
+      "implementationNotes": [
+        "Use Crush's existing Bubble Tea list component patterns if applicable.",
+        "The list of agents will mirror the behavior in ../smithers/gui/src/components/AgentsList.tsx."
+      ],
+      "groupId": "agents",
+      "groupName": "Agents"
+    },
+    {
+      "id": "feat-agents-auth-status-classification",
+      "title": "Agent Auth Status Classification",
+      "type": "feature",
+      "featureName": "AGENTS_AUTH_STATUS_CLASSIFICATION",
+      "description": "Render the detailed authentication and API key validation status markers for each agent.",
+      "acceptanceCriteria": [
+        "Displays 'Auth: ✓' or 'Auth: ✗' indicating active authentication.",
+        "Displays 'API Key: ✓' or 'API Key: ✗' indicating environment variable presence.",
+        "Icons use standard success/error colors (green/red)."
+      ],
+      "dependencies": [
+        "feat-agents-cli-detection"
+      ],
+      "sourceContext": [
+        "internal/ui/views/agents.go",
+        "docs/smithers-tui/02-DESIGN.md"
+      ],
+      "implementationNotes": [
+        "Align the output on a single line matching the design doc: `Auth: ✓  API Key: ✓  Roles: ...`"
+      ],
+      "groupId": "agents",
+      "groupName": "Agents"
+    },
+    {
+      "id": "feat-agents-availability-status",
+      "title": "Agent Availability Status",
+      "type": "feature",
+      "featureName": "AGENTS_AVAILABILITY_STATUS",
+      "description": "Render the overall availability status of each agent (e.g., likely-subscription, api-key, binary-only, unavailable).",
+      "acceptanceCriteria": [
+        "Each agent displays a 'Status: ● <status>' line.",
+        "Applies distinct colors for different states (e.g., green for likely-subscription/api-key, gray for unavailable)."
+      ],
+      "dependencies": [
+        "feat-agents-cli-detection"
+      ],
+      "sourceContext": [
+        "internal/ui/views/agents.go",
+        "internal/ui/styles/styles.go"
+      ],
+      "implementationNotes": [
+        "Define Lip Gloss styles in internal/ui/styles/styles.go mapping to these specific Smithers agent statuses."
+      ],
+      "groupId": "agents",
+      "groupName": "Agents"
+    },
+    {
+      "id": "feat-agents-binary-path-display",
+      "title": "Agent Binary Path Display",
+      "type": "feature",
+      "featureName": "AGENTS_BINARY_PATH_DISPLAY",
+      "description": "Enhance the agent list items to display the physical binary path discovered for each agent.",
+      "acceptanceCriteria": [
+        "Each agent list item renders a 'Binary: <path>' line below the agent name.",
+        "If no binary is found, it renders 'Binary: —'."
+      ],
+      "dependencies": [
+        "feat-agents-cli-detection"
+      ],
+      "sourceContext": [
+        "internal/ui/views/agents.go",
+        "docs/smithers-tui/02-DESIGN.md"
+      ],
+      "implementationNotes": [
+        "Use Lip Gloss styles to format the path with a slightly dimmed or secondary text color."
+      ],
+      "groupId": "agents",
+      "groupName": "Agents"
+    },
+    {
+      "id": "feat-agents-browser",
+      "title": "Agents Browser Base View",
+      "type": "feature",
+      "featureName": "AGENTS_BROWSER",
+      "description": "Implement the main Bubble Tea view for the Agent Browser, rendering the layout frame and handling standard navigation.",
+      "acceptanceCriteria": [
+        "Navigating to /agents or using the command palette opens the Agents view.",
+        "The view displays a 'SMITHERS › Agents' header and a placeholder list.",
+        "Pressing Esc returns the user to the previous view (chat/console)."
+      ],
+      "dependencies": [
+        "eng-agents-view-scaffolding"
+      ],
+      "sourceContext": [
+        "internal/ui/views/agents.go",
+        "docs/smithers-tui/02-DESIGN.md"
+      ],
+      "implementationNotes": [
+        "Reference the design doc section 3.7 for layout specifications.",
+        "Leverage internal/ui/styles/styles.go for standard layout margins and colors."
+      ],
+      "groupId": "agents",
+      "groupName": "Agents"
+    },
+    {
+      "id": "feat-agents-cli-detection",
+      "title": "Agent CLI Detection and Listing",
+      "type": "feature",
+      "featureName": "AGENTS_CLI_DETECTION",
+      "description": "Populate the Agent Browser list with real data fetched from the Smithers API, showing all detected agent CLI tools on the system.",
+      "acceptanceCriteria": [
+        "The agents list is populated dynamically via SmithersClient.ListAgents().",
+        "Users can navigate the list using standard up/down arrow keys.",
+        "The name of each agent (e.g., claude-code, codex) is rendered prominently."
+      ],
+      "dependencies": [
+        "feat-agents-browser"
+      ],
+      "sourceContext": [
+        "internal/ui/views/agents.go",
+        "internal/smithers/client.go"
+      ],
+      "implementationNotes": [
+        "Handle loading states and potential API errors gracefully within the view's Update and View loops."
+      ],
+      "groupId": "agents",
+      "groupName": "Agents"
+    },
+    {
+      "id": "feat-agents-native-tui-launch",
+      "title": "Agent Direct Chat (Native TUI Launch)",
+      "type": "feature",
+      "featureName": "AGENTS_NATIVE_TUI_LAUNCH",
+      "description": "Implement the TUI handoff mechanism allowing users to press Enter on an agent to launch its native CLI/TUI and suspend Smithers TUI.",
+      "acceptanceCriteria": [
+        "Pressing Enter on an available agent displays a brief 'Launching...' handoff message.",
+        "The TUI suspends and executes the agent's binary using tea.ExecProcess.",
+        "The agent is given full control of the terminal I/O.",
+        "When the agent process exits, the Smithers TUI resumes automatically."
+      ],
+      "dependencies": [
+        "feat-agents-browser",
+        "feat-agents-cli-detection"
+      ],
+      "sourceContext": [
+        "internal/ui/views/agents.go",
+        "docs/smithers-tui/03-ENGINEERING.md"
+      ],
+      "implementationNotes": [
+        "Review section 2.4 'TUI Handoff Pattern' in the engineering doc. Use tea.ExecProcess(cmd, callback) rather than trying to proxy PTY output."
+      ],
+      "groupId": "agents",
+      "groupName": "Agents"
+    },
+    {
+      "id": "feat-agents-role-display",
+      "title": "Agent Role Display",
+      "type": "feature",
+      "featureName": "AGENTS_ROLE_DISPLAY",
+      "description": "Render the list of supported roles or capabilities (e.g., coding, research, review) provided by the agent.",
+      "acceptanceCriteria": [
+        "Displays 'Roles: <role1>, <role2>' on the same line as the auth status.",
+        "Roles are comma-separated and properly capitalized."
+      ],
+      "dependencies": [
+        "feat-agents-cli-detection"
+      ],
+      "sourceContext": [
+        "internal/ui/views/agents.go",
+        "docs/smithers-tui/02-DESIGN.md"
+      ],
+      "implementationNotes": [
+        "Extract roles from the agent metadata returned by the Smithers API."
+      ],
+      "groupId": "agents",
+      "groupName": "Agents"
+    }
+  ]
+}

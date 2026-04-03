@@ -1,0 +1,350 @@
+{
+  "groupId": "mcp-integration",
+  "groupName": "Mcp Integration",
+  "tickets": [
+    {
+      "id": "eng-mcp-integration-tests",
+      "title": "E2E and VHS Testing for MCP Tool Renderers",
+      "type": "engineering",
+      "featureName": null,
+      "description": "Create terminal E2E tests and VHS-style recordings for Smithers MCP tool integrations in the chat interface.",
+      "acceptanceCriteria": [
+        "Terminal E2E path modeled on the upstream @microsoft/tui-test harness verifies tool discovery and execution via the TUI.",
+        "At least one VHS-style happy-path recording test verifies the rendering of a Smithers MCP tool result in the chat."
+      ],
+      "dependencies": [
+        "feat-mcp-tool-discovery",
+        "feat-mcp-runs-tools",
+        "feat-mcp-control-tools"
+      ],
+      "sourceContext": [
+        "tests/tui.e2e.test.ts",
+        "tests/tui-helpers.ts"
+      ],
+      "implementationNotes": [
+        "Model testing harness on `../smithers/tests/tui.e2e.test.ts` and `../smithers/tests/tui-helpers.ts`.",
+        "Add a `.tape` file for the VHS recording."
+      ],
+      "groupId": "mcp-integration",
+      "groupName": "Mcp Integration"
+    },
+    {
+      "id": "eng-mcp-renderer-scaffolding",
+      "title": "Base Scaffolding for Smithers Tool Renderers",
+      "type": "engineering",
+      "featureName": null,
+      "description": "Create the base abstraction and registration patterns for Smithers-specific MCP tool renderers in the TUI chat interface.",
+      "acceptanceCriteria": [
+        "A standard pattern for parsing Smithers tool result JSON is established.",
+        "Common UI styles (tables, cards, success/error indicators) for Smithers tools are defined in `internal/ui/styles`.",
+        "A registry entry or switch case maps `smithers_*` tool calls to their respective renderers."
+      ],
+      "dependencies": [
+        "feat-mcp-tool-discovery"
+      ],
+      "sourceContext": [
+        "internal/ui/chat/tools.go",
+        "internal/ui/styles/styles.go"
+      ],
+      "implementationNotes": [
+        "Crush registers tool renderers in `internal/ui/chat/tools.go` or similar.",
+        "Provide a helper function for unmarshaling `mcp.ToolResult.Content` to Smithers domain structs."
+      ],
+      "groupId": "mcp-integration",
+      "groupName": "Mcp Integration"
+    },
+    {
+      "id": "feat-mcp-agent-tools",
+      "title": "Agent Tool Renderers",
+      "type": "feature",
+      "featureName": "MCP_AGENT_TOOLS",
+      "description": "Implement UI renderers for agent tools (`smithers_agent_list`, `smithers_agent_chat`).",
+      "acceptanceCriteria": [
+        "`smithers_agent_list` displays agent binaries and availability status.",
+        "`smithers_agent_chat` prompts the user about native TUI handoff or shows chat outcome."
+      ],
+      "dependencies": [
+        "eng-mcp-renderer-scaffolding"
+      ],
+      "sourceContext": [
+        "internal/ui/chat/smithers_agents.go"
+      ],
+      "implementationNotes": [
+        "Align `agent_list` table structure with the dedicated `/agents` view."
+      ],
+      "groupId": "mcp-integration",
+      "groupName": "Mcp Integration"
+    },
+    {
+      "id": "feat-mcp-control-tools",
+      "title": "Control & Hijack Tool Renderers",
+      "type": "feature",
+      "featureName": "MCP_CONTROL_TOOLS",
+      "description": "Implement UI renderers for Smithers control tools (`smithers_approve`, `smithers_deny`, `smithers_hijack`).",
+      "acceptanceCriteria": [
+        "`smithers_approve` and `smithers_deny` show clear success or error indicators.",
+        "`smithers_hijack` shows instructions or confirmation of hijack transition."
+      ],
+      "dependencies": [
+        "eng-mcp-renderer-scaffolding"
+      ],
+      "sourceContext": [
+        "internal/ui/chat/smithers_control.go"
+      ],
+      "implementationNotes": [
+        "Visual distinctness is important for approval/deny actions (e.g., green checkmark vs red X)."
+      ],
+      "groupId": "mcp-integration",
+      "groupName": "Mcp Integration"
+    },
+    {
+      "id": "feat-mcp-cron-tools",
+      "title": "Cron Tool Renderers",
+      "type": "feature",
+      "featureName": "MCP_CRON_TOOLS",
+      "description": "Implement UI renderers for cron schedule tools (`smithers_cron_list`, `smithers_cron_add`, `smithers_cron_rm`, `smithers_cron_toggle`).",
+      "acceptanceCriteria": [
+        "`smithers_cron_list` shows schedules with enable/disable indicators.",
+        "Mutation tools render success notifications."
+      ],
+      "dependencies": [
+        "eng-mcp-renderer-scaffolding"
+      ],
+      "sourceContext": [
+        "internal/ui/chat/smithers_cron.go"
+      ],
+      "implementationNotes": [
+        "Format crontab nicely with translation to human-readable strings if possible."
+      ],
+      "groupId": "mcp-integration",
+      "groupName": "Mcp Integration"
+    },
+    {
+      "id": "feat-mcp-memory-tools",
+      "title": "Memory Tool Renderers",
+      "type": "feature",
+      "featureName": "MCP_MEMORY_TOOLS",
+      "description": "Implement UI renderers for memory tools (`smithers_memory_list`, `smithers_memory_recall`).",
+      "acceptanceCriteria": [
+        "`smithers_memory_list` shows facts stored in memory.",
+        "`smithers_memory_recall` displays facts matching the semantic query."
+      ],
+      "dependencies": [
+        "eng-mcp-renderer-scaffolding"
+      ],
+      "sourceContext": [
+        "internal/ui/chat/smithers_memory.go"
+      ],
+      "implementationNotes": [
+        "Format memory facts as a simple list."
+      ],
+      "groupId": "mcp-integration",
+      "groupName": "Mcp Integration"
+    },
+    {
+      "id": "feat-mcp-observability-tools",
+      "title": "Observability Tool Renderers",
+      "type": "feature",
+      "featureName": "MCP_OBSERVABILITY_TOOLS",
+      "description": "Implement UI renderers for Smithers observability tools (`smithers_logs`, `smithers_chat`, `smithers_inspect`).",
+      "acceptanceCriteria": [
+        "`smithers_inspect` renders a detailed DAG or node list for a run.",
+        "`smithers_logs` formats log events clearly with timestamps.",
+        "`smithers_chat` renders conversational blocks from an agent run."
+      ],
+      "dependencies": [
+        "eng-mcp-renderer-scaffolding"
+      ],
+      "sourceContext": [
+        "internal/ui/chat/smithers_observability.go"
+      ],
+      "implementationNotes": [
+        "Map JSON arrays from `smithers_chat` to readable message sequences."
+      ],
+      "groupId": "mcp-integration",
+      "groupName": "Mcp Integration"
+    },
+    {
+      "id": "feat-mcp-prompt-tools",
+      "title": "Prompt Tool Renderers",
+      "type": "feature",
+      "featureName": "MCP_PROMPT_TOOLS",
+      "description": "Implement UI renderers for prompt management tools (`smithers_prompt_list`, `smithers_prompt_update`, `smithers_prompt_render`).",
+      "acceptanceCriteria": [
+        "`smithers_prompt_list` shows available prompts.",
+        "`smithers_prompt_render` shows the evaluated output of the prompt template.",
+        "`smithers_prompt_update` renders a success message."
+      ],
+      "dependencies": [
+        "eng-mcp-renderer-scaffolding"
+      ],
+      "sourceContext": [
+        "internal/ui/chat/smithers_prompts.go"
+      ],
+      "implementationNotes": [
+        "For `smithers_prompt_render`, use markdown rendering (Glamour) if applicable."
+      ],
+      "groupId": "mcp-integration",
+      "groupName": "Mcp Integration"
+    },
+    {
+      "id": "feat-mcp-runs-tools",
+      "title": "Run Management Tool Renderers",
+      "type": "feature",
+      "featureName": "MCP_RUNS_TOOLS",
+      "description": "Implement UI renderers for Smithers run management tools (`smithers_ps`, `smithers_up`, `smithers_cancel`, `smithers_down`).",
+      "acceptanceCriteria": [
+        "`smithers_ps` renders a formatted table of active and completed runs.",
+        "`smithers_up` renders a success card with the new run ID.",
+        "`smithers_cancel` and `smithers_down` render confirmation indicators."
+      ],
+      "dependencies": [
+        "eng-mcp-renderer-scaffolding"
+      ],
+      "sourceContext": [
+        "internal/ui/chat/smithers_runs.go"
+      ],
+      "implementationNotes": [
+        "Use Lip Gloss tables for `smithers_ps`.",
+        "Register renderers for all runs-related tools."
+      ],
+      "groupId": "mcp-integration",
+      "groupName": "Mcp Integration"
+    },
+    {
+      "id": "feat-mcp-scoring-tools",
+      "title": "Scoring Tool Renderers",
+      "type": "feature",
+      "featureName": "MCP_SCORING_TOOLS",
+      "description": "Implement UI renderers for the `smithers_scores` tool.",
+      "acceptanceCriteria": [
+        "`smithers_scores` displays evaluation metrics and token usage in a clear grid or table."
+      ],
+      "dependencies": [
+        "eng-mcp-renderer-scaffolding"
+      ],
+      "sourceContext": [
+        "internal/ui/chat/smithers_scoring.go"
+      ],
+      "implementationNotes": [
+        "Metrics might need specific formatting (percentages, charts) if data allows."
+      ],
+      "groupId": "mcp-integration",
+      "groupName": "Mcp Integration"
+    },
+    {
+      "id": "feat-mcp-sql-tools",
+      "title": "SQL Tool Renderers",
+      "type": "feature",
+      "featureName": "MCP_SQL_TOOLS",
+      "description": "Implement UI renderers for the `smithers_sql` tool.",
+      "acceptanceCriteria": [
+        "`smithers_sql` renders raw database query results in a dynamic table."
+      ],
+      "dependencies": [
+        "eng-mcp-renderer-scaffolding"
+      ],
+      "sourceContext": [
+        "internal/ui/chat/smithers_sql.go"
+      ],
+      "implementationNotes": [
+        "Dynamic table rendering since SQL results have arbitrary columns."
+      ],
+      "groupId": "mcp-integration",
+      "groupName": "Mcp Integration"
+    },
+    {
+      "id": "feat-mcp-ticket-tools",
+      "title": "Ticket Tool Renderers",
+      "type": "feature",
+      "featureName": "MCP_TICKET_TOOLS",
+      "description": "Implement UI renderers for ticket management tools (`smithers_ticket_list`, `smithers_ticket_create`, `smithers_ticket_update`).",
+      "acceptanceCriteria": [
+        "`smithers_ticket_list` displays a table of tickets.",
+        "`smithers_ticket_create` and `smithers_ticket_update` render success messages."
+      ],
+      "dependencies": [
+        "eng-mcp-renderer-scaffolding"
+      ],
+      "sourceContext": [
+        "internal/ui/chat/smithers_tickets.go"
+      ],
+      "implementationNotes": [
+        "Basic list/detail formatting."
+      ],
+      "groupId": "mcp-integration",
+      "groupName": "Mcp Integration"
+    },
+    {
+      "id": "feat-mcp-time-travel-tools",
+      "title": "Time-Travel Tool Renderers",
+      "type": "feature",
+      "featureName": "MCP_TIME_TRAVEL_TOOLS",
+      "description": "Implement UI renderers for time-travel tools (`smithers_diff`, `smithers_fork`, `smithers_replay`, `smithers_timeline`).",
+      "acceptanceCriteria": [
+        "`smithers_timeline` renders a horizontal or vertical snapshot history.",
+        "`smithers_diff` highlights changed state between snapshots.",
+        "`smithers_fork` and `smithers_replay` show success indicators with new run IDs."
+      ],
+      "dependencies": [
+        "eng-mcp-renderer-scaffolding"
+      ],
+      "sourceContext": [
+        "internal/ui/chat/smithers_time_travel.go"
+      ],
+      "implementationNotes": [
+        "Use Lip Gloss or Charm `ansi` for diff highlighting."
+      ],
+      "groupId": "mcp-integration",
+      "groupName": "Mcp Integration"
+    },
+    {
+      "id": "feat-mcp-tool-discovery",
+      "title": "Configure Smithers MCP Server Discovery",
+      "type": "feature",
+      "featureName": "MCP_TOOL_DISCOVERY_FROM_SMITHERS_SERVER",
+      "description": "Configure Crush to automatically discover and connect to the Smithers MCP server (`smithers mcp-serve`) on startup, setting Smithers tools as the primary tools in the default config.",
+      "acceptanceCriteria": [
+        "Default configuration automatically sets up `smithers` stdio MCP server pointing to `smithers mcp-serve`.",
+        "Default tool list in config prioritizes Smithers tools over general coding tools.",
+        "Agent successfully discovers and can invoke Smithers MCP tools."
+      ],
+      "dependencies": [],
+      "sourceContext": [
+        "internal/config/defaults.go",
+        "internal/config/config.go",
+        "internal/app/app.go"
+      ],
+      "implementationNotes": [
+        "Modify `DefaultTools` in `internal/config/defaults.go` to include expected Smithers tools.",
+        "Add `mcpServers` config for `smithers` in default config.",
+        "Ensure MCP initialization in `app.go` picks up the local Smithers server."
+      ],
+      "groupId": "mcp-integration",
+      "groupName": "Mcp Integration"
+    },
+    {
+      "id": "feat-mcp-workflow-tools",
+      "title": "Workflow Tool Renderers",
+      "type": "feature",
+      "featureName": "MCP_WORKFLOW_TOOLS",
+      "description": "Implement UI renderers for workflow tools (`smithers_workflow_list`, `smithers_workflow_run`, `smithers_workflow_doctor`).",
+      "acceptanceCriteria": [
+        "`smithers_workflow_list` displays available workflows in a list.",
+        "`smithers_workflow_run` confirms execution.",
+        "`smithers_workflow_doctor` clearly highlights warnings and errors."
+      ],
+      "dependencies": [
+        "eng-mcp-renderer-scaffolding"
+      ],
+      "sourceContext": [
+        "internal/ui/chat/smithers_workflows.go"
+      ],
+      "implementationNotes": [
+        "Format `doctor` output similar to ESLint or Go diagnostics."
+      ],
+      "groupId": "mcp-integration",
+      "groupName": "Mcp Integration"
+    }
+  ]
+}
