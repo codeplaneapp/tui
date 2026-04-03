@@ -24,10 +24,21 @@ const (
 	diagToDetailsSpacing = 1 // space between diagonal pattern and details section
 )
 
+// SmithersStatus holds Smithers runtime metrics displayed in header and
+// status-bar surfaces.
+type SmithersStatus struct {
+	ActiveRuns       int
+	PendingApprovals int
+	MCPConnected     bool
+	MCPServerName    string
+}
+
 type header struct {
 	// cached logo and compact logo
 	logo        string
 	compactLogo string
+
+	smithersStatus *SmithersStatus
 
 	com     *common.Common
 	width   int
@@ -40,9 +51,12 @@ func newHeader(com *common.Common) *header {
 		com: com,
 	}
 	t := com.Styles
-	h.compactLogo = t.Header.Charm.Render("Charm™") + " " +
-		styles.ApplyBoldForegroundGrad(t, "CRUSH", t.Secondary, t.Primary) + " "
+	h.compactLogo = styles.ApplyBoldForegroundGrad(t, "SMITHERS", t.Secondary, t.Primary) + " "
 	return h
+}
+
+func (h *header) SetSmithersStatus(status *SmithersStatus) {
+	h.smithersStatus = status
 }
 
 // drawHeader draws the header for the given session.
@@ -81,6 +95,7 @@ func (h *header) drawHeader(
 		h.com.App.LSPManager.Clients(),
 		detailsOpen,
 		availDetailWidth,
+		h.smithersStatus,
 	)
 
 	remainingWidth := width -
@@ -111,6 +126,7 @@ func renderHeaderDetails(
 	lspClients *csync.Map[string, *lsp.Client],
 	detailsOpen bool,
 	availWidth int,
+	smithersStatus *SmithersStatus,
 ) string {
 	t := com.Styles
 
@@ -136,6 +152,37 @@ func renderHeaderDetails(
 		parts = append(parts, t.Header.Keystroke.Render(keystroke)+t.Header.KeystrokeTip.Render(" close"))
 	} else {
 		parts = append(parts, t.Header.Keystroke.Render(keystroke)+t.Header.KeystrokeTip.Render(" open "))
+	}
+
+	if smithersStatus != nil {
+		serverName := strings.TrimSpace(smithersStatus.MCPServerName)
+		if serverName == "" {
+			serverName = "smithers"
+		}
+
+		indicator := "○"
+		connection := "disconnected"
+		connectionStyle := t.Muted
+		if smithersStatus.MCPConnected {
+			indicator = "●"
+			connection = "connected"
+			connectionStyle = t.Base.Foreground(t.Primary)
+		}
+
+		parts = append(parts, connectionStyle.Render(fmt.Sprintf("%s %s %s", indicator, serverName, connection)))
+
+		if smithersStatus.ActiveRuns > 0 {
+			parts = append(parts, t.Muted.Render(fmt.Sprintf("%d active", smithersStatus.ActiveRuns)))
+		}
+
+		if smithersStatus.PendingApprovals > 0 {
+			approvalNoun := "approval"
+			if smithersStatus.PendingApprovals != 1 {
+				approvalNoun = "approvals"
+			}
+			pendingText := fmt.Sprintf("⚠ %d pending %s", smithersStatus.PendingApprovals, approvalNoun)
+			parts = append(parts, t.Base.Foreground(t.Warning).Render(pendingText))
+		}
 	}
 
 	dot := t.Header.Separator.Render(" • ")

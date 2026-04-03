@@ -84,6 +84,11 @@ tasks:
     cmds:
       - go test -race -failfast ./... {{.CLI_ARGS}}
 
+  vhs:branding-status:
+    desc: Record Smithers branding/status VHS tape
+    cmds:
+      - vhs tests/vhs/branding-status.tape
+
   test:record:
     desc: Run tests and record all VCR cassettes again
     aliases: [record]
