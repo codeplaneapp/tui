@@ -526,6 +526,9 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	commands = append(commands, NewCommandItem(c.com.Styles, "toggle_transparent", transparentLabel, "", ActionToggleTransparentBackground{}))
 
 	commands = append(commands,
+		NewCommandItem(c.com.Styles, "agents", "Agents", "", ActionOpenAgentsView{}),
+		NewCommandItem(c.com.Styles, "approvals", "Approvals", "", ActionOpenApprovalsView{}),
+		NewCommandItem(c.com.Styles, "tickets", "Tickets", "", ActionOpenTicketsView{}),
 		NewCommandItem(c.com.Styles, "quit", "Quit", "ctrl+c", tea.QuitMsg{}),
 	)
 

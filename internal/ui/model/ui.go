@@ -46,9 +46,11 @@ import (
 	"github.com/charmbracelet/crush/internal/ui/dialog"
 	fimage "github.com/charmbracelet/crush/internal/ui/image"
 	"github.com/charmbracelet/crush/internal/ui/logo"
+	"github.com/charmbracelet/crush/internal/smithers"
 	"github.com/charmbracelet/crush/internal/ui/notification"
 	"github.com/charmbracelet/crush/internal/ui/styles"
 	"github.com/charmbracelet/crush/internal/ui/util"
+	"github.com/charmbracelet/crush/internal/ui/views"
 	"github.com/charmbracelet/crush/internal/version"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/ultraviolet/layout"
@@ -103,6 +105,7 @@ const (
 	uiInitialize
 	uiLanding
 	uiChat
+	uiSmithersView
 )
 
 type openEditorMsg struct {
@@ -181,6 +184,10 @@ type UI struct {
 
 	dialog *dialog.Overlay
 	status *Status
+
+	// Smithers view router and client.
+	viewRouter     *views.Router
+	smithersClient *smithers.Client
 
 	// isCanceling tracks whether the user has pressed escape once to cancel.
 	isCanceling bool
@@ -331,6 +338,8 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 		notifyWindowFocused: true,
 		initialSessionID:    initialSessionID,
 		continueLastSession: continueLast,
+		viewRouter:          views.NewRouter(),
+		smithersClient:      smithers.NewClient(),
 	}
 
 	status := NewStatus(com, ui)
@@ -891,6 +900,20 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Forward messages to the current smithers view (for async messages like agentsLoadedMsg).
+	if m.state == uiSmithersView {
+		if current := m.viewRouter.Current(); current != nil {
+			updated, cmd := current.Update(msg)
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+			if updated != current {
+				m.viewRouter.Pop()
+				m.viewRouter.Push(updated)
+			}
+		}
+	}
+
 	// at this point this can only handle [message.Attachment] message, and we
 	// should return all cmds anyway.
 	_ = m.attachments.Update(msg)
@@ -1427,6 +1450,37 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		cmds = append(cmds, m.initializeProject())
 		m.dialog.CloseDialog(dialog.CommandsID)
 
+	case dialog.ActionOpenAgentsView:
+		m.dialog.CloseDialog(dialog.CommandsID)
+		agentsView := views.NewAgentsView(m.smithersClient)
+		cmd := m.viewRouter.Push(agentsView)
+		m.setState(uiSmithersView, uiFocusMain)
+		cmds = append(cmds, cmd)
+
+	case dialog.ActionOpenTicketsView:
+		m.dialog.CloseDialog(dialog.CommandsID)
+		ticketsView := views.NewTicketsView(m.smithersClient)
+		cmd := m.viewRouter.Push(ticketsView)
+		m.setState(uiSmithersView, uiFocusMain)
+		cmds = append(cmds, cmd)
+
+	case dialog.ActionOpenApprovalsView:
+		m.dialog.CloseDialog(dialog.CommandsID)
+		approvalsView := views.NewApprovalsView(m.smithersClient)
+		cmd := m.viewRouter.Push(approvalsView)
+		m.setState(uiSmithersView, uiFocusMain)
+		cmds = append(cmds, cmd)
+
+	case views.PopViewMsg:
+		m.viewRouter.Pop()
+		if !m.viewRouter.HasViews() {
+			if m.hasSession() {
+				m.setState(uiChat, uiFocusEditor)
+			} else {
+				m.setState(uiLanding, uiFocusEditor)
+			}
+		}
+
 	case dialog.ActionSelectModel:
 		if m.isAgentBusy() {
 			cmds = append(cmds, util.ReportWarn("Agent is busy, please wait..."))
@@ -1729,6 +1783,19 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 		return tea.Batch(cmds...)
 	case uiInitialize:
 		cmds = append(cmds, m.updateInitializeView(msg)...)
+		return tea.Batch(cmds...)
+	case uiSmithersView:
+		if current := m.viewRouter.Current(); current != nil {
+			updated, cmd := current.Update(msg)
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+			// Replace top of stack with updated view.
+			if updated != current {
+				m.viewRouter.Pop()
+				m.viewRouter.Push(updated)
+			}
+		}
 		return tea.Batch(cmds...)
 	case uiChat, uiLanding:
 		switch m.focus {
@@ -2079,6 +2146,13 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 		if m.isCompact && m.detailsOpen {
 			m.drawSessionDetails(scr, layout.sessionDetails)
 		}
+
+	case uiSmithersView:
+		m.drawHeader(scr, layout.header)
+		if current := m.viewRouter.Current(); current != nil {
+			main := uv.NewStyledString(current.View())
+			main.Draw(scr, layout.main)
+		}
 	}
 
 	isOnboarding := m.state == uiOnboarding
@@ -2109,7 +2183,7 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	}
 
 	// Debugging rendering (visually see when the tui rerenders)
-	if os.Getenv("CRUSH_UI_DEBUG") == "true" {
+	if os.Getenv("SMITHERS_TUI_UI_DEBUG") == "true" {
 		debugView := lipgloss.NewStyle().Background(lipgloss.ANSIColor(rand.Intn(256))).Width(4).Height(2)
 		debug := uv.NewStyledString(debugView.String())
 		debug.Draw(scr, image.Rectangle{
@@ -2239,6 +2313,12 @@ func (m *UI) ShortHelp() []key.Binding {
 			)
 			if m.pillsExpanded && hasIncompleteTodos(m.session.Todos) && m.promptQueue > 0 {
 				binds = append(binds, k.Chat.PillLeft)
+			}
+		}
+	case uiSmithersView:
+		if current := m.viewRouter.Current(); current != nil {
+			for _, hint := range current.ShortHelp() {
+				binds = append(binds, key.NewBinding(key.WithHelp("", hint)))
 			}
 		}
 	default:
