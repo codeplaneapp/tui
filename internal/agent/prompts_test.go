@@ -67,7 +67,7 @@ func TestSmithersPromptSnapshot(t *testing.T) {
 
 	rendered := renderSmithersPrompt(t, prompt.WithSmithersMode(".smithers/workflows", "smithers"))
 	goldenPath := filepath.Join("testdata", "smithers_prompt.golden")
-	if os.Getenv("CRUSH_UPDATE_GOLDEN") == "1" {
+	if os.Getenv("SMITHERS_TUI_UPDATE_GOLDEN") == "1" {
 		require.NoError(t, os.MkdirAll(filepath.Dir(goldenPath), 0o755))
 		require.NoError(t, os.WriteFile(goldenPath, []byte(rendered), 0o644))
 	}

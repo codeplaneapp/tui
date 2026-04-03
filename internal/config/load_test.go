@@ -53,7 +53,7 @@ func TestConfig_setDefaults(t *testing.T) {
 	require.NotNil(t, cfg.Models)
 	require.NotNil(t, cfg.LSP)
 	require.NotNil(t, cfg.MCP)
-	require.Equal(t, filepath.Join("/tmp", ".crush"), cfg.Options.DataDirectory)
+	require.Equal(t, filepath.Join("/tmp", ".smithers-tui"), cfg.Options.DataDirectory)
 	require.Equal(t, "AGENTS.md", cfg.Options.InitializeAs)
 	for _, path := range defaultContextPaths {
 		require.Contains(t, cfg.Options.ContextPaths, path)
@@ -503,7 +503,15 @@ func TestConfig_setupAgentsWithSmithers(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, AgentSmithers, smithersAgent.ID)
 	assert.Equal(t, "Smithers", smithersAgent.Name)
-	assert.Equal(t, allToolNames(), smithersAgent.AllowedTools)
+
+	// Smithers agent should not have sourcegraph or multiedit
+	assert.NotContains(t, smithersAgent.AllowedTools, "sourcegraph")
+	assert.NotContains(t, smithersAgent.AllowedTools, "multiedit")
+
+	// Smithers agent should only allow the smithers MCP server
+	require.NotNil(t, smithersAgent.AllowedMCP)
+	_, ok = smithersAgent.AllowedMCP["smithers"]
+	assert.True(t, ok, "Smithers agent should have smithers MCP allowed")
 }
 
 func TestConfig_setupAgentsWithDisabledTools(t *testing.T) {
@@ -1320,7 +1328,7 @@ func TestConfig_configureProvidersDisableDefaultProviders(t *testing.T) {
 
 func TestConfig_setDefaultsDisableDefaultProvidersEnvVar(t *testing.T) {
 	t.Run("sets option from environment variable", func(t *testing.T) {
-		t.Setenv("CRUSH_DISABLE_DEFAULT_PROVIDERS", "true")
+		t.Setenv("SMITHERS_TUI_DISABLE_DEFAULT_PROVIDERS", "true")
 
 		cfg := &Config{}
 		cfg.setDefaults("/tmp", "")

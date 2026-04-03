@@ -49,5 +49,10 @@ func TestConfig_AgentIDsWithSmithers(t *testing.T) {
 		require.True(t, ok)
 		assert.Equal(t, AgentSmithers, smithersAgent.ID, "Smithers agent ID should be '%s'", AgentSmithers)
 		assert.Equal(t, "Smithers", smithersAgent.Name)
+		assert.NotContains(t, smithersAgent.AllowedTools, "sourcegraph")
+		assert.NotContains(t, smithersAgent.AllowedTools, "multiedit")
+		require.NotNil(t, smithersAgent.AllowedMCP)
+		_, hasMCP := smithersAgent.AllowedMCP["smithers"]
+		assert.True(t, hasMCP, "Smithers agent should allow smithers MCP")
 	})
 }
