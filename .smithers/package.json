@@ -9,7 +9,7 @@
     "workflow:implement": "smithers workflow implement"
   },
   "dependencies": {
-    "smithers-orchestrator": "0.13.0",
+    "smithers-orchestrator": "0.14.1",
     "zod": "4.0.0"
   },
   "devDependencies": {

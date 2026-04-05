@@ -1,0 +1,209 @@
+# Inline Run Details
+
+## Metadata
+- ID: runs-inline-run-details
+- Group: Runs And Inspection (runs-and-inspection)
+- Type: feature
+- Feature: RUNS_INLINE_RUN_DETAILS
+- Dependencies: runs-dashboard
+
+## Objective
+
+Expand the Run Dashboard so that each run row can optionally show a secondary detail line below the primary row. Pressing `Enter` on any run in the list toggles the detail line open or closed. The detail line is context-sensitive: active runs show the executing agent and current node label; pending-approval runs show the gate question; failed runs show the first line of the error reason.
+
+This feature sits between the flat run list (`runs-dashboard`) and the full Run Inspector (`runs-inspect-summary`). It is a fast, in-list reveal that lets operators scan all relevant context without leaving the dashboard. `runs-quick-approve` and `runs-quick-deny` depend on this feature because the approval gate question is exposed through it.
+
+## Scope
+
+### In scope
+- Toggle state per run: a set of expanded run IDs in `RunsView`
+- `Enter` key binding: toggles the selected run's detail row open/closed; second `Enter` on same run closes it
+- Context-sensitive detail lines:
+  - `running` → `└─ <agentEngine> agent on "<nodeLabel>"` (e.g. `└─ claude-code agent on "review auth module"`)
+  - `waiting-approval` → `└─ ⏸ APPROVAL PENDING: "<gateQuestion>"   [a]pprove / [d]eny`
+  - `waiting-event` → `└─ ⏳ Waiting for external event`
+  - `failed` → `└─ ✗ Error: <first line of error reason>`
+  - `finished` / `cancelled` → `└─ Completed in <elapsed>` (minimal; matches design doc aesthetics)
+- `RunTable` component extended to accept an `Expanded map[string]bool` field and render variable-height rows
+- Data sourcing: detail text is derived from the `RunSummary` data already fetched by `ListRuns`; no additional API calls are required for most cases. Agent/node name for running tasks uses the active `RunTask` records from `InspectRun` (best-effort, fetched lazily on first expand).
+- `RunInspectMsg` Bubble Tea message for delivering per-run `RunInspection` after a lazy fetch
+- Help bar update: `Enter` hint changes to `toggle details` while detail lines are supported
+
+### Out of scope
+- Full Run Inspector view (`runs-inspect-summary`) — that is a separate push-on-stack navigation
+- Approval form with custom note (`runs-quick-approve` / `runs-quick-deny` implement the `a`/`d` key binding)
+- Progress bar visualization (`runs-progress-visualization`)
+- SSE-driven live update of inline content (that is `runs-realtime-status-updates`)
+- Node-level DAG view (`runs-dag-overview`)
+
+## Implementation Plan
+
+### Slice 1: Expand/collapse state in RunsView
+
+**File**: `internal/ui/views/runs.go`
+
+Add an `expanded map[string]bool` field to `RunsView`. On `Enter` keypress, toggle `v.expanded[selectedRunID]`. When a run is expanded for the first time and its status is `running` or `waiting-approval`, dispatch a lazy `InspectRun` fetch via a `tea.Cmd`.
+
+```go
+type RunsView struct {
+    // ... existing fields ...
+    expanded    map[string]bool       // runID → detail row visible
+    inspections map[string]*smithers.RunInspection // runID → fetched tasks
+}
+```
+
+`Enter` handler:
+
+```go
+case key.Matches(msg, key.NewBinding(key.WithKeys("enter"))):
+    if len(v.runs) == 0 {
+        break
+    }
+    run := v.selectedRun()
+    id := run.RunID
+    if v.expanded[id] {
+        delete(v.expanded, id)
+    } else {
+        v.expanded[id] = true
+        // Lazy-fetch tasks if not yet cached and run is active.
+        if _, ok := v.inspections[id]; !ok && !run.Status.IsTerminal() {
+            return v, v.fetchInspection(id)
+        }
+    }
+```
+
+`fetchInspection` returns a `tea.Cmd` that calls `client.InspectRun` and delivers a `runInspectionMsg`:
+
+```go
+type runInspectionMsg struct {
+    runID      string
+    inspection *smithers.RunInspection
+}
+
+func (v *RunsView) fetchInspection(runID string) tea.Cmd {
+    return func() tea.Msg {
+        insp, err := v.client.InspectRun(context.Background(), runID)
+        if err != nil {
+            return runInspectionMsg{runID: runID, inspection: nil}
+        }
+        return runInspectionMsg{runID: runID, inspection: insp}
+    }
+}
+```
+
+In `Update`, handle `runInspectionMsg` by storing in `v.inspections[msg.runID]`.
+
+Add `selectedRun() smithers.RunSummary` helper that maps `v.cursor` to a `RunSummary` using the virtual-row cursor mapping already established in `RunTable`.
+
+### Slice 2: RunTable extended with Expanded + detail rendering
+
+**File**: `internal/ui/components/runtable.go`
+
+Add `Expanded map[string]bool` and `Inspections map[string]*smithers.RunInspection` to `RunTable`:
+
+```go
+type RunTable struct {
+    Runs        []smithers.RunSummary
+    Cursor      int
+    Width       int
+    Expanded    map[string]bool
+    Inspections map[string]*smithers.RunInspection
+}
+```
+
+In `View()`, after writing each run row, check `t.Expanded[run.RunID]`. If true, write a detail line. The detail is generated by `detailLine(run, t.Inspections[run.RunID])`.
+
+```go
+func detailLine(run smithers.RunSummary, insp *smithers.RunInspection) string
+```
+
+Detail line logic (see §3.2 of design doc for exact visual spec):
+
+| Status | Detail content |
+|--------|---------------|
+| `running` | `└─ <engine> agent on "<nodeLabel>"` where engine/label come from the first `running` task in `insp.Tasks`; falls back to `└─ Running…` if inspection not yet loaded |
+| `waiting-approval` | `└─ ⏸ APPROVAL PENDING: "<errorJSON or 'gate'>"   [a]pprove / [d]eny` |
+| `waiting-event` | `└─ ⏳ Waiting for external event` |
+| `failed` | `└─ ✗ Error: <first 80 chars of error text from ErrorJSON>` |
+| `finished` / `cancelled` | `└─ Completed in <fmtElapsed(run)>` |
+
+The detail line is rendered in a faint style except the `⏸ APPROVAL PENDING` variant which uses the yellow bold style matching the existing `waiting-approval` `statusStyle`. It is indented 4 spaces (cursor width + id width offset) to align under the workflow column.
+
+Add `fmtDetailLine` to `runtable.go` for testability.
+
+**Note on cursor mapping**: `RunTable.View()` already tracks `navigableIdx` within a loop. No change to cursor semantics is required; the expanded row renders immediately below its parent run row before the next run row or section header is emitted.
+
+### Slice 3: Error text extraction helper
+
+**File**: `internal/smithers/types_runs.go`
+
+Add a method on `RunSummary` to extract the human-readable error reason from `ErrorJSON`. The `ErrorJSON` field holds a JSON string — parse it to extract the `message` key if present, otherwise return the raw string trimmed to 80 characters:
+
+```go
+// ErrorReason returns a short human-readable error string for display,
+// or an empty string when no error is present.
+func (r RunSummary) ErrorReason() string
+```
+
+This is used by `detailLine` for `failed` runs and avoids JSON parsing logic inside the rendering component.
+
+### Slice 4: Help bar update
+
+**File**: `internal/ui/views/runs.go`
+
+Update `ShortHelp()` to replace the `enter → inspect` hint with `enter → toggle / inspect`:
+
+```go
+key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "toggle details")),
+```
+
+The full Run Inspector is accessed via double-Enter when details are already expanded, or via `runs-inspect-summary` once that ticket is implemented. For this ticket, `Enter` is toggle-only.
+
+### Slice 5: Unit tests
+
+**Files**:
+- `internal/ui/components/runtable_test.go` — extend with table-driven tests for each detail line variant
+- `internal/smithers/types_runs_test.go` — add `TestRunSummaryErrorReason`
+- `internal/ui/views/runs_test.go` (new) — test `RunsView` expand/collapse message cycle
+
+`runtable_test.go` additions: parametrize over `RunStatus` values + `Expanded=true`, assert the detail line substring appears in the rendered output.
+
+`runs_test.go` key assertions:
+1. `Init` returns a cmd; after `runsLoadedMsg`, `v.runs` is populated.
+2. `Enter` on cursor 0 sets `v.expanded[runs[0].RunID] = true` and returns a `fetchInspection` cmd.
+3. Second `Enter` on same cursor clears the expanded entry.
+4. `runInspectionMsg` stores the inspection in `v.inspections`.
+
+### Slice 6: VHS recording
+
+**File**: `tests/vhs/runs-inline-run-details.tape`
+
+Happy-path tape: launch TUI → open runs → expand a row → verify detail text → collapse → quit.
+
+## File Plan
+- `internal/ui/views/runs.go` — add `expanded`/`inspections` fields, `Enter` toggle logic, `fetchInspection` cmd, `selectedRun` helper, `runInspectionMsg` type, updated `ShortHelp`
+- `internal/ui/components/runtable.go` — add `Expanded`/`Inspections` fields, detail-line rendering, `fmtDetailLine` helper
+- `internal/smithers/types_runs.go` — add `ErrorReason()` method on `RunSummary`
+- `internal/ui/views/runs_test.go` (new) — view-level unit tests for expand/collapse cycle
+- `internal/ui/components/runtable_test.go` — extend with detail-line rendering tests
+- `internal/smithers/types_runs_test.go` — add `TestRunSummaryErrorReason`
+- `tests/vhs/runs-inline-run-details.tape` (new) — VHS happy-path recording
+
+## Validation
+1. `go build ./...` — zero new compilation errors
+2. `go test ./internal/smithers/... -run TestRunSummaryErrorReason -v -count=1`
+3. `go test ./internal/ui/components/... -run TestRunTable -v -count=1`
+4. `go test ./internal/ui/views/... -run TestRunsView -v -count=1`
+5. `go test ./... -count=1` — full suite green
+6. `vhs tests/vhs/runs-inline-run-details.tape`
+7. Manual smoke:
+   - `go run .` → `/runs` → select an active run → press `Enter` → verify detail line appears
+   - Press `Enter` again → detail line collapses
+   - Navigate to a `waiting-approval` run → press `Enter` → verify approval pending text with `[a]pprove / [d]eny`
+   - Navigate to a `failed` run → press `Enter` → verify error reason is shown
+
+## Open Questions
+1. Should `Enter` on an already-expanded run navigate to the Run Inspector immediately, or remain a pure toggle? The design doc shows `Enter` as `[Enter] Inspect` in the help bar — but `runs-inspect-summary` is a separate ticket. For this ticket, `Enter` is toggle-only; the inspector navigation is deferred.
+2. When `InspectRun` fails (server unavailable), the detail line falls back to a generic string. Should a visual indicator (e.g. `└─ Running… (details unavailable)`) be shown, or should the detail line simply omit the agent name?
+3. The approval gate question is currently inferred from `ErrorJSON` on the `RunSummary`. If the upstream API surfaces a dedicated `gateQuestion` field in a future version, the `detailLine` helper should prefer it. Is this field available today?
+4. `InspectRun` issues a synchronous call (HTTP or SQLite) from a `tea.Cmd` goroutine. Should a timeout shorter than the default client timeout be applied to keep the expand interaction snappy?
