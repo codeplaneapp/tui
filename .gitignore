@@ -52,3 +52,9 @@ completions/crush.*sh
 .prettierignore
 .task
 .worktrees
+tests/node_modules/
+tests/smithers-tui
+tests/.tui-test/
+jjhub-tui
+/poc/jjhub-tui/jjhub-tui
+smithers.db*
