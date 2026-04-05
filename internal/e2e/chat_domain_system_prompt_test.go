@@ -35,10 +35,20 @@ func TestSmithersDomainSystemPrompt_TUI(t *testing.T) {
 	tui := launchTUI(t)
 	defer tui.Terminate()
 
+	// Header brand is always shown.
 	require.NoError(t, tui.WaitForText("SMITHERS", 15*time.Second))
+
+	// When a Smithers config block is present the agent label appears in the UI.
+	require.NoError(t, tui.WaitForText("Smithers Agent Mode", 10*time.Second))
+
+	// The smithers MCP entry name is reflected in the MCP status area.
+	require.NoError(t, tui.WaitForText("smithers", 5*time.Second))
 }
 
-func TestSmithersDomainSystemPrompt_CoderFallback_TUI(t *testing.T) {
+// TestCoderAgentFallback_TUI verifies that the TUI still loads normally when no
+// Smithers config block is provided, and that Smithers-specific UI labels are
+// absent so the user is not misled about the active agent.
+func TestCoderAgentFallback_TUI(t *testing.T) {
 	if os.Getenv("SMITHERS_TUI_E2E") != "1" {
 		t.Skip("set SMITHERS_TUI_E2E=1 to run terminal E2E tests")
 	}
@@ -53,5 +63,9 @@ func TestSmithersDomainSystemPrompt_CoderFallback_TUI(t *testing.T) {
 	tui := launchTUI(t)
 	defer tui.Terminate()
 
+	// The TUI must still launch and show the header.
 	require.NoError(t, tui.WaitForText("SMITHERS", 15*time.Second))
+
+	// Without a smithers config block the Smithers agent mode label must NOT appear.
+	require.NoError(t, tui.WaitForNoText("Smithers Agent Mode", 3*time.Second))
 }
