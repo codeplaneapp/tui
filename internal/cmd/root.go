@@ -56,33 +56,33 @@ func init() {
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "crush",
+	Use:   "smithers-tui",
 	Short: "A terminal-first AI assistant for software development",
 	Long:  "A glamorous, terminal-first AI assistant for software development and adjacent tasks",
 	Example: `
 # Run in interactive mode
-crush
+smithers-tui
 
 # Run non-interactively
-crush run "Guess my 5 favorite Pokémon"
+smithers-tui run "Guess my 5 favorite Pokémon"
 
 # Run a non-interactively with pipes and redirection
-cat README.md | crush run "make this more glamorous" > GLAMOROUS_README.md
+cat README.md | smithers-tui run "make this more glamorous" > GLAMOROUS_README.md
 
 # Run with debug logging in a specific directory
-crush --debug --cwd /path/to/project
+smithers-tui --debug --cwd /path/to/project
 
 # Run in yolo mode (auto-accept all permissions; use with care)
-crush --yolo
+smithers-tui --yolo
 
 # Run with custom data directory
-crush --data-dir /path/to/custom/.smithers-tui
+smithers-tui --data-dir /path/to/custom/.smithers-tui
 
 # Continue a previous session
-crush --session {session-id}
+smithers-tui --session {session-id}
 
 # Continue the most recent session
-crush --continue
+smithers-tui --continue
   `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		sessionID, _ := cmd.Flags().GetString("session")
@@ -252,8 +252,24 @@ func setupApp(cmd *cobra.Command) (*app.App, error) {
 	return appInstance, nil
 }
 
+// envWithFallback returns the value of the primary env var, falling back to
+// the legacy CRUSH_* name if unset. A warning is logged when the legacy name
+// is used so operators can migrate.
+// TODO(smithers-tui): remove CRUSH_* fallback after v1.0
+func envWithFallback(primary, legacy string) string {
+	if v := os.Getenv(primary); v != "" {
+		return v
+	}
+	if v := os.Getenv(legacy); v != "" {
+		slog.Warn("Using legacy environment variable; please migrate to the new name",
+			"legacy", legacy, "replacement", primary)
+		return v
+	}
+	return ""
+}
+
 func shouldEnableMetrics(cfg *config.Config) bool {
-	if v, _ := strconv.ParseBool(os.Getenv("SMITHERS_TUI_DISABLE_METRICS")); v {
+	if v, _ := strconv.ParseBool(envWithFallback("SMITHERS_TUI_DISABLE_METRICS", "CRUSH_DISABLE_METRICS")); v {
 		return false
 	}
 	if v, _ := strconv.ParseBool(os.Getenv("DO_NOT_TRACK")); v {
