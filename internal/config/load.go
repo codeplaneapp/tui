@@ -396,6 +396,16 @@ func (c *Config) setDefaults(workingDir, dataDir string) {
 		c.Smithers.WorkflowDir = cmp.Or(c.Smithers.WorkflowDir, filepath.Join(".smithers", "workflows"))
 	}
 
+	// Add default Smithers MCP server if not already configured by user.
+	if _, exists := c.MCP[SmithersMCPName]; !exists {
+		c.MCP[SmithersMCPName] = DefaultSmithersMCPConfig()
+	}
+
+	// Apply default disabled tools if user hasn't set any.
+	if c.Options.DisabledTools == nil {
+		c.Options.DisabledTools = DefaultDisabledTools()
+	}
+
 	// Apply defaults to LSP configurations
 	c.applyLSPDefaults()
 
