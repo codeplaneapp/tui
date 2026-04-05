@@ -1,0 +1,13 @@
+{
+  "smithers": {
+    "dbPath": ".smithers/smithers.db",
+    "workflowDir": ".smithers/workflows"
+  },
+  "mcp": {
+    "smithers": {
+      "type": "stdio",
+      "command": "smithers",
+      "args": ["--mcp"]
+    }
+  }
+}
