@@ -361,6 +361,10 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 		desiredState = uiOnboarding
 	} else if n, _ := com.Workspace.ProjectNeedsInitialization(); n {
 		desiredState = uiInitialize
+	} else if com.Config().Smithers != nil {
+		// In Smithers mode, default directly to chat console after onboarding/init
+		desiredState = uiChat
+		desiredFocus = uiFocusEditor
 	}
 
 	// set initial state
@@ -398,8 +402,9 @@ func (m *UI) Init() tea.Cmd {
 // loadInitialSession loads the initial session if one was specified on startup.
 func (m *UI) loadInitialSession() tea.Cmd {
 	switch {
-	case m.state != uiLanding:
-		// Only load if we're in landing state (i.e., fully configured)
+	case m.state != uiLanding && m.state != uiChat:
+		// Only load if we're in landing or chat state (i.e., fully configured).
+		// In Smithers mode, we start in uiChat instead of uiLanding.
 		return nil
 	case m.initialSessionID != "":
 		return m.loadSession(m.initialSessionID)
@@ -1788,6 +1793,20 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 		cmds = append(cmds, m.updateInitializeView(msg)...)
 		return tea.Batch(cmds...)
 	case uiSmithersView:
+		// Handle Esc to return to chat console (base of stack)
+		if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
+			if key.Matches(keyMsg, key.NewBinding(key.WithKeys("esc", "alt+esc"))) {
+				// Return to chat console (pop all non-root views)
+				m.viewRouter.PopToRoot()
+				if m.hasSession() {
+					m.setState(uiChat, uiFocusEditor)
+				} else {
+					m.setState(uiLanding, uiFocusEditor)
+				}
+				return tea.Batch(cmds...)
+			}
+		}
+
 		if current := m.viewRouter.Current(); current != nil {
 			updated, cmd := current.Update(msg)
 			if cmd != nil {
