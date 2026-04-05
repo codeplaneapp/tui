@@ -67,6 +67,16 @@ func BottomLeftRect(area uv.Rectangle, width, height int) uv.Rectangle {
 	return image.Rect(minX, minY, maxX, maxY)
 }
 
+// BottomRightRect returns a new [Rectangle] positioned at the bottom-right within the given area with the
+// specified width and height.
+func BottomRightRect(area uv.Rectangle, width, height int) uv.Rectangle {
+	maxX := area.Max.X
+	minX := maxX - width
+	maxY := area.Max.Y
+	minY := maxY - height
+	return image.Rect(minX, minY, maxX, maxY)
+}
+
 // IsFileTooBig checks if the file at the given path exceeds the specified size
 // limit.
 func IsFileTooBig(filePath string, sizeLimit int64) (bool, error) {

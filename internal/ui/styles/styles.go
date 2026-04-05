@@ -332,6 +332,9 @@ type Styles struct {
 		// Docker MCP tools
 		DockerMCPActionAdd lipgloss.Style // Docker MCP add action (green)
 		DockerMCPActionDel lipgloss.Style // Docker MCP remove action (red)
+
+		// Smithers MCP tools
+		Smithers SmithersStyles
 	}
 
 	// Dialog styles
@@ -449,6 +452,26 @@ type Styles struct {
 		HelpText        lipgloss.Style // Help action text style
 		Area            lipgloss.Style // Pills area container
 		TodoSpinner     lipgloss.Style // Todo spinner style
+	}
+
+	// Toast styles for in-terminal overlay notifications
+	Toast struct {
+		// Container is the outer box style (rounded border, background, padding)
+		Container lipgloss.Style
+		// Title is the bold heading line
+		Title lipgloss.Style
+		// Body is the body text
+		Body lipgloss.Style
+		// ActionHint renders a single "[key] label" pair
+		ActionHint lipgloss.Style
+		// ActionHintKey is the key portion of an action hint (e.g., "[esc]")
+		ActionHintKey lipgloss.Style
+
+		// Level-specific container overrides – border colors per severity.
+		ContainerInfo    lipgloss.Style
+		ContainerSuccess lipgloss.Style
+		ContainerWarning lipgloss.Style
+		ContainerError   lipgloss.Style
 	}
 }
 
@@ -1190,6 +1213,33 @@ func DefaultStyles() Styles {
 	s.Tool.DockerMCPActionAdd = base.Foreground(greenLight)
 	s.Tool.DockerMCPActionDel = base.Foreground(red)
 
+	// Smithers MCP styles
+	s.Tool.Smithers = SmithersStyles{
+		ServerName:     base.Foreground(blue).Bold(true),
+		StatusRunning:  base.Foreground(green),
+		StatusApproval: base.Foreground(yellow),
+		StatusComplete: base.Foreground(greenLight),
+		StatusFailed:   base.Foreground(red),
+		StatusCanceled: base.Foreground(fgSubtle),
+		StatusPaused:   base.Foreground(yellow),
+
+		CardTitle:    base.Bold(true).Foreground(fgBase),
+		CardValue:    base.Foreground(fgBase),
+		CardLabel:    base.Foreground(fgMuted),
+		CardApproved: lipgloss.NewStyle().Background(green).Foreground(white).Bold(true).Padding(0, 1),
+		CardDenied:   lipgloss.NewStyle().Background(red).Foreground(white).Bold(true).Padding(0, 1),
+		CardCanceled: lipgloss.NewStyle().Background(bgSubtle).Foreground(fgMuted).Bold(true).Padding(0, 1),
+		CardStarted:  lipgloss.NewStyle().Background(blue).Foreground(white).Bold(true).Padding(0, 1),
+		CardDone:     lipgloss.NewStyle().Background(blueDark).Foreground(white).Bold(true).Padding(0, 1),
+
+		TableHeader: base.Foreground(fgMuted).Bold(true),
+
+		TreeNodeRunning:  base.Foreground(green),
+		TreeNodeComplete: base.Foreground(greenLight),
+		TreeNodeFailed:   base.Foreground(red),
+		TreeNodePending:  base.Foreground(fgSubtle),
+	}
+
 	// Buttons
 	s.ButtonFocus = lipgloss.NewStyle().Foreground(white).Background(secondary)
 	s.ButtonBlur = s.Base.Background(bgSubtle)
@@ -1372,6 +1422,32 @@ func DefaultStyles() Styles {
 	s.Pills.HelpText = s.Subtle
 	s.Pills.Area = base
 	s.Pills.TodoSpinner = base.Foreground(greenDark)
+
+	// Toast styles – shared base container with level-specific border color overrides.
+	toastContainer := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(border).
+		Background(bgOverlay).
+		Foreground(fgBase).
+		Padding(0, 1)
+	s.Toast.Container = toastContainer
+	s.Toast.Title = lipgloss.NewStyle().
+		Background(bgOverlay).
+		Foreground(fgBase).
+		Bold(true)
+	s.Toast.Body = lipgloss.NewStyle().
+		Background(bgOverlay).
+		Foreground(fgMuted)
+	s.Toast.ActionHint = lipgloss.NewStyle().
+		Background(bgOverlay).
+		Foreground(fgSubtle)
+	s.Toast.ActionHintKey = lipgloss.NewStyle().
+		Background(bgOverlay).
+		Foreground(fgHalfMuted)
+	s.Toast.ContainerInfo = toastContainer.BorderForeground(info)
+	s.Toast.ContainerSuccess = toastContainer.BorderForeground(green)
+	s.Toast.ContainerWarning = toastContainer.BorderForeground(warning)
+	s.Toast.ContainerError = toastContainer.BorderForeground(red)
 
 	return s
 }

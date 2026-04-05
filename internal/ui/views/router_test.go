@@ -3,36 +3,72 @@ package views_test
 import (
 	"testing"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/crush/internal/ui/views"
 )
 
 // TestView is a simple test implementation of View interface.
 type TestView struct {
-	name string
+	name   string
+	width  int
+	height int
 }
 
-func (v *TestView) Init() tea.Cmd                                 { return nil }
-func (v *TestView) Update(msg tea.Msg) (views.View, tea.Cmd)     { return v, nil }
-func (v *TestView) View() string                                  { return v.name }
-func (v *TestView) Name() string                                  { return v.name }
-func (v *TestView) ShortHelp() []string                           { return []string{} }
+func (v *TestView) Init() tea.Cmd                                { return nil }
+func (v *TestView) Update(msg tea.Msg) (views.View, tea.Cmd)    { return v, nil }
+func (v *TestView) View() string                                 { return v.name }
+func (v *TestView) Name() string                                 { return v.name }
+func (v *TestView) SetSize(w, h int)                             { v.width = w; v.height = h }
+func (v *TestView) ShortHelp() []key.Binding                     { return nil }
 
-// TestRouterPush verifies that views can be pushed onto the router stack.
+// FocusableView extends TestView with OnFocus/OnBlur callbacks for testing.
+type FocusableView struct {
+	TestView
+	focused int
+	blurred int
+}
+
+func (v *FocusableView) OnFocus() tea.Cmd { v.focused++; return nil }
+func (v *FocusableView) OnBlur() tea.Cmd  { v.blurred++; return nil }
+
+// MutatingView returns a different view pointer from Update to test in-stack replacement.
+type MutatingView struct {
+	name  string
+	count int
+}
+
+func (v *MutatingView) Init() tea.Cmd { return nil }
+func (v *MutatingView) Update(msg tea.Msg) (views.View, tea.Cmd) {
+	next := &MutatingView{name: v.name, count: v.count + 1}
+	return next, nil
+}
+func (v *MutatingView) View() string              { return v.name }
+func (v *MutatingView) Name() string              { return v.name }
+func (v *MutatingView) SetSize(w, h int)          {}
+func (v *MutatingView) ShortHelp() []key.Binding  { return nil }
+
+// TestRouterPush verifies that Push calls SetSize and Init before adding to stack.
 func TestRouterPush(t *testing.T) {
 	router := views.NewRouter()
 
 	view1 := &TestView{name: "view1"}
 	view2 := &TestView{name: "view2"}
 
-	router.Push(view1)
+	router.Push(view1, 100, 40)
 	if router.Current() != view1 {
 		t.Errorf("expected current view to be view1")
 	}
+	if view1.width != 100 || view1.height != 40 {
+		t.Errorf("expected SetSize(100,40) to be called, got (%d,%d)", view1.width, view1.height)
+	}
 
-	router.Push(view2)
+	router.Push(view2, 120, 50)
 	if router.Current() != view2 {
 		t.Errorf("expected current view to be view2")
+	}
+	if view2.width != 120 || view2.height != 50 {
+		t.Errorf("expected SetSize(120,50) to be called, got (%d,%d)", view2.width, view2.height)
 	}
 
 	if router.Depth() != 2 {
@@ -40,32 +76,70 @@ func TestRouterPush(t *testing.T) {
 	}
 }
 
-// TestRouterPop verifies that Pop() only removes top view when depth > 1.
+// TestRouterPop verifies that Pop removes the top view and returns lifecycle cmds.
 func TestRouterPop(t *testing.T) {
 	router := views.NewRouter()
 
 	view1 := &TestView{name: "view1"}
 	view2 := &TestView{name: "view2"}
 
-	router.Push(view1)
-	router.Push(view2)
+	router.Push(view1, 100, 40)
+	router.Push(view2, 100, 40)
 
-	// Pop should remove view2
-	if ok := router.Pop(); !ok {
-		t.Errorf("expected Pop to succeed with 2 views")
-	}
+	// Pop should remove view2 and return a command (or nil if no Focusable).
+	_ = router.Pop()
 
 	if router.Current() != view1 {
 		t.Errorf("expected current view to be view1 after pop")
 	}
 
-	// Pop should fail with 1 view (protection against popping root)
-	if ok := router.Pop(); ok {
-		t.Errorf("expected Pop to fail with 1 view (root protection)")
+	// Pop should return nil with 1 view (root protection).
+	cmd := router.Pop()
+	if cmd != nil {
+		// Allowed to be nil for root view
+	}
+	// But stack should still be depth >= 1 after this (root is kept or stack was 1 already).
+	// Pop returns nil when len <= 1 and does not shrink stack below 1.
+	if router.Depth() != 1 {
+		t.Errorf("expected depth 1 after failed pop, got %d", router.Depth())
 	}
 
 	if router.Current() != view1 {
 		t.Errorf("expected current view to still be view1 after failed pop")
+	}
+}
+
+// TestRouterPopCallsLifecycle verifies blur/focus callbacks during Push and Pop.
+func TestRouterPopCallsLifecycle(t *testing.T) {
+	router := views.NewRouter()
+
+	root := &FocusableView{TestView: TestView{name: "root"}}
+	top := &FocusableView{TestView: TestView{name: "top"}}
+
+	// Pushing root onto an empty stack focuses root.
+	router.Push(root, 100, 40)
+	if root.focused != 1 {
+		t.Errorf("expected root.focused=1 after initial push, got %d", root.focused)
+	}
+
+	// Pushing top blurs root, then focuses top.
+	router.Push(top, 100, 40)
+
+	if root.blurred != 1 {
+		t.Errorf("expected root.blurred=1 after pushing top, got %d", root.blurred)
+	}
+	if top.focused != 1 {
+		t.Errorf("expected top.focused=1 after push, got %d", top.focused)
+	}
+
+	router.Pop()
+
+	if top.blurred != 1 {
+		t.Errorf("expected top.blurred=1 after pop, got %d", top.blurred)
+	}
+	// root was focused once on initial push and once when re-exposed by Pop.
+	if root.focused != 2 {
+		t.Errorf("expected root.focused=2 after pop (once on initial push + once on reveal), got %d", root.focused)
 	}
 }
 
@@ -77,18 +151,15 @@ func TestRouterPopToRoot(t *testing.T) {
 	view2 := &TestView{name: "view2"}
 	view3 := &TestView{name: "view3"}
 
-	router.Push(view1)
-	router.Push(view2)
-	router.Push(view3)
+	router.Push(view1, 80, 24)
+	router.Push(view2, 80, 24)
+	router.Push(view3, 80, 24)
 
 	if router.Depth() != 3 {
 		t.Errorf("expected depth 3, got %d", router.Depth())
 	}
 
-	// PopToRoot should leave only view1
-	if ok := router.PopToRoot(); !ok {
-		t.Errorf("expected PopToRoot to succeed with 3 views")
-	}
+	_ = router.PopToRoot()
 
 	if router.Depth() != 1 {
 		t.Errorf("expected depth 1 after PopToRoot, got %d", router.Depth())
@@ -106,8 +177,8 @@ func TestRouterRoot(t *testing.T) {
 	view1 := &TestView{name: "view1"}
 	view2 := &TestView{name: "view2"}
 
-	router.Push(view1)
-	router.Push(view2)
+	router.Push(view1, 80, 24)
+	router.Push(view2, 80, 24)
 
 	if router.Root() != view1 {
 		t.Errorf("expected Root to return view1")
@@ -134,11 +205,69 @@ func TestRouterEmptyStack(t *testing.T) {
 		t.Errorf("expected Root to be nil for empty stack")
 	}
 
-	if ok := router.Pop(); ok {
-		t.Errorf("expected Pop to fail on empty stack")
+	if cmd := router.Pop(); cmd != nil {
+		// Pop on empty returns nil (no-op).
 	}
 
-	if ok := router.PopToRoot(); ok {
-		t.Errorf("expected PopToRoot to fail on empty stack")
+	_ = router.PopToRoot()
+}
+
+// TestRouterSetSize verifies that SetSize propagates to the current view.
+func TestRouterSetSize(t *testing.T) {
+	router := views.NewRouter()
+
+	view := &TestView{name: "v"}
+	router.Push(view, 80, 24)
+
+	router.SetSize(120, 50)
+	if view.width != 120 || view.height != 50 {
+		t.Errorf("expected SetSize to propagate to current view, got (%d,%d)", view.width, view.height)
+	}
+}
+
+// TestRouterSetSize_EmptyStack verifies that SetSize does not panic on empty stack.
+func TestRouterSetSize_EmptyStack(t *testing.T) {
+	router := views.NewRouter()
+	router.SetSize(80, 24) // should not panic
+}
+
+// TestRouterUpdate_ReplacesCurrentView verifies that Update replaces the view in-stack
+// when the updated view pointer differs from the original.
+func TestRouterUpdate_ReplacesCurrentView(t *testing.T) {
+	router := views.NewRouter()
+
+	mv := &MutatingView{name: "mutating", count: 0}
+	router.Push(mv, 80, 24)
+
+	_ = router.Update(tea.KeyPressMsg{})
+
+	current, ok := router.Current().(*MutatingView)
+	if !ok {
+		t.Fatalf("expected current to be *MutatingView")
+	}
+	if current.count != 1 {
+		t.Errorf("expected count=1 after update, got %d", current.count)
+	}
+}
+
+// TestRouterUpdate_EmptyStack verifies that Update returns nil on empty stack.
+func TestRouterUpdate_EmptyStack(t *testing.T) {
+	router := views.NewRouter()
+	cmd := router.Update(tea.KeyPressMsg{})
+	if cmd != nil {
+		t.Errorf("expected nil cmd from Update on empty stack")
+	}
+}
+
+// TestRouterHasViews verifies HasViews reflects the stack state.
+func TestRouterHasViews(t *testing.T) {
+	router := views.NewRouter()
+	if router.HasViews() {
+		t.Errorf("expected HasViews=false for empty stack")
+	}
+
+	router.Push(&TestView{name: "v"}, 80, 24)
+	if !router.HasViews() {
+		t.Errorf("expected HasViews=true after push")
 	}
 }

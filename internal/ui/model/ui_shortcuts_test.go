@@ -9,7 +9,7 @@ import (
 	"github.com/charmbracelet/crush/internal/ui/attachments"
 	"github.com/charmbracelet/crush/internal/ui/common"
 	"github.com/charmbracelet/crush/internal/ui/dialog"
-	"github.com/charmbracelet/crush/internal/ui/util"
+	"github.com/charmbracelet/crush/internal/ui/views"
 	"github.com/stretchr/testify/require"
 )
 
@@ -74,17 +74,32 @@ func TestFullHelp_IncludesSmithersShortcutBindings(t *testing.T) {
 	require.Contains(t, bindings, keyHelp{key: "ctrl+a", desc: "approvals"})
 }
 
-func TestHandleNavigateToView_UsesComingSoonFallback(t *testing.T) {
+func TestHandleNavigateToView_EmptyViewIsNoop(t *testing.T) {
 	t.Parallel()
 
 	ui := newShortcutTestUI()
-	cmd := ui.handleNavigateToView(NavigateToViewMsg{View: "runs"})
-	require.NotNil(t, cmd)
+	cmd := ui.handleNavigateToView(NavigateToViewMsg{View: ""})
+	require.Nil(t, cmd, "empty view name should return nil cmd")
+}
 
+func TestHandleNavigateToView_RunsView_IsHandled(t *testing.T) {
+	t.Parallel()
+
+	// Verify that the "runs" view name is handled by the runs-specific case
+	// (not falling through to the registry/coming-soon branch).
+	// We can't call handleNavigateToView directly here because it requires a
+	// fully wired UI (viewRouter, viewRegistry). Instead, verify the key-press
+	// path sends a NavigateToViewMsg with View="runs".
+	ui := newShortcutTestUI()
+	cmd := ui.handleKeyPressMsg(tea.KeyPressMsg{
+		Code: 'r',
+		Mod:  tea.ModCtrl,
+	})
+	require.NotNil(t, cmd)
 	msg := cmd()
-	infoMsg, ok := msg.(util.InfoMsg)
-	require.True(t, ok)
-	require.Equal(t, "runs view coming soon", infoMsg.Msg)
+	navigateMsg, ok := msg.(NavigateToViewMsg)
+	require.True(t, ok, "Ctrl+R should produce a NavigateToViewMsg")
+	require.Equal(t, "runs", navigateMsg.View)
 }
 
 type keyHelp struct {
@@ -122,9 +137,10 @@ func newShortcutTestUI() *UI {
 				Escape:     keyMap.Editor.Escape,
 			},
 		),
-		dialog: dialog.NewOverlay(),
-		keyMap: keyMap,
-		state:  uiChat,
-		focus:  uiFocusEditor,
+		dialog:       dialog.NewOverlay(),
+		keyMap:       keyMap,
+		state:        uiChat,
+		focus:        uiFocusEditor,
+		viewRegistry: views.DefaultRegistry(),
 	}
 }

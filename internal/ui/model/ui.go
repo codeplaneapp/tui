@@ -43,9 +43,11 @@ import (
 	"github.com/charmbracelet/crush/internal/ui/chat"
 	"github.com/charmbracelet/crush/internal/ui/common"
 	"github.com/charmbracelet/crush/internal/ui/completions"
+	"github.com/charmbracelet/crush/internal/ui/components"
 	"github.com/charmbracelet/crush/internal/ui/dialog"
 	fimage "github.com/charmbracelet/crush/internal/ui/image"
 	"github.com/charmbracelet/crush/internal/ui/logo"
+	"github.com/charmbracelet/crush/internal/jjhub"
 	"github.com/charmbracelet/crush/internal/smithers"
 	"github.com/charmbracelet/crush/internal/ui/notification"
 	"github.com/charmbracelet/crush/internal/ui/styles"
@@ -106,6 +108,7 @@ const (
 	uiLanding
 	uiChat
 	uiSmithersView
+	uiSmithersDashboard
 )
 
 type openEditorMsg struct {
@@ -151,6 +154,24 @@ type (
 	sessionFilesUpdatesMsg struct {
 		sessionFiles []SessionFile
 	}
+
+	// smithersRunSummaryMsg is delivered to the update loop after a background
+	// run-summary refresh completes.
+	smithersRunSummaryMsg struct {
+		Summary smithers.RunStatusSummary
+		Err     error
+	}
+
+	// smithersRunSummaryTickMsg is sent by the recurring poll timer.
+	smithersRunSummaryTickMsg time.Time
+
+	// sseStreamClosedMsg is sent when the global Smithers SSE stream closes
+	// unexpectedly (server restart, network interruption, etc.).
+	sseStreamClosedMsg struct{}
+
+	// sseStartMsg requests a new SSE listener goroutine to start (used for
+	// reconnect after sseStreamClosedMsg).
+	sseStartMsg struct{}
 )
 
 // UI represents the main user interface model.
@@ -185,9 +206,22 @@ type UI struct {
 	dialog *dialog.Overlay
 	status *Status
 
-	// Smithers view router and client.
+	// In-terminal toast notification overlay.
+	// Guarded by NOTIFICATIONS_TOAST_OVERLAYS feature flag; nil when disabled.
+	toasts *components.ToastManager
+
+	// notifTracker deduplicates Smithers event → toast translations.
+	notifTracker *notificationTracker
+
+	// sseEventCh is the global Smithers SSE channel opened in Init.
+	// Nil when the feature flag is off or the server is unavailable.
+	sseEventCh <-chan interface{}
+
+	// Smithers view router, registry, workspace model, and client.
 	viewRouter     *views.Router
+	viewRegistry   *views.Registry
 	smithersClient *smithers.Client
+	dashboard      *views.DashboardView
 
 	// isCanceling tracks whether the user has pressed escape once to cancel.
 	isCanceling bool
@@ -325,6 +359,8 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 	ui := &UI{
 		com:                 com,
 		dialog:              dialog.NewOverlay(),
+		toasts:              components.NewToastManager(com.Styles),
+		notifTracker:        newNotificationTracker(),
 		keyMap:              keyMap,
 		textarea:            ta,
 		chat:                ch,
@@ -339,8 +375,14 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 		initialSessionID:    initialSessionID,
 		continueLastSession: continueLast,
 		viewRouter:          views.NewRouter(),
-		smithersClient:      smithers.NewClient(),
+		viewRegistry:        views.DefaultRegistry(),
+		smithersClient:      buildSmithersClient(com.Config()),
 	}
+
+	// Always create the dashboard — it adapts based on whether Smithers is available.
+	hasSmithers := com.Config().Smithers != nil
+	jjhubClient := jjhub.NewClient("") // auto-detect repo from cwd
+	ui.dashboard = views.NewDashboardViewWithJJHub(ui.smithersClient, hasSmithers, jjhubClient)
 
 	status := NewStatus(com, ui)
 
@@ -355,15 +397,13 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 	// set onboarding state defaults
 	ui.onboarding.yesInitializeSelected = true
 
-	desiredState := uiLanding
-	desiredFocus := uiFocusEditor
+	desiredState := uiSmithersDashboard
+	desiredFocus := uiFocusMain
 	if !com.Config().IsConfigured() {
 		desiredState = uiOnboarding
+		desiredFocus = uiFocusEditor
 	} else if n, _ := config.ProjectNeedsInitialization(com.Store()); n {
 		desiredState = uiInitialize
-	} else if com.Config().Smithers != nil {
-		// In Smithers mode, default directly to chat console after onboarding/init
-		desiredState = uiChat
 		desiredFocus = uiFocusEditor
 	}
 
@@ -377,7 +417,18 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 	// enable transparent mode
 	ui.isTransparent = opts.TUI.Transparent != nil && *opts.TUI.Transparent
 
+	// Feature flag: disable toast overlay when NOTIFICATIONS_TOAST_OVERLAYS is not set.
+	if !featureEnabled("NOTIFICATIONS_TOAST_OVERLAYS") {
+		ui.toasts = nil
+	}
+
 	return ui
+}
+
+// featureEnabled returns true when name is set to a non-empty, non-false env value.
+func featureEnabled(name string) bool {
+	v := os.Getenv(name)
+	return v != "" && v != "0" && v != "false"
 }
 
 // Init initializes the UI model.
@@ -396,6 +447,39 @@ func (m *UI) Init() tea.Cmd {
 	if cmd := m.loadInitialSession(); cmd != nil {
 		cmds = append(cmds, cmd)
 	}
+
+	// Seed Smithers dashboard and run-summary polling when Smithers mode is active.
+	if m.com.Config().Smithers != nil {
+		cmds = append(cmds, m.refreshSmithersRunSummaryCmd())
+		cmds = append(cmds, smithersRunSummaryTickCmd())
+		if m.dashboard != nil {
+			cmds = append(cmds, m.dashboard.Init())
+		}
+	}
+
+	// Env-gated debug toast: set CRUSH_TEST_TOAST_ON_START=1 to verify that
+	// the toast overlay renders correctly at startup without modifying any
+	// normal user flow.
+	if m.toasts != nil && os.Getenv("CRUSH_TEST_TOAST_ON_START") == "1" {
+		if cmd := m.toasts.Update(components.ShowToastMsg{
+			Title: "Toast test",
+			Body:  "In-terminal toast overlay is working.",
+			Level: components.ToastLevelInfo,
+			ActionHints: []components.ActionHint{
+				{Key: "esc", Label: "dismiss"},
+			},
+		}); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+
+	// Start the global SSE subscription for toast notifications.
+	if m.toasts != nil {
+		if cmd := m.startSSESubscription(context.Background()); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+
 	return tea.Batch(cmds...)
 }
 
@@ -419,6 +503,56 @@ func (m *UI) loadInitialSession() tea.Cmd {
 	default:
 		return nil
 	}
+}
+
+// listenSSE returns a Cmd that reads one message from the SSE channel and
+// returns it as a tea.Msg, then re-queues itself on the next Update tick.
+func listenSSE(ch <-chan interface{}) tea.Cmd {
+	return func() tea.Msg {
+		msg, ok := <-ch
+		if !ok {
+			return sseStreamClosedMsg{}
+		}
+		return msg
+	}
+}
+
+// startSSESubscription opens the global SSE stream and returns the first pump
+// Cmd. Returns nil if the feature is disabled or the server is unavailable.
+func (m *UI) startSSESubscription(ctx context.Context) tea.Cmd {
+	if m.smithersClient == nil {
+		return nil
+	}
+	ch, err := m.smithersClient.StreamAllEvents(ctx)
+	if err != nil {
+		slog.Debug("SSE subscription unavailable", "err", err)
+		return nil // server not running — no global feed available
+	}
+	m.sseEventCh = ch
+	return listenSSE(ch)
+}
+
+// isNotificationsDisabled reports whether in-terminal toasts are suppressed by
+// the DisableNotifications config option.
+func (m *UI) isNotificationsDisabled() bool {
+	cfg := m.com.Config()
+	return cfg != nil && cfg.Options != nil && cfg.Options.DisableNotifications
+}
+
+// bellCmd writes the BEL character (ASCII 0x07) to stdout, triggering an
+// audible beep or visual bell in terminals that support it.
+func bellCmd() tea.Cmd {
+	return func() tea.Msg {
+		_, _ = os.Stdout.Write([]byte("\a"))
+		return nil
+	}
+}
+
+// approvalBellEnabled returns true unless the SMITHERS_APPROVAL_BELL
+// environment variable is set to "0" or "false".
+func approvalBellEnabled() bool {
+	v := os.Getenv("SMITHERS_APPROVAL_BELL")
+	return v != "0" && v != "false"
 }
 
 // sendNotification returns a command that sends a notification if allowed by policy.
@@ -486,6 +620,16 @@ func (m *UI) loadMCPrompts() tea.Msg {
 // Update handles updates to the UI model.
 func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
+
+	// Forward every message to the toast manager so it can handle ShowToastMsg,
+	// DismissToastMsg, and its own internal TTL expiry messages.
+	// Guard against nil when the NOTIFICATIONS_TOAST_OVERLAYS flag is off.
+	if m.toasts != nil {
+		if cmd := m.toasts.Update(msg); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+
 	if m.hasSession() && m.isAgentBusy() {
 		queueSize := m.com.App.AgentCoordinator.QueuedPrompts(m.session.ID)
 		if queueSize != m.promptQueue {
@@ -568,6 +712,33 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case mcpStateChangedMsg:
 		m.mcpStates = msg.states
+		m.smithersStatus = updateSmithersStatusMCP(m.smithersStatus, msg.states)
+
+	case smithersRunSummaryMsg:
+		if msg.Err == nil {
+			mcpConnected := m.smithersStatus != nil && m.smithersStatus.MCPConnected
+			mcpServerName := ""
+			mcpToolCount := 0
+			if m.smithersStatus != nil {
+				mcpServerName = m.smithersStatus.MCPServerName
+				mcpToolCount = m.smithersStatus.MCPToolCount
+			}
+			m.smithersStatus = &SmithersStatus{
+				ActiveRuns:       msg.Summary.ActiveRuns,
+				PendingApprovals: msg.Summary.PendingApprovals,
+				MCPConnected:     mcpConnected,
+				MCPServerName:    mcpServerName,
+				MCPToolCount:     mcpToolCount,
+			}
+		}
+		// Re-arm the tick regardless of error so the poll loop continues.
+		cmds = append(cmds, smithersRunSummaryTickCmd())
+
+	case smithersRunSummaryTickMsg:
+		if m.com.Config().Smithers != nil {
+			cmds = append(cmds, m.refreshSmithersRunSummaryCmd())
+		}
+
 	case mcpPromptsLoadedMsg:
 		m.mcpPrompts = msg.Prompts
 		dia := m.dialog.Dialog(dialog.CommandsID)
@@ -665,10 +836,92 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+		// In-terminal toast for the permission request.
+		if m.toasts != nil && !m.isNotificationsDisabled() {
+			toolName := msg.Payload.ToolName
+			cmds = append(cmds, func() tea.Msg {
+				return components.ShowToastMsg{
+					Title: "Permission required",
+					Body:  toolName,
+					Level: components.ToastLevelWarning,
+					ActionHints: []components.ActionHint{
+						{Key: "enter", Label: "allow"},
+						{Key: "esc", Label: "deny"},
+					},
+				}
+			})
+		}
 	case pubsub.Event[permission.PermissionNotification]:
 		m.handlePermissionNotification(msg.Payload)
 	case cancelTimerExpiredMsg:
 		m.isCanceling = false
+
+	// --- Global SSE notification pump ---
+
+	case smithers.RunEventMsg:
+		// Re-queue the SSE listener so it reads the next message.
+		if m.sseEventCh != nil {
+			cmds = append(cmds, listenSSE(m.sseEventCh))
+		}
+		// Translate run event → toast if applicable.
+		if m.toasts != nil && !m.isNotificationsDisabled() {
+			ev := msg.Event
+			if ev.Type == "status_changed" &&
+				smithers.RunStatus(ev.Status) == smithers.RunStatusWaitingApproval {
+				// Async path: fetch approval detail to include gate question.
+				cmds = append(cmds, fetchApprovalAndToastCmd(
+					context.Background(), ev.RunID, m.smithersClient,
+				))
+			} else {
+				if toast := runEventToToast(ev, m.notifTracker); toast != nil {
+					t := *toast
+					cmds = append(cmds, func() tea.Msg { return t })
+				}
+			}
+		}
+
+	case approvalFetchedMsg:
+		if m.toasts != nil && !m.isNotificationsDisabled() {
+			if toast := approvalEventToToast(msg.RunID, msg.Approval, m.notifTracker); toast != nil {
+				t := *toast
+				cmds = append(cmds, func() tea.Msg { return t })
+				// Optional terminal bell alert, gated by env var.
+				if approvalBellEnabled() {
+					cmds = append(cmds, bellCmd())
+				}
+			}
+		}
+
+	case smithers.RunEventErrorMsg:
+		// Re-queue pump to keep listening even after transient parse errors.
+		if m.sseEventCh != nil {
+			cmds = append(cmds, listenSSE(m.sseEventCh))
+		}
+
+	case smithers.RunEventDoneMsg:
+		// Individual run stream closed; re-queue pump (global feed stays open
+		// for other runs).
+		if m.sseEventCh != nil {
+			cmds = append(cmds, listenSSE(m.sseEventCh))
+		}
+
+	case sseStreamClosedMsg:
+		// Global SSE stream closed (server restart, network error, etc.).
+		// Schedule a reconnect attempt after a back-off delay.
+		m.sseEventCh = nil
+		if m.toasts != nil {
+			cmds = append(cmds, tea.Tick(10*time.Second, func(time.Time) tea.Msg {
+				return sseStartMsg{}
+			}))
+		}
+
+	case sseStartMsg:
+		if m.toasts != nil {
+			if cmd := m.startSSESubscription(context.Background()); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+
 	case tea.TerminalVersionMsg:
 		termVersion := strings.ToLower(msg.Name)
 		// Only enable progress bar for the following terminals.
@@ -679,6 +932,11 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.updateLayoutAndSize()
+		// Propagate size to the active Smithers view so it can reflow.
+		m.viewRouter.SetSize(m.width, m.height)
+		if m.dashboard != nil {
+			m.dashboard.SetSize(m.width, m.height)
+		}
 		if m.state == uiChat && m.chat.Follow() {
 			if cmd := m.chat.ScrollToBottomAndAnimate(); cmd != nil {
 				cmds = append(cmds, cmd)
@@ -859,7 +1117,25 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.textarea.SetValue(msg.Text)
 		m.textarea.MoveToEnd()
 		cmds = append(cmds, m.updateTextareaWithPrevHeight(msg, prevHeight))
+	case views.OpenChatMsg:
+		// Switch from dashboard to chat mode
+		m.setState(uiLanding, uiFocusEditor)
+		return m, tea.Batch(cmds...)
+	case views.InitSmithersMsg:
+		// User wants to init smithers — run `smithers init` via exec
+		m.setState(uiLanding, uiFocusEditor)
+		return m, tea.Batch(cmds...)
+	case views.DashboardNavigateMsg:
+		// Dashboard requested navigation to a view
+		m.setState(uiSmithersView, uiFocusMain)
+		if cmd := m.handleNavigateToView(NavigateToViewMsg{View: msg.View}); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	case NavigateToViewMsg:
+		// If we're on the dashboard, switch to smithers view mode first
+		if m.state == uiSmithersDashboard {
+			m.setState(uiSmithersView, uiFocusMain)
+		}
 		if cmd := m.handleNavigateToView(msg); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
@@ -905,16 +1181,35 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Forward messages to the current smithers view (for async messages like agentsLoadedMsg).
-	if m.state == uiSmithersView {
-		if current := m.viewRouter.Current(); current != nil {
-			updated, cmd := current.Update(msg)
+	// Forward non-key messages to the dashboard (for fetch results).
+	if m.state == uiSmithersDashboard && m.dashboard != nil {
+		if _, isKey := msg.(tea.KeyPressMsg); !isKey {
+			updated, cmd := m.dashboard.Update(msg)
 			if cmd != nil {
 				cmds = append(cmds, cmd)
 			}
-			if updated != current {
-				m.viewRouter.Pop()
-				m.viewRouter.Push(updated)
+			if d, ok := updated.(*views.DashboardView); ok {
+				m.dashboard = d
+			}
+		}
+	}
+
+	// Forward non-key messages to the current smithers view (for async messages
+	// like agentsLoadedMsg). Key presses are already dispatched by handleKeyPressMsg
+	// via the uiSmithersView case in the state switch — forwarding them here too
+	// would cause each key to be processed twice, neutralising Tab focus toggles.
+	// PopViewMsg and other navigation messages must NOT be forwarded — they need
+	// to reach the handler below.
+	if m.state == uiSmithersView {
+		if _, isKey := msg.(tea.KeyPressMsg); !isKey {
+			switch msg.(type) {
+			case views.PopViewMsg, views.OpenChatMsg, views.DashboardNavigateMsg,
+				views.OpenRunInspectMsg, views.OpenLiveChatMsg, views.OpenTicketDetailMsg:
+				// These are navigation commands — let them fall through to the handler below.
+			default:
+				if cmd := m.viewRouter.Update(msg); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
 			}
 		}
 	}
@@ -1458,28 +1753,118 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 	case dialog.ActionOpenAgentsView:
 		m.dialog.CloseDialog(dialog.CommandsID)
 		agentsView := views.NewAgentsView(m.smithersClient)
-		cmd := m.viewRouter.Push(agentsView)
+		cmd := m.viewRouter.PushView(agentsView)
 		m.setState(uiSmithersView, uiFocusMain)
 		cmds = append(cmds, cmd)
 
 	case dialog.ActionOpenTicketsView:
 		m.dialog.CloseDialog(dialog.CommandsID)
 		ticketsView := views.NewTicketsView(m.smithersClient)
-		cmd := m.viewRouter.Push(ticketsView)
+		cmd := m.viewRouter.PushView(ticketsView)
 		m.setState(uiSmithersView, uiFocusMain)
 		cmds = append(cmds, cmd)
 
 	case dialog.ActionOpenApprovalsView:
 		m.dialog.CloseDialog(dialog.CommandsID)
 		approvalsView := views.NewApprovalsView(m.smithersClient)
-		cmd := m.viewRouter.Push(approvalsView)
+		cmd := m.viewRouter.PushView(approvalsView)
+		m.setState(uiSmithersView, uiFocusMain)
+		cmds = append(cmds, cmd)
+
+	case dialog.ActionOpenMemoryView:
+		m.dialog.CloseDialog(dialog.CommandsID)
+		memoryView := views.NewMemoryView(m.smithersClient)
+		cmd := m.viewRouter.PushView(memoryView)
+		m.setState(uiSmithersView, uiFocusMain)
+		cmds = append(cmds, cmd)
+
+	case dialog.ActionOpenPromptsView:
+		m.dialog.CloseDialog(dialog.CommandsID)
+		promptsView := views.NewPromptsView(m.smithersClient)
+		cmd := m.viewRouter.PushView(promptsView)
+		m.setState(uiSmithersView, uiFocusMain)
+		cmds = append(cmds, cmd)
+
+	case dialog.ActionOpenScoresView:
+		m.dialog.CloseDialog(dialog.CommandsID)
+		scoresView := views.NewScoresView(m.smithersClient)
+		cmd := m.viewRouter.PushView(scoresView)
+		m.setState(uiSmithersView, uiFocusMain)
+		cmds = append(cmds, cmd)
+
+	case dialog.ActionOpenSQLView:
+		m.dialog.CloseDialog(dialog.CommandsID)
+		sqlView := views.NewSQLBrowserView(m.smithersClient)
+		cmd := m.viewRouter.PushView(sqlView)
+		m.setState(uiSmithersView, uiFocusMain)
+		cmds = append(cmds, cmd)
+
+	case dialog.ActionOpenTriggersView:
+		m.dialog.CloseDialog(dialog.CommandsID)
+		triggersView := views.NewTriggersView(m.smithersClient)
+		cmd := m.viewRouter.PushView(triggersView)
+		m.setState(uiSmithersView, uiFocusMain)
+		cmds = append(cmds, cmd)
+
+	case dialog.ActionOpenLiveChatView:
+		m.dialog.CloseDialog(dialog.CommandsID)
+		liveChatView := views.NewLiveChatView(m.smithersClient, msg.RunID, msg.TaskID, msg.AgentName)
+		cmd := m.viewRouter.PushView(liveChatView)
+		m.setState(uiSmithersView, uiFocusMain)
+		cmds = append(cmds, cmd)
+
+	case dialog.ActionOpenTimelineView:
+		m.dialog.CloseDialog(dialog.CommandsID)
+		if msg.RunID == "" {
+			// Opened from palette without a run ID — no-op for now.
+			// A future ticket can add a run picker here.
+			break
+		}
+		timelineView := views.NewTimelineView(m.smithersClient, msg.RunID)
+		cmd := m.viewRouter.PushView(timelineView)
+		m.setState(uiSmithersView, uiFocusMain)
+		cmds = append(cmds, cmd)
+
+	case dialog.ActionOpenView:
+		m.dialog.CloseDialog(dialog.CommandsID)
+		if v, ok := m.viewRegistry.Open(msg.Name, m.smithersClient); ok {
+			cmd := m.viewRouter.Push(v, m.width, m.height)
+			m.setState(uiSmithersView, uiFocusMain)
+			cmds = append(cmds, cmd)
+		}
+
+	case views.OpenRunInspectMsg:
+		inspectView := views.NewRunInspectView(m.smithersClient, msg.RunID)
+		cmd := m.viewRouter.PushView(inspectView)
+		m.setState(uiSmithersView, uiFocusMain)
+		cmds = append(cmds, cmd)
+
+	case views.OpenLiveChatMsg:
+		chatView := views.NewLiveChatView(m.smithersClient, msg.RunID, msg.TaskID, msg.AgentName)
+		cmd := m.viewRouter.PushView(chatView)
+		m.setState(uiSmithersView, uiFocusMain)
+		cmds = append(cmds, cmd)
+
+	case views.OpenTicketDetailMsg:
+		var detailView *views.TicketDetailView
+		if msg.EditMode {
+			detailView = views.NewTicketDetailViewEditMode(m.smithersClient, nil, msg.Ticket)
+		} else {
+			detailView = views.NewTicketDetailView(m.smithersClient, nil, msg.Ticket)
+		}
+		cmd := m.viewRouter.PushView(detailView)
 		m.setState(uiSmithersView, uiFocusMain)
 		cmds = append(cmds, cmd)
 
 	case views.PopViewMsg:
-		m.viewRouter.Pop()
+		if cmd := m.viewRouter.Pop(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 		if !m.viewRouter.HasViews() {
-			if m.hasSession() {
+			// Return to dashboard in Smithers mode, chat otherwise
+			if m.dashboard != nil {
+				m.setState(uiSmithersDashboard, uiFocusMain)
+			} else if m.hasSession() {
 				m.setState(uiChat, uiFocusEditor)
 			} else {
 				m.setState(uiLanding, uiFocusEditor)
@@ -1661,10 +2046,30 @@ func (m *UI) navigateToView(view string) tea.Cmd {
 }
 
 func (m *UI) handleNavigateToView(msg NavigateToViewMsg) tea.Cmd {
-	if strings.TrimSpace(msg.View) == "" {
+	view := strings.TrimSpace(msg.View)
+	if view == "" {
 		return nil
 	}
-	return util.ReportInfo(fmt.Sprintf("%s view coming soon", msg.View))
+	switch view {
+	case "runs":
+		runsView := views.NewRunsView(m.smithersClient)
+		cmd := m.viewRouter.Push(runsView, m.width, m.height)
+		m.setState(uiSmithersView, uiFocusMain)
+		return cmd
+	case "approvals":
+		approvalsView := views.NewApprovalsView(m.smithersClient)
+		cmd := m.viewRouter.Push(approvalsView, m.width, m.height)
+		m.setState(uiSmithersView, uiFocusMain)
+		return cmd
+	default:
+		// Try the view registry for any registered views.
+		if v, ok := m.viewRegistry.Open(view, m.smithersClient); ok {
+			cmd := m.viewRouter.Push(v, m.width, m.height)
+			m.setState(uiSmithersView, uiFocusMain)
+			return cmd
+		}
+		return util.ReportInfo(fmt.Sprintf("%s view coming soon", view))
+	}
 }
 
 func (m *UI) openAuthenticationDialog(provider catwalk.Provider, model config.SelectedModel, modelType config.SelectedModelType) tea.Cmd {
@@ -1768,6 +2173,26 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 		return tea.Batch(cmds...)
 	}
 
+	// Dismiss the newest in-terminal toast when the keybinding is pressed and
+	// toasts are active. This is handled before dialog routing so it works
+	// regardless of whether a dialog is open.
+	if m.toasts != nil && key.Matches(msg, m.keyMap.DismissToast) && m.toasts.Len() > 0 {
+		id := m.toasts.FrontID()
+		cmds = append(cmds, func() tea.Msg {
+			return components.DismissToastMsg{ID: id}
+		})
+		return tea.Batch(cmds...)
+	}
+
+	// Navigate to approvals view via bare 'a' (mirrors [a] toast hint).
+	// Only active when the editor is not focused to avoid capturing text input.
+	// TODO: inline approval — wire smithersClient.ApproveGate(approvalID) directly
+	// from the toast key handler for < 3-keystroke approval (notifications-approval-inline).
+	if key.Matches(msg, m.keyMap.ViewApprovalsShort) && m.focus != uiFocusEditor {
+		cmds = append(cmds, m.navigateToView("approvals"))
+		return tea.Batch(cmds...)
+	}
+
 	// Route all messages to dialog if one is open.
 	if m.dialog.HasDialogs() {
 		return m.handleDialogMsg(msg)
@@ -1789,31 +2214,24 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 	case uiInitialize:
 		cmds = append(cmds, m.updateInitializeView(msg)...)
 		return tea.Batch(cmds...)
-	case uiSmithersView:
-		// Handle Esc to return to chat console (base of stack)
-		if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
-			if key.Matches(keyMsg, key.NewBinding(key.WithKeys("esc", "alt+esc"))) {
-				// Return to chat console (pop all non-root views)
-				m.viewRouter.PopToRoot()
-				if m.hasSession() {
-					m.setState(uiChat, uiFocusEditor)
-				} else {
-					m.setState(uiLanding, uiFocusEditor)
-				}
-				return tea.Batch(cmds...)
-			}
-		}
-
-		if current := m.viewRouter.Current(); current != nil {
-			updated, cmd := current.Update(msg)
+	case uiSmithersDashboard:
+		// Forward all keys to the dashboard view.
+		if m.dashboard != nil {
+			updated, cmd := m.dashboard.Update(msg)
 			if cmd != nil {
 				cmds = append(cmds, cmd)
 			}
-			// Replace top of stack with updated view.
-			if updated != current {
-				m.viewRouter.Pop()
-				m.viewRouter.Push(updated)
+			if d, ok := updated.(*views.DashboardView); ok {
+				m.dashboard = d
 			}
+		}
+		return tea.Batch(cmds...)
+	case uiSmithersView:
+		// Forward ALL key presses to the current view first.
+		// Views handle their own Esc (e.g., closing overlays, cancelling forms).
+		// Only when the view emits PopViewMsg do we pop back to chat.
+		if cmd := m.viewRouter.Update(msg); cmd != nil {
+			cmds = append(cmds, cmd)
 		}
 		return tea.Batch(cmds...)
 	case uiChat, uiLanding:
@@ -2172,6 +2590,13 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 			main := uv.NewStyledString(current.View())
 			main.Draw(scr, layout.main)
 		}
+
+	case uiSmithersDashboard:
+		if m.dashboard != nil {
+			m.dashboard.SetSize(layout.main.Dx(), layout.main.Dy())
+			main := uv.NewStyledString(m.dashboard.View())
+			main.Draw(scr, layout.main)
+		}
 	}
 
 	isOnboarding := m.state == uiOnboarding
@@ -2211,6 +2636,11 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 		})
 	}
 
+	// Draw in-terminal toast notifications above content but below dialogs.
+	if m.toasts != nil {
+		m.toasts.Draw(scr, scr.Bounds())
+	}
+
 	// This needs to come last to overlay on top of everything. We always pass
 	// the full screen bounds because the dialogs will position themselves
 	// accordingly.
@@ -2245,6 +2675,53 @@ func (m *UI) SetSmithersStatus(status *SmithersStatus) {
 	m.smithersStatus = status
 }
 
+// smithersRunSummaryPollInterval is how often the UI polls /v1/runs for an
+// updated active-run count when Smithers mode is active.
+const smithersRunSummaryPollInterval = 10 * time.Second
+
+// buildSmithersClient constructs a Smithers client from TUI config, forwarding
+// apiUrl, apiToken, and dbPath options when present.
+// Falls back to a no-op stub client when smithers config is absent.
+func buildSmithersClient(cfg *config.Config) *smithers.Client {
+	if cfg == nil || cfg.Smithers == nil {
+		return smithers.NewClient()
+	}
+	var opts []smithers.ClientOption
+	if cfg.Smithers.APIURL != "" {
+		opts = append(opts, smithers.WithAPIURL(cfg.Smithers.APIURL))
+	}
+	if cfg.Smithers.APIToken != "" {
+		opts = append(opts, smithers.WithAPIToken(cfg.Smithers.APIToken))
+	}
+	if cfg.Smithers.DBPath != "" {
+		opts = append(opts, smithers.WithDBPath(cfg.Smithers.DBPath))
+	}
+	return smithers.NewClient(opts...)
+}
+
+// refreshSmithersRunSummaryCmd fetches active runs in the background and
+// delivers a smithersRunSummaryMsg. Errors are wrapped inside the message so
+// the header simply stays blank rather than propagating.
+func (m *UI) refreshSmithersRunSummaryCmd() tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		runs, err := m.smithersClient.ListRuns(ctx, smithers.RunFilter{Limit: 200})
+		if err != nil {
+			return smithersRunSummaryMsg{Err: err}
+		}
+		return smithersRunSummaryMsg{Summary: smithers.SummariseRuns(runs)}
+	}
+}
+
+// smithersRunSummaryTickCmd returns a command that fires a
+// smithersRunSummaryTickMsg after the poll interval.
+func smithersRunSummaryTickCmd() tea.Cmd {
+	return tea.Tick(smithersRunSummaryPollInterval, func(t time.Time) tea.Msg {
+		return smithersRunSummaryTickMsg(t)
+	})
+}
+
 // View renders the UI model's view.
 func (m *UI) View() tea.View {
 	var v tea.View
@@ -2254,7 +2731,7 @@ func (m *UI) View() tea.View {
 	}
 	v.MouseMode = tea.MouseModeCellMotion
 	v.ReportFocus = m.caps.ReportFocusEvents
-	v.WindowTitle = "crush " + home.Short(m.com.Store().WorkingDir())
+	v.WindowTitle = "smithers-tui " + home.Short(m.com.Store().WorkingDir())
 
 	canvas := uv.NewScreenBuffer(m.width, m.height)
 	v.Cursor = m.Draw(canvas, canvas.Bounds())
@@ -2336,9 +2813,7 @@ func (m *UI) ShortHelp() []key.Binding {
 		}
 	case uiSmithersView:
 		if current := m.viewRouter.Current(); current != nil {
-			for _, hint := range current.ShortHelp() {
-				binds = append(binds, key.NewBinding(key.WithHelp("", hint)))
-			}
+			binds = append(binds, current.ShortHelp()...)
 		}
 	default:
 		// TODO: other states
@@ -2745,6 +3220,20 @@ func (m *UI) generateLayout(w, h int) uiLayout {
 			uiLayout.main.Max.Y -= 1
 			uiLayout.editor = editorRect
 		}
+
+	case uiSmithersView:
+		// Layout:
+		//   header (1 row)
+		//   ─────────────
+		//   main (remaining)
+		const smithersHeaderHeight = 1
+		headerRect, mainRect := layout.SplitVertical(appRect, layout.Fixed(smithersHeaderHeight))
+		uiLayout.header = headerRect
+		uiLayout.main = mainRect
+
+	case uiSmithersDashboard:
+		// Dashboard takes the full screen — it renders its own header/tabs/footer.
+		uiLayout.main = appRect
 	}
 
 	return uiLayout
@@ -2791,7 +3280,7 @@ func (m *UI) openEditor(value string) tea.Cmd {
 		return util.ReportError(err)
 	}
 	cmd, err := editor.Command(
-		"crush",
+		"smithers-tui",
 		tmpPath,
 		editor.AtPosition(
 			m.textarea.Line()+1,

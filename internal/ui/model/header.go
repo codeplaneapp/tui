@@ -31,6 +31,7 @@ type SmithersStatus struct {
 	PendingApprovals int
 	MCPConnected     bool
 	MCPServerName    string
+	MCPToolCount     int
 }
 
 type header struct {
@@ -169,7 +170,11 @@ func renderHeaderDetails(
 			connectionStyle = t.Base.Foreground(t.Primary)
 		}
 
-		parts = append(parts, connectionStyle.Render(fmt.Sprintf("%s %s %s", indicator, serverName, connection)))
+		mcpStatus := fmt.Sprintf("%s %s %s", indicator, serverName, connection)
+		if smithersStatus.MCPConnected && smithersStatus.MCPToolCount > 0 {
+			mcpStatus = fmt.Sprintf("%s (%d tools)", mcpStatus, smithersStatus.MCPToolCount)
+		}
+		parts = append(parts, connectionStyle.Render(mcpStatus))
 
 		if smithersStatus.ActiveRuns > 0 {
 			parts = append(parts, t.Muted.Render(fmt.Sprintf("%d active", smithersStatus.ActiveRuns)))
@@ -181,7 +186,12 @@ func renderHeaderDetails(
 				approvalNoun = "approvals"
 			}
 			pendingText := fmt.Sprintf("⚠ %d pending %s", smithersStatus.PendingApprovals, approvalNoun)
-			parts = append(parts, t.Base.Foreground(t.Warning).Render(pendingText))
+			// Escalate to red (Error color) when 5+ approvals are pending; yellow otherwise.
+			badgeColor := t.Warning
+			if smithersStatus.PendingApprovals >= 5 {
+				badgeColor = t.Error
+			}
+			parts = append(parts, t.Base.Foreground(badgeColor).Bold(true).Render(pendingText))
 		}
 	}
 
