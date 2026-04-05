@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"os"
 	"os/exec"
 	"sort"
 	"strconv"
@@ -49,22 +50,95 @@ func WithHTTPClient(hc *http.Client) ClientOption {
 	return func(c *Client) { c.httpClient = hc }
 }
 
+// WithWorkspaceID sets the Smithers workspace ID for workspace-scoped API calls.
+// This is required by the daemon API routes (/api/workspaces/{workspaceId}/...).
+// When unset, workspace-scoped methods fall through to exec fallback.
+func WithWorkspaceID(id string) ClientOption {
+	return func(c *Client) { c.workspaceID = id }
+}
+
 // withExecFunc overrides how CLI commands are executed (for testing).
 func withExecFunc(fn func(ctx context.Context, args ...string) ([]byte, error)) ClientOption {
 	return func(c *Client) { c.execFunc = fn }
 }
 
+// withLookPath overrides binary resolution for testing.
+func withLookPath(fn func(file string) (string, error)) ClientOption {
+	return func(c *Client) { c.lookPath = fn }
+}
+
+// withStatFunc overrides filesystem stat for testing.
+func withStatFunc(fn func(name string) (os.FileInfo, error)) ClientOption {
+	return func(c *Client) { c.statFunc = fn }
+}
+
+// agentManifestEntry defines detection parameters for a single CLI agent.
+type agentManifestEntry struct {
+	id        string
+	name      string
+	command   string
+	roles     []string
+	authDir   string // relative to $HOME, e.g. ".claude"
+	apiKeyEnv string // env var name, e.g. "ANTHROPIC_API_KEY"
+}
+
+// knownAgents is the canonical detection manifest for CLI agents.
+var knownAgents = []agentManifestEntry{
+	{
+		id: "claude-code", name: "Claude Code", command: "claude",
+		roles:     []string{"coding", "review", "spec"},
+		authDir:   ".claude",
+		apiKeyEnv: "ANTHROPIC_API_KEY",
+	},
+	{
+		id: "codex", name: "Codex", command: "codex",
+		roles:     []string{"coding", "implement"},
+		authDir:   ".codex",
+		apiKeyEnv: "OPENAI_API_KEY",
+	},
+	{
+		id: "gemini", name: "Gemini", command: "gemini",
+		roles:     []string{"coding", "research"},
+		authDir:   ".gemini",
+		apiKeyEnv: "GEMINI_API_KEY",
+	},
+	{
+		id: "kimi", name: "Kimi", command: "kimi",
+		roles:     []string{"research", "plan"},
+		authDir:   "",
+		apiKeyEnv: "KIMI_API_KEY",
+	},
+	{
+		id: "amp", name: "Amp", command: "amp",
+		roles:     []string{"coding", "validate"},
+		authDir:   ".amp",
+		apiKeyEnv: "",
+	},
+	{
+		id: "forge", name: "Forge", command: "forge",
+		roles:     []string{"coding"},
+		authDir:   "",
+		apiKeyEnv: "FORGE_API_KEY",
+	},
+}
+
 // Client provides access to the Smithers API.
 // Supports three transport tiers: HTTP API, direct SQLite (read-only), and exec fallback.
 type Client struct {
-	apiURL    string
-	apiToken  string
-	dbPath    string
-	db        *sql.DB
-	httpClient *http.Client
+	apiURL      string
+	apiToken    string
+	workspaceID string // workspace ID for daemon /api/workspaces/{id}/... routes
+	dbPath      string
+	db          *sql.DB
+	httpClient  *http.Client
 
 	// execFunc allows overriding how CLI commands are executed (for testing).
 	execFunc func(ctx context.Context, args ...string) ([]byte, error)
+
+	// lookPath resolves a binary name to its full path (injectable for testing).
+	lookPath func(file string) (string, error)
+	// statFunc checks whether a filesystem path exists (injectable for testing).
+	statFunc func(name string) (os.FileInfo, error)
 
 	// Cached server availability probe.
 	serverMu      sync.RWMutex
@@ -77,6 +151,8 @@ type Client struct {
 func NewClient(opts ...ClientOption) *Client {
 	c := &Client{
 		httpClient: &http.Client{Timeout: 10 * time.Second},
+		lookPath:   exec.LookPath,
+		statFunc:   os.Stat,
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -103,17 +179,60 @@ func (c *Client) Close() error {
 	return nil
 }
 
-// ListAgents returns CLI agents detected on the system.
-// Stub returns placeholder data until HTTP/exec transport is wired.
+// ListAgents detects CLI agents installed on the system using pure-Go binary
+// and auth-signal detection.  Results reflect the real system state; no
+// subprocess is spawned.  The lookPath and statFunc fields are injectable for
+// testing.
 func (c *Client) ListAgents(_ context.Context) ([]Agent, error) {
-	return []Agent{
-		{ID: "claude-code", Name: "Claude Code", Command: "claude", Status: "unavailable"},
-		{ID: "codex", Name: "Codex", Command: "codex", Status: "unavailable"},
-		{ID: "gemini", Name: "Gemini", Command: "gemini", Status: "unavailable"},
-		{ID: "kimi", Name: "Kimi", Command: "kimi", Status: "unavailable"},
-		{ID: "amp", Name: "Amp", Command: "amp", Status: "unavailable"},
-		{ID: "forge", Name: "Forge", Command: "forge", Status: "unavailable"},
-	}, nil
+	homeDir, _ := os.UserHomeDir() // empty string on error; stat checks will fail gracefully
+
+	agents := make([]Agent, 0, len(knownAgents))
+	for _, m := range knownAgents {
+		a := Agent{
+			ID:      m.id,
+			Name:    m.name,
+			Command: m.command,
+			Roles:   m.roles,
+		}
+
+		// 1. Binary detection.
+		binaryPath, err := c.lookPath(m.command)
+		if err != nil {
+			// Binary not found in PATH.
+			a.Status = "unavailable"
+			a.Usable = false
+			agents = append(agents, a)
+			continue
+		}
+		a.BinaryPath = binaryPath
+
+		// 2. Auth-directory check.
+		if m.authDir != "" && homeDir != "" {
+			authPath := filepath.Join(homeDir, m.authDir)
+			if _, err := c.statFunc(authPath); err == nil {
+				a.HasAuth = true
+			}
+		}
+
+		// 3. API-key env-var check.
+		if m.apiKeyEnv != "" && os.Getenv(m.apiKeyEnv) != "" {
+			a.HasAPIKey = true
+		}
+
+		// 4. Classify status.
+		switch {
+		case a.HasAuth:
+			a.Status = "likely-subscription"
+		case a.HasAPIKey:
+			a.Status = "api-key"
+		default:
+			a.Status = "binary-only"
+		}
+		a.Usable = true
+
+		agents = append(agents, a)
+	}
+	return agents, nil
 }
 
 // --- Transport helpers ---
@@ -509,6 +628,69 @@ func (c *Client) DeleteCron(ctx context.Context, cronID string) error {
 	return err
 }
 
+// --- Runs ---
+
+// GetRun fetches a single run summary by ID.
+// Routes: HTTP GET /v1/runs/:id → exec smithers run get <id>.
+func (c *Client) GetRun(ctx context.Context, runID string) (*RunSummary, error) {
+	// 1. Try HTTP
+	if c.isServerAvailable() {
+		var run RunSummary
+		err := c.httpGetJSON(ctx, "/v1/runs/"+runID, &run)
+		if err == nil {
+			return &run, nil
+		}
+	}
+
+	// 2. Fall back to exec
+	out, err := c.execSmithers(ctx, "run", "get", runID, "--format", "json")
+	if err != nil {
+		return nil, err
+	}
+	var run RunSummary
+	if err := json.Unmarshal(out, &run); err != nil {
+		return nil, fmt.Errorf("parse run: %w", err)
+	}
+	return &run, nil
+}
+
+// GetChatOutput retrieves the full chat transcript for a run (all attempts, all nodes).
+// Routes: HTTP GET /v1/runs/:id/chat → SQLite → exec smithers run chat <id>.
+func (c *Client) GetChatOutput(ctx context.Context, runID string) ([]ChatBlock, error) {
+	// 1. Try HTTP
+	if c.isServerAvailable() {
+		var blocks []ChatBlock
+		err := c.httpGetJSON(ctx, "/v1/runs/"+runID+"/chat", &blocks)
+		if err == nil {
+			return blocks, nil
+		}
+	}
+
+	// 2. Try direct SQLite
+	if c.db != nil {
+		rows, err := c.queryDB(ctx,
+			`SELECT id, run_id, node_id, attempt, role, content, timestamp_ms
+			FROM _smithers_chat_attempts WHERE run_id = ?
+			ORDER BY timestamp_ms ASC, id ASC`,
+			runID)
+		if err != nil {
+			return nil, err
+		}
+		return scanChatBlocks(rows)
+	}
+
+	// 3. Fall back to exec
+	out, err := c.execSmithers(ctx, "run", "chat", runID, "--format", "json")
+	if err != nil {
+		return nil, err
+	}
+	var blocks []ChatBlock
+	if err := json.Unmarshal(out, &blocks); err != nil {
+		return nil, fmt.Errorf("parse chat output: %w", err)
+	}
+	return blocks, nil
+}
+
 // --- Tickets ---
 
 // ListTickets lists all tickets discovered from .smithers/tickets/.
@@ -798,4 +980,20 @@ func parseApprovalsJSON(data []byte) ([]Approval, error) {
 		return nil, fmt.Errorf("parse approvals: %w", err)
 	}
 	return approvals, nil
+}
+
+// scanChatBlocks converts sql.Rows into ChatBlock slice.
+func scanChatBlocks(rows *sql.Rows) ([]ChatBlock, error) {
+	defer rows.Close()
+	var result []ChatBlock
+	for rows.Next() {
+		var b ChatBlock
+		var role string
+		if err := rows.Scan(&b.ID, &b.RunID, &b.NodeID, &b.Attempt, &role, &b.Content, &b.TimestampMs); err != nil {
+			return nil, err
+		}
+		b.Role = ChatRole(role)
+		result = append(result, b)
+	}
+	return result, rows.Err()
 }
