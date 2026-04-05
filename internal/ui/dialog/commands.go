@@ -424,6 +424,15 @@ func (c *Commands) defaultCommands() []*CommandItem {
 		NewCommandItem(c.com.Styles, "switch_model", "Switch Model", "ctrl+l", ActionOpenDialog{ModelsID}),
 		NewCommandItem(c.com.Styles, "run_dashboard", "Run Dashboard", "ctrl+r", ActionNavigate{View: "runs"}),
 		NewCommandItem(c.com.Styles, "approval_queue", "Approval Queue", "ctrl+a", ActionNavigate{View: "approvals"}),
+		NewCommandItem(c.com.Styles, "workflows", "Workflows", "", ActionNavigate{View: "workflows"}),
+		NewCommandItem(c.com.Styles, "agents", "Agents", "", ActionNavigate{View: "agents"}),
+		NewCommandItem(c.com.Styles, "tickets", "Tickets", "", ActionNavigate{View: "tickets"}),
+		NewCommandItem(c.com.Styles, "prompts", "Prompt Templates", "", ActionNavigate{View: "prompts"}),
+		NewCommandItem(c.com.Styles, "sql_browser", "SQL Browser", "", ActionNavigate{View: "sql"}),
+		NewCommandItem(c.com.Styles, "triggers", "Cron Triggers", "", ActionNavigate{View: "triggers"}),
+		NewCommandItem(c.com.Styles, "memory", "Memory Browser", "", ActionNavigate{View: "memory"}),
+		NewCommandItem(c.com.Styles, "scores", "Scores Dashboard", "", ActionNavigate{View: "scores"}),
+		NewCommandItem(c.com.Styles, "timeline", "Timeline", "", ActionNavigate{View: "timeline"}),
 	}
 
 	// Only show compact command if there's an active session
@@ -528,7 +537,14 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	commands = append(commands,
 		NewCommandItem(c.com.Styles, "agents", "Agents", "", ActionOpenAgentsView{}),
 		NewCommandItem(c.com.Styles, "approvals", "Approvals", "", ActionOpenApprovalsView{}),
+		NewCommandItem(c.com.Styles, "memory", "Memory Browser", "", ActionOpenMemoryView{}),
 		NewCommandItem(c.com.Styles, "tickets", "Tickets", "", ActionOpenTicketsView{}),
+		NewCommandItem(c.com.Styles, "smithers_prompts", "Prompt Templates", "", ActionOpenPromptsView{}),
+		NewCommandItem(c.com.Styles, "live_chat", "Live Chat", "", ActionOpenLiveChatView{}),
+		NewCommandItem(c.com.Styles, "timeline", "Timeline", "", ActionOpenTimelineView{}),
+		NewCommandItem(c.com.Styles, "scores", "Scores", "", ActionOpenScoresView{}),
+		NewCommandItem(c.com.Styles, "sql_browser", "SQL Browser", "", ActionOpenSQLView{}),
+		NewCommandItem(c.com.Styles, "triggers", "Cron Triggers", "", ActionOpenTriggersView{}),
 		NewCommandItem(c.com.Styles, "quit", "Quit", "ctrl+c", tea.QuitMsg{}),
 	)
 

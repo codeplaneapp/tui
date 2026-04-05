@@ -94,6 +94,34 @@ type (
 	ActionOpenTicketsView struct{}
 	// ActionOpenApprovalsView is a message to navigate to the approvals view.
 	ActionOpenApprovalsView struct{}
+	// ActionOpenMemoryView is a message to navigate to the memory browser view.
+	ActionOpenMemoryView struct{}
+	// ActionOpenPromptsView is a message to navigate to the prompts view.
+	ActionOpenPromptsView struct{}
+	// ActionOpenScoresView is a message to navigate to the scores/ROI dashboard.
+	ActionOpenScoresView struct{}
+	// ActionOpenLiveChatView is a message to navigate to the live chat viewer.
+	// RunID identifies the run to observe; empty string opens a demo run.
+	ActionOpenLiveChatView struct {
+		RunID     string
+		TaskID    string
+		AgentName string
+	}
+	// ActionOpenTimelineView is a message to navigate to the timeline view for a run.
+	// RunID identifies the run whose snapshot history to display.
+	ActionOpenTimelineView struct {
+		RunID string
+	}
+	// ActionOpenView opens a named view via the view registry.
+	// This is the generic action for views registered in views.DefaultRegistry().
+	// It coexists with the specific ActionOpen*View types for backward compatibility.
+	ActionOpenView struct {
+		Name string
+	}
+	// ActionOpenSQLView is a message to navigate to the SQL Browser view.
+	ActionOpenSQLView struct{}
+	// ActionOpenTriggersView is a message to navigate to the cron triggers view.
+	ActionOpenTriggersView struct{}
 )
 
 // Messages for API key input dialog.

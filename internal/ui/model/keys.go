@@ -66,6 +66,11 @@ type KeyMap struct {
 	RunDashboard key.Binding
 	Approvals    key.Binding
 	Tab          key.Binding
+	// DismissToast dismisses the newest in-terminal toast notification.
+	DismissToast key.Binding
+	// ViewApprovalsShort is a bare 'a' shortcut that navigates to the approvals
+	// view when the editor is not focused. Mirrors the [a] hint shown in approval toasts.
+	ViewApprovalsShort key.Binding
 }
 
 func DefaultKeyMap() KeyMap {
@@ -270,6 +275,14 @@ func DefaultKeyMap() KeyMap {
 	km.Initialize.Enter = key.NewBinding(
 		key.WithKeys("enter"),
 		key.WithHelp("enter", "select"),
+	)
+	km.DismissToast = key.NewBinding(
+		key.WithKeys("alt+d"),
+		key.WithHelp("alt+d", "dismiss toast"),
+	)
+	km.ViewApprovalsShort = key.NewBinding(
+		key.WithKeys("a"),
+		key.WithHelp("a", "approvals"),
 	)
 
 	return km
