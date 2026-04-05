@@ -1,61 +1,135 @@
-## Existing Crush Surface
-- Smithers view routing exists in Crush, but only one concrete Smithers view is implemented today: `uiSmithersView` state in [ui.go](/Users/williamcory/crush/internal/ui/model/ui.go#L108), router push for Agents in [ui.go](/Users/williamcory/crush/internal/ui/model/ui.go#L1436), and only [agents.go](/Users/williamcory/crush/internal/ui/views/agents.go#L25) + [router.go](/Users/williamcory/crush/internal/ui/views/router.go#L5) under `internal/ui/views`.
-- Root render path for Smithers delegates to `current.View()` in [ui.go](/Users/williamcory/crush/internal/ui/model/ui.go#L2097), but `generateLayout` has no `uiSmithersView` branch in [ui.go](/Users/williamcory/crush/internal/ui/model/ui.go#L2565). This leaves Smithers `layout.header`/`layout.main` underdefined.
-- Message routing currently updates Smithers views twice for key presses: once in [ui.go](/Users/williamcory/crush/internal/ui/model/ui.go#L1735) and again in the global Smithers forwarding block in [ui.go](/Users/williamcory/crush/internal/ui/model/ui.go#L889). This is a direct blocker for `Tab`-based pane focus toggling.
-- Command palette exposure is minimal: only `agents` Smithers entry in [commands.go](/Users/williamcory/crush/internal/ui/dialog/commands.go#L527).
-- No reusable split-pane component package exists (`internal/ui/components` is absent). Current split behavior is limited to diff rendering, not view composition: [tools.go](/Users/williamcory/crush/internal/ui/chat/tools.go#L693), [split.go](/Users/williamcory/crush/internal/ui/diffview/split.go#L21).
-- Styling primitives needed for focused pane borders already exist: [styles.go](/Users/williamcory/crush/internal/ui/styles/styles.go#L1198), [styles.go](/Users/williamcory/crush/internal/ui/styles/styles.go#L1105).
-- Smithers client is present but narrow for split-pane consumer views: stub `ListAgents` in [client.go](/Users/williamcory/crush/internal/smithers/client.go#L106), SQL/scores/memory/cron methods in [client.go](/Users/williamcory/crush/internal/smithers/client.go#L266), [client.go](/Users/williamcory/crush/internal/smithers/client.go#L310), [client.go](/Users/williamcory/crush/internal/smithers/client.go#L356), [client.go](/Users/williamcory/crush/internal/smithers/client.go#L402), and only corresponding types in [types.go](/Users/williamcory/crush/internal/smithers/types.go#L18).
-- Smithers config exists (`APIURL`, `APIToken`, `DBPath`, `WorkflowDir`) in [config.go](/Users/williamcory/crush/internal/config/config.go#L373) with defaults in [load.go](/Users/williamcory/crush/internal/config/load.go#L401), but the UI still constructs a default client with no options in [ui.go](/Users/williamcory/crush/internal/ui/model/ui.go#L332).
-- `internal/app` has no Smithers-specific split-pane logic; work is concentrated in `internal/ui`, `internal/smithers`, and `internal/config`.
-- Testing baseline in Crush currently has VHS smoke coverage (not split-pane specific) in [smithers-domain-system-prompt.tape](/Users/williamcory/crush/tests/vhs/smithers-domain-system-prompt.tape#L1) and [README.md](/Users/williamcory/crush/tests/vhs/README.md#L3), but no terminal E2E harness equivalent to upstream.
+# Research: platform-split-pane
 
-## Upstream Smithers Reference
-- TUI v2 shell shows explicit multi-region layout and keyboard focus cycle (`Tab`) in [TuiAppV2.tsx](/Users/williamcory/smithers/src/cli/tui-v2/client/app/TuiAppV2.tsx#L217), [TuiAppV2.tsx](/Users/williamcory/smithers/src/cli/tui-v2/client/app/TuiAppV2.tsx#L264), [TuiAppV2.tsx](/Users/williamcory/smithers/src/cli/tui-v2/client/app/TuiAppV2.tsx#L294).
-- Breakpoint behavior and focus-region orchestration live in broker: [Broker.ts](/Users/williamcory/smithers/src/cli/tui-v2/broker/Broker.ts#L220), [Broker.ts](/Users/williamcory/smithers/src/cli/tui-v2/broker/Broker.ts#L223), [Broker.ts](/Users/williamcory/smithers/src/cli/tui-v2/broker/Broker.ts#L834).
-- Fixed-width side panes are explicit in [WorkspaceRail.tsx](/Users/williamcory/smithers/src/cli/tui-v2/client/components/WorkspaceRail.tsx#L17) and [Inspector.tsx](/Users/williamcory/smithers/src/cli/tui-v2/client/components/Inspector.tsx#L22).
-- Upstream data model includes focus regions, workspace/feed/run state, approvals, compact mode in [types.ts](/Users/williamcory/smithers/src/cli/tui-v2/shared/types.ts#L9) and [types.ts](/Users/williamcory/smithers/src/cli/tui-v2/shared/types.ts#L135), with store defaults in [store.ts](/Users/williamcory/smithers/src/cli/tui-v2/client/state/store.ts#L57).
-- Legacy TUI has concrete split-pane precedents:
-- SQL browser with left tables pane and `Tab` pane cycling in [SqliteBrowser.tsx](/Users/williamcory/smithers/src/cli/tui/components/SqliteBrowser.tsx#L19), [SqliteBrowser.tsx](/Users/williamcory/smithers/src/cli/tui/components/SqliteBrowser.tsx#L74), [SqliteBrowser.tsx](/Users/williamcory/smithers/src/cli/tui/components/SqliteBrowser.tsx#L119).
-- Run detail with fixed left task pane in [RunDetailView.tsx](/Users/williamcory/smithers/src/cli/tui/components/RunDetailView.tsx#L159).
-- Node inspector task tabs in [NodeDetailView.tsx](/Users/williamcory/smithers/src/cli/tui/components/NodeDetailView.tsx#L92).
-- Server transport surfaces for split-pane consumers are available upstream: run create in [index.ts](/Users/williamcory/smithers/src/server/index.ts#L546), SSE events in [index.ts](/Users/williamcory/smithers/src/server/index.ts#L820), approvals in [index.ts](/Users/williamcory/smithers/src/server/index.ts#L930), frames in [index.ts](/Users/williamcory/smithers/src/server/index.ts#L945), approve/deny in [index.ts](/Users/williamcory/smithers/src/server/index.ts#L973).
-- Upstream terminal E2E harness pattern is concrete in [tui.e2e.test.ts](/Users/williamcory/smithers/tests/tui.e2e.test.ts#L18) and [tui-helpers.ts](/Users/williamcory/smithers/tests/tui-helpers.ts#L18).
-- Upstream handoff doc mandates E2E/TDD-first workflow in [smithers-tui-v2-agent-handoff.md](/Users/williamcory/smithers/docs/guides/smithers-tui-v2-agent-handoff.md#L29).
-- Requested paths `/Users/williamcory/smithers/gui/src` and `/Users/williamcory/smithers/gui-ref` are not present in this checkout; current implementation evidence came from `/Users/williamcory/smithers/src`, `/Users/williamcory/smithers/src/server`, and `/Users/williamcory/smithers/tests`.
+## Summary
 
-## Gaps
-- Data-model gap: Crush Smithers types are tool-specific (`Agent`, `SQLResult`, `ScoreRow`, `MemoryFact`, `CronSchedule`) in [types.go](/Users/williamcory/crush/internal/smithers/types.go#L3), while upstream split-pane views are driven by richer workspace/feed/run/focus models in [types.ts](/Users/williamcory/smithers/src/cli/tui-v2/shared/types.ts#L28).
-- Transport gap: Upstream has run/event/approval/frames APIs and SSE in [index.ts](/Users/williamcory/smithers/src/server/index.ts#L820), but Crush client has no run lifecycle or SSE methods in [client.go](/Users/williamcory/crush/internal/smithers/client.go#L57). Also Crush UI does not pass Smithers config into the client ([ui.go](/Users/williamcory/crush/internal/ui/model/ui.go#L332) vs [config.go](/Users/williamcory/crush/internal/config/config.go#L373)).
-- Rendering gap: No reusable split-pane component exists in Crush; engineering target explicitly requires `internal/ui/components/splitpane.go` in [.smithers spec](/Users/williamcory/crush/.smithers/specs/engineering/platform-split-pane.md#L14).
-- Root-layout gap: Smithers drawing depends on `layout.main`, but layout generation has no `uiSmithersView` branch ([ui.go](/Users/williamcory/crush/internal/ui/model/ui.go#L2097), [ui.go](/Users/williamcory/crush/internal/ui/model/ui.go#L2565)).
-- Input-routing gap: Smithers view receives duplicate key updates ([ui.go](/Users/williamcory/crush/internal/ui/model/ui.go#L1735), [ui.go](/Users/williamcory/crush/internal/ui/model/ui.go#L889)), which can neutralize `Tab` focus toggles for a split pane.
-- UX/navigation gap: PRD and design call for split layouts in tickets/prompts/sql/node inspector ([01-PRD.md](/Users/williamcory/crush/docs/smithers-tui/01-PRD.md#L211), [02-DESIGN.md](/Users/williamcory/crush/docs/smithers-tui/02-DESIGN.md#L496), [02-DESIGN.md](/Users/williamcory/crush/docs/smithers-tui/02-DESIGN.md#L593), [02-DESIGN.md](/Users/williamcory/crush/docs/smithers-tui/02-DESIGN.md#L661)), but Crush currently only exposes `Agents` in command palette ([commands.go](/Users/williamcory/crush/internal/ui/dialog/commands.go#L527)).
-- Feature-inventory gap: canonical feature inventory includes `PLATFORM_SPLIT_PANE_LAYOUTS` and dependent features (`TICKETS_SPLIT_PANE_LAYOUT`, `SQL_TABLE_SIDEBAR`) in [features.ts](/Users/williamcory/crush/docs/smithers-tui/features.ts#L30), [features.ts](/Users/williamcory/crush/docs/smithers-tui/features.ts#L122), [features.ts](/Users/williamcory/crush/docs/smithers-tui/features.ts#L131), but implementation surface is not present yet.
-- Testing gap: engineering doc requires terminal E2E modeled on upstream harness plus VHS happy-path for this flow in [03-ENGINEERING.md](/Users/williamcory/crush/docs/smithers-tui/03-ENGINEERING.md#L941) and [03-ENGINEERING.md](/Users/williamcory/crush/docs/smithers-tui/03-ENGINEERING.md#L946); Crush currently has only VHS smoke and no terminal E2E harness.
+The `SplitPane` component (`internal/ui/components/splitpane.go`) is fully built and tested. The `platform-split-pane` ticket is now purely about **platform-level integration**: wiring the existing component into the views that need it, resolving the root model issues that prevent `Tab`-based focus from working, and establishing the E2E test infrastructure that this and future view tickets will share.
 
-## Recommended Direction
-- First, land two prerequisites in root UI: add `uiSmithersView` layout handling in [ui.go](/Users/williamcory/crush/internal/ui/model/ui.go#L2565) and remove duplicate Smithers view dispatch between [ui.go](/Users/williamcory/crush/internal/ui/model/ui.go#L1735) and [ui.go](/Users/williamcory/crush/internal/ui/model/ui.go#L889).
-- Implement `internal/ui/components/splitpane.go` exactly as a reusable primitive (left fixed width, right flexible, divider, compact fallback, pane focus routing) per [.smithers engineering spec](/Users/williamcory/crush/.smithers/specs/engineering/platform-split-pane.md#L22).
-- Keep split-pane component independent from router types, then compose it inside Smithers views through [router.go](/Users/williamcory/crush/internal/ui/views/router.go#L5).
-- Add a test-only demo split-pane view and invocation hook (`--test-view splitpane-demo`) to support deterministic terminal E2E.
-- Add terminal E2E harness in Crush modeled after upstream [tui.e2e.test.ts](/Users/williamcory/smithers/tests/tui.e2e.test.ts#L18) and [tui-helpers.ts](/Users/williamcory/smithers/tests/tui-helpers.ts#L18), then add at least one split-pane happy-path case.
-- Add a VHS happy-path recording for split-pane under existing `tests/vhs` alongside current tape [smithers-domain-system-prompt.tape](/Users/williamcory/crush/tests/vhs/smithers-domain-system-prompt.tape#L1).
-- In parallel follow-up (not required for this ticket), wire Smithers config into client construction and expand client transport for run/event/approval surfaces needed by split-pane consumer views.
+---
 
-## Files To Touch
-- [internal/ui/model/ui.go](/Users/williamcory/crush/internal/ui/model/ui.go) for Smithers layout case and single-dispatch routing fix.
-- [internal/ui/components/splitpane.go](/Users/williamcory/crush/internal/ui/components/splitpane.go) new reusable split-pane component.
-- [internal/ui/components/splitpane_test.go](/Users/williamcory/crush/internal/ui/components/splitpane_test.go) unit tests with mock panes.
-- [internal/ui/views/splitpane_demo.go](/Users/williamcory/crush/internal/ui/views/splitpane_demo.go) new test/demo view for E2E.
-- [internal/ui/dialog/actions.go](/Users/williamcory/crush/internal/ui/dialog/actions.go) and [internal/ui/dialog/commands.go](/Users/williamcory/crush/internal/ui/dialog/commands.go) if a command-palette route is used for demo/manual validation.
-- [internal/cmd/root.go](/Users/williamcory/crush/internal/cmd/root.go) for `--test-view` hook to support automated terminal E2E.
-- [tests/e2e/tui_helpers_test.go](/Users/williamcory/crush/tests/e2e/tui_helpers_test.go) and [tests/e2e/splitpane_test.go](/Users/williamcory/crush/tests/e2e/splitpane_test.go) new terminal E2E harness and split-pane flow.
-- [tests/vhs/splitpane.tape](/Users/williamcory/crush/tests/vhs/splitpane.tape) and [tests/vhs/README.md](/Users/williamcory/crush/tests/vhs/README.md) for VHS happy-path coverage.
-- [internal/ui/model/ui.go](/Users/williamcory/crush/internal/ui/model/ui.go) plus [internal/smithers/client.go](/Users/williamcory/crush/internal/smithers/client.go) for future transport/config follow-up.
+## Audit: What `splitpane.go` Provides
 
-```json
-{
-  "document": "First research pass completed. See sections above."
-}
-```
+**File**: `/internal/ui/components/splitpane.go`
+
+The implementation is complete and matches the engineering spec exactly:
+
+| Feature | Status |
+|---------|--------|
+| `Pane` interface (`Init`, `Update`, `View`, `SetSize`) | Done |
+| `FocusSide` (FocusLeft / FocusRight) | Done |
+| `SplitPaneOpts` (LeftWidth, DividerWidth, CompactBreakpoint, FocusedBorderColor, DividerColor) | Done |
+| `NewSplitPane` constructor with sensible defaults (30 / 1 / 80) | Done |
+| `SetSize` — clamps left to half total, propagates to children | Done |
+| `Update` — intercepts `Tab` / `Shift+Tab`, routes all other msgs to focused pane only | Done |
+| Compact mode — collapses to single-pane when width < breakpoint; re-propagates size on Tab | Done |
+| `View()` — `lipgloss.JoinHorizontal` with thick-border focus indicator on active pane | Done |
+| `renderDivider()` — `│` column in dim gray | Done |
+| `SetFocus` / `Focus` / `IsCompact` / `Width` / `Height` accessors | Done |
+| `ShortHelp() []key.Binding` | Done |
+
+**Notable implementation detail**: The focused pane renders with a left thick-border accent (consuming 1 column) rather than a background highlight. The inner content width is reduced by 1 to accommodate the border. The unfocused pane gets no border and the full width allocation.
+
+**What the component does NOT provide** (intentionally out of scope per the engineering spec):
+
+- `Draw(scr uv.Screen, area uv.Rectangle)` — the ultraviolet screen-buffer render path is **not implemented**. The spec listed it as Slice 5, but the actual file uses only the `View() string` path. This is fine: the root model's `uiSmithersView` draw path calls `current.View()` and wraps it in `uv.NewStyledString`, so the string path is the correct integration point.
+- Draggable resize handle — intentionally deferred.
+- Vertical (top/bottom) split — not present, not needed for any existing view.
+- Three-pane layouts — handled by composing two `SplitPane` instances where needed.
+
+**Test file**: `/internal/ui/components/splitpane_test.go` — 14 test cases covering defaults, normal layout, compact mode, Tab toggling, Shift+Tab, key routing, window resize, left-width clamping, Init, view output structure, compact view correctness, size re-propagation on compact toggle, programmatic `SetFocus`, visual width assertion, narrow-terminal safety, and `ShortHelp`. All tests are already written; they simply need to be confirmed passing.
+
+---
+
+## Views That Need Split-Pane Integration
+
+### 1. `ApprovalsView` (`internal/ui/views/approvals.go`)
+
+**Current state**: Has a manual split-pane layout in `View()`. The implementation:
+- Hand-splits at a fixed `listWidth = 30` with `dividerWidth = 3` (renders `" │ "` as a faint string).
+- Joins panes line-by-line using `strings.Split` + padding + loop — not using `SplitPane` at all.
+- Compact fallback when `v.width < 80 || detailWidth < 20`: switches to `renderListCompact()` which shows inline context below the selected item.
+- Focus is **not tracked** — there is no concept of which pane is "focused". Keyboard navigation (`↑↓`) operates only on the list; the detail pane is purely passive.
+- No `Tab` key handling; the whole view is treated as a single-focus list.
+
+**Gap vs. `SplitPane`**: The current implementation duplicates the same layout logic that `SplitPane` provides, but without proper focus management, without the visual focus accent, and without robust size propagation. The detail pane cannot be focused, scrolled, or interacted with.
+
+**Required change**: Replace the manual split with a `SplitPane` that wraps two `Pane` implementations:
+- `approvalListPane` — the navigable list (up/down/cursor) — gets `FocusLeft`.
+- `approvalDetailPane` — the context display — gets `FocusRight`. Initially read-only (no scrolling needed for v1 but the pane structure enables it later).
+
+### 2. `TicketsView` (`internal/ui/views/tickets.go`)
+
+**Current state**: A flat list with no split at all. Renders ticket ID + snippet in a single column. The PRD (§6.9) and design doc (§3.x) both call for a split-pane layout: list on the left, detail/editor on the right.
+
+**Gap**: No split-pane layout exists. The detail pane — showing ticket markdown content and an edit action — is entirely missing.
+
+**Required change**: Introduce a `SplitPane` where:
+- `ticketListPane` — scrollable list of tickets, same navigation as now.
+- `ticketDetailPane` — renders the selected ticket's markdown content, with a future `Ctrl+O` hook for `$EDITOR` handoff.
+
+### 3. Views that will need split-pane (future tickets, not in scope here)
+
+| View | Left pane | Right pane |
+|------|-----------|------------|
+| SQL Browser (`sqlbrowser.go`) | Table list sidebar | Query editor + results |
+| Node Inspector (`runinspect.go`) | Node list (DAG) | Task tabs (Input/Output/Config/Chat) |
+| Prompts (`prompts.go`) | Prompt list | Source editor + live preview (nested split) |
+
+These are separate tickets. They are documented here because the integration pattern established for Approvals and Tickets should be used consistently across all of them.
+
+---
+
+## Root Model Issues That Block Proper Integration
+
+### Issue 1: `uiSmithersView` layout case is missing from `generateLayout()`
+
+**Location**: `internal/ui/model/ui.go`, function `generateLayout` (~line 2628).
+
+`generateLayout` has cases for `uiOnboarding`, `uiInitialize`, `uiLanding`, and `uiChat`, but no `uiSmithersView` case. When a Smithers view is active, `layout.header` and `layout.main` are zero-valued `uv.Rectangle`s. The draw path at line 2185 attempts `main.Draw(scr, layout.main)` on a zero rect, producing no visible output.
+
+**Fix**: Add a `uiSmithersView` case that mirrors the compact-chat layout: 1-row header, then the full remaining `appRect` for `layout.main`.
+
+### Issue 2: Duplicate key dispatch causes `Tab` neutralization
+
+**Location**: `internal/ui/model/ui.go`, lines ~889–929 (default-case forwarding block) and ~1808–1834 (`uiSmithersView` state-switch case).
+
+Messages are dispatched to the active Smithers view twice:
+1. In the `default:` case of the big message switch (line ~894): `m.viewRouter.Current().Update(msg)` for all messages when `m.state == uiSmithersView`.
+2. In the `uiSmithersView` arm of the state-switch lower in the same `Update` function (line ~1823): `current.Update(msg)` again.
+
+For `Tab` key presses, this means the view's `SplitPane.Update` is called twice with the same Tab message. The first call toggles focus left→right; the second call toggles it back right→left. Net result: Tab appears to do nothing. This is a direct blocker for split-pane focus toggling.
+
+**Fix**: Remove the forwarding in the `default:` case (lines ~917–929) for the `uiSmithersView` state and leave the canonical forwarding in the `uiSmithersView` arm of the state switch only. The `platform-view-model` plan's Step 3b covers this with `router.Update(msg)`.
+
+### Issue 3: `WindowSizeMsg` not forwarded to Smithers views via router
+
+**Location**: `internal/ui/model/ui.go`, `case tea.WindowSizeMsg:` handler (~line 664).
+
+The root model handles `WindowSizeMsg` and calls `m.updateLayoutAndSize()`, but does not call `m.viewRouter.SetSize(m.width, m.height)`. The existing views (`AgentsView`, `ApprovalsView`, `TicketsView`) handle `tea.WindowSizeMsg` in their own `Update` methods as a workaround, but once they delegate to `SplitPane`, the split pane only gets resize events through `Update` forwarding. The root model's forwarding path does call `Update(msg)` for Smithers views, but only for messages dispatched after the layout update — there is a frame window where the layout rect and the split pane's internal size are out of sync.
+
+**Fix**: Add an explicit `m.viewRouter.SetSize(m.width, m.height)` call in the `WindowSizeMsg` handler, after `m.updateLayoutAndSize()`. This is the same fix in `platform-view-model` Step 3a.
+
+---
+
+## Relationship to Dependent Plans
+
+This ticket depends on the `platform-view-model` plan for the three root model fixes above (Steps 3a, 3b, 3c). The split-pane integration work in `approvals.go` and `tickets.go` cannot be tested end-to-end until the layout case and duplicate dispatch are fixed.
+
+**Ordering**: The root model fixes should land in the same commit batch as (or before) the view rewrites. It is safe to implement both in this ticket because the root model fixes are small (~30 lines) and are blockers for the view work.
+
+---
+
+## Upstream Precedent
+
+The upstream Smithers TUI v1 (`src/cli/tui/components/SqliteBrowser.tsx`) used explicit Tab-cycling between left and right regions. The TUI v2 broker (`Broker.ts`) managed focus regions at the application level with a `currentRegion` state variable. The Go `SplitPane` component encapsulates this pattern inside each view, which is simpler and more composable than a global focus region manager.
+
+---
+
+## Files to Read Before Implementation
+
+| File | Why |
+|------|-----|
+| `/internal/ui/components/splitpane.go` | The component to integrate (already read) |
+| `/internal/ui/views/approvals.go` | Manual split to replace (already read) |
+| `/internal/ui/views/tickets.go` | Flat list to add split to (already read) |
+| `/internal/ui/model/ui.go` lines 664, 889–929, 1808–1834, 2185–2191, 2628–2750 | Root model fix sites |
+| `/internal/ui/views/router.go` | Router interface — `View` has `ShortHelp() []string` today; see `platform-view-model` plan for upgrade path |
