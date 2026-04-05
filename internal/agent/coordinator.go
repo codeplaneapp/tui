@@ -31,6 +31,7 @@ import (
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/charmbracelet/crush/internal/session"
+	"github.com/charmbracelet/crush/internal/smithers"
 	"golang.org/x/sync/errgroup"
 
 	"charm.land/fantasy/providers/anthropic"
@@ -56,6 +57,19 @@ var (
 	errLargeModelNotFound              = errors.New("large model not found in provider config")
 	errSmallModelNotFound              = errors.New("small model not found in provider config")
 )
+
+// CoordinatorOption is a functional option for NewCoordinator.
+type CoordinatorOption func(*coordinator)
+
+// WithSmithersClient attaches a pre-configured Smithers client to the coordinator.
+// When set and running in Smithers agent mode, the coordinator will pre-fetch
+// active workspace context (active runs, pending approvals) and inject it into
+// the agent system prompt at session start.
+func WithSmithersClient(c *smithers.Client) CoordinatorOption {
+	return func(coord *coordinator) {
+		coord.smithersClient = c
+	}
+}
 
 type Coordinator interface {
 	// INFO: (kujtim) this is not used yet we will use this when we have multiple agents
@@ -83,6 +97,10 @@ type coordinator struct {
 	lspManager  *lsp.Manager
 	notify      pubsub.Publisher[notify.Notification]
 
+	// smithersClient is set when running in Smithers mode and is used to
+	// pre-fetch workspace context (active runs, pending approvals) at session start.
+	smithersClient *smithers.Client
+
 	currentAgent     SessionAgent
 	currentAgentName string
 	agents           map[string]SessionAgent
@@ -100,6 +118,7 @@ func NewCoordinator(
 	filetracker filetracker.Service,
 	lspManager *lsp.Manager,
 	notify pubsub.Publisher[notify.Notification],
+	opts ...CoordinatorOption,
 ) (Coordinator, error) {
 	c := &coordinator{
 		cfg:         cfg,
@@ -111,6 +130,9 @@ func NewCoordinator(
 		lspManager:  lspManager,
 		notify:      notify,
 		agents:      make(map[string]SessionAgent),
+	}
+	for _, opt := range opts {
+		opt(c)
 	}
 
 	agentName, agentCfg, err := c.resolveAgent(cfg)
@@ -126,7 +148,22 @@ func NewCoordinator(
 		if smithersCfg := cfg.Config().Smithers; smithersCfg != nil {
 			workflowDir = smithersCfg.WorkflowDir
 		}
-		systemPrompt, err = smithersPrompt(append(promptOpts, prompt.WithSmithersMode(workflowDir, "smithers"))...)
+		smithersOpts := append(promptOpts, prompt.WithSmithersMode(workflowDir, config.SmithersMCPName))
+		// Pre-fetch active workspace context (gracefully degrades if unavailable).
+		if c.smithersClient != nil {
+			wsCtx := smithers.FetchWorkspaceContext(ctx, c.smithersClient)
+			activeRuns := make([]prompt.ActiveRunContext, 0, len(wsCtx.ActiveRuns))
+			for _, r := range wsCtx.ActiveRuns {
+				activeRuns = append(activeRuns, prompt.ActiveRunContext{
+					RunID:        r.RunID,
+					WorkflowName: r.WorkflowName,
+					WorkflowPath: r.WorkflowPath,
+					Status:       string(r.Status),
+				})
+			}
+			smithersOpts = append(smithersOpts, prompt.WithSmithersActiveRuns(activeRuns, wsCtx.PendingApprovals))
+		}
+		systemPrompt, err = smithersPrompt(smithersOpts...)
 	default:
 		systemPrompt, err = coderPrompt(promptOpts...)
 	}

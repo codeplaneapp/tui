@@ -42,6 +42,16 @@ If MCP tools are unavailable, fall back to the `smithers` CLI via bash.
 {{- if .SmithersWorkflowDir }}
 <workspace>
 Workflow directory: {{.SmithersWorkflowDir}}
+{{- if .SmithersActiveRuns }}
+
+Active runs ({{len .SmithersActiveRuns}} total{{if .SmithersPendingApprovals}}, {{.SmithersPendingApprovals}} pending approval{{end}}):
+{{- range .SmithersActiveRuns}}
+- {{.RunID}}: {{if .WorkflowName}}{{.WorkflowName}}{{else}}{{.WorkflowPath}}{{end}} ({{.Status}})
+{{- end}}
+{{- else if .SmithersPendingApprovals}}
+
+Pending approvals: {{.SmithersPendingApprovals}}
+{{- end}}
 </workspace>
 {{- end }}
 
