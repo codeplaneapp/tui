@@ -2,14 +2,21 @@ package smithers
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	_ "modernc.org/sqlite" // register "sqlite" driver for ListRecentScores tests
 )
 
 // --- Test helpers ---
@@ -76,18 +83,26 @@ func TestExecuteSQL_HTTP(t *testing.T) {
 }
 
 func TestExecuteSQL_Exec(t *testing.T) {
-	c := newExecClient(func(_ context.Context, args ...string) ([]byte, error) {
-		assert.Equal(t, []string{"sql", "--query", "SELECT 1", "--format", "json"}, args)
-		return json.Marshal([]map[string]interface{}{
-			{"val": float64(42)},
-		})
-	})
-
+	// The smithers CLI has no `sql` subcommand. When no HTTP server is available
+	// and no SQLite DB is configured, ExecuteSQL must return ErrNoTransport
+	// rather than attempting an exec fallback that would always fail.
+	c := NewClient() // no server, no db, no exec func
 	result, err := c.ExecuteSQL(context.Background(), "SELECT 1")
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	assert.Equal(t, []string{"val"}, result.Columns)
-	assert.Len(t, result.Rows, 1)
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrNoTransport)
+	assert.Nil(t, result)
+}
+
+func TestExecuteSQL_NoTransport(t *testing.T) {
+	// Same as above via exec client: no SQL subcommand in upstream CLI.
+	execCalled := false
+	c := newExecClient(func(_ context.Context, args ...string) ([]byte, error) {
+		execCalled = true
+		return nil, nil
+	})
+	_, err := c.ExecuteSQL(context.Background(), "SELECT 1")
+	require.ErrorIs(t, err, ErrNoTransport)
+	assert.False(t, execCalled, "exec should not be called for SQL queries")
 }
 
 func TestIsSelectQuery(t *testing.T) {
@@ -349,17 +364,32 @@ func TestToggleCron_HTTP(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestToggleCron_Exec(t *testing.T) {
+// TestToggleCron_Exec_Enable verifies that enabling a cron uses `cron enable <id>`.
+// The upstream CLI uses `cron enable` / `cron disable`, not `cron toggle --enabled <bool>`.
+func TestToggleCron_Exec_Enable(t *testing.T) {
 	c := newExecClient(func(_ context.Context, args ...string) ([]byte, error) {
+		require.Len(t, args, 3, "expected: cron enable <id>")
 		assert.Equal(t, "cron", args[0])
-		assert.Equal(t, "toggle", args[1])
+		assert.Equal(t, "enable", args[1])
 		assert.Equal(t, "c1", args[2])
-		assert.Equal(t, "--enabled", args[3])
-		assert.Equal(t, "true", args[4])
 		return nil, nil
 	})
 
 	err := c.ToggleCron(context.Background(), "c1", true)
+	require.NoError(t, err)
+}
+
+// TestToggleCron_Exec_Disable verifies that disabling a cron uses `cron disable <id>`.
+func TestToggleCron_Exec_Disable(t *testing.T) {
+	c := newExecClient(func(_ context.Context, args ...string) ([]byte, error) {
+		require.Len(t, args, 3, "expected: cron disable <id>")
+		assert.Equal(t, "cron", args[0])
+		assert.Equal(t, "disable", args[1])
+		assert.Equal(t, "c1", args[2])
+		return nil, nil
+	})
+
+	err := c.ToggleCron(context.Background(), "c1", false)
 	require.NoError(t, err)
 }
 
@@ -393,6 +423,104 @@ func TestTransportFallback_ServerDown(t *testing.T) {
 	assert.Len(t, crons, 1)
 }
 
+// --- ListPendingApprovals ---
+
+func TestListPendingApprovals_HTTP(t *testing.T) {
+	now := int64(1700000000000) // fixed timestamp for deterministic test
+	_, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/approval/list", r.URL.Path)
+		assert.Equal(t, "GET", r.Method)
+
+		writeEnvelope(t, w, []Approval{
+			{
+				ID: "appr-1", RunID: "run-abc", NodeID: "deploy",
+				WorkflowPath: "deploy.tsx", Gate: "Deploy to staging",
+				Status: "pending", RequestedAt: now,
+			},
+			{
+				ID: "appr-2", RunID: "run-xyz", NodeID: "delete",
+				WorkflowPath: "cleanup.tsx", Gate: "Delete user data",
+				Status: "approved", RequestedAt: now - 60000,
+			},
+		})
+	})
+
+	approvals, err := c.ListPendingApprovals(context.Background())
+	require.NoError(t, err)
+	require.Len(t, approvals, 2)
+
+	assert.Equal(t, "appr-1", approvals[0].ID)
+	assert.Equal(t, "run-abc", approvals[0].RunID)
+	assert.Equal(t, "deploy", approvals[0].NodeID)
+	assert.Equal(t, "Deploy to staging", approvals[0].Gate)
+	assert.Equal(t, "pending", approvals[0].Status)
+	assert.Equal(t, now, approvals[0].RequestedAt)
+
+	assert.Equal(t, "appr-2", approvals[1].ID)
+	assert.Equal(t, "approved", approvals[1].Status)
+}
+
+func TestListPendingApprovals_HTTP_EmptyList(t *testing.T) {
+	_, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/approval/list", r.URL.Path)
+		writeEnvelope(t, w, []Approval{})
+	})
+
+	approvals, err := c.ListPendingApprovals(context.Background())
+	require.NoError(t, err)
+	// Should return a non-nil empty slice, not nil.
+	assert.NotNil(t, approvals)
+	assert.Empty(t, approvals)
+}
+
+func TestListPendingApprovals_ExecFallbackReturnsNil(t *testing.T) {
+	// The exec fallback returns nil because `smithers approval list` doesn't exist.
+	// When both HTTP and SQLite are unavailable, we get an empty result.
+	c := newExecClient(func(_ context.Context, args ...string) ([]byte, error) {
+		return nil, errors.New("smithers not installed")
+	})
+
+	approvals, err := c.ListPendingApprovals(context.Background())
+	require.NoError(t, err)
+	assert.Nil(t, approvals)
+}
+
+func TestListPendingApprovals_ParsePlainJSON(t *testing.T) {
+	// Verify that parseApprovalsJSON handles plain JSON arrays correctly.
+	now := int64(1700000000000)
+	data, _ := json.Marshal([]Approval{
+		{ID: "plain-1", RunID: "run-p", NodeID: "n1", Gate: "Plain Gate",
+			Status: "pending", RequestedAt: now},
+	})
+
+	approvals, err := parseApprovalsJSON(data)
+	require.NoError(t, err)
+	require.Len(t, approvals, 1)
+	assert.Equal(t, "plain-1", approvals[0].ID)
+}
+
+func TestParseApprovalsJSON_ValidArray(t *testing.T) {
+	data := `[{"id":"a1","runId":"r1","nodeId":"n1","gate":"G","status":"pending","requestedAt":1000}]`
+	approvals, err := parseApprovalsJSON([]byte(data))
+	require.NoError(t, err)
+	require.Len(t, approvals, 1)
+	assert.Equal(t, "a1", approvals[0].ID)
+	assert.Equal(t, "pending", approvals[0].Status)
+	assert.Equal(t, int64(1000), approvals[0].RequestedAt)
+}
+
+func TestParseApprovalsJSON_EmptyArray(t *testing.T) {
+	approvals, err := parseApprovalsJSON([]byte(`[]`))
+	require.NoError(t, err)
+	assert.NotNil(t, approvals)
+	assert.Empty(t, approvals)
+}
+
+func TestParseApprovalsJSON_InvalidJSON(t *testing.T) {
+	_, err := parseApprovalsJSON([]byte(`not-json`))
+	assert.Error(t, err)
+}
+
 // --- convertResultMaps ---
 
 func TestConvertResultMaps_Empty(t *testing.T) {
@@ -421,4 +549,734 @@ func TestListAgents_NoOptions(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, agents, 6)
 	assert.Equal(t, "claude-code", agents[0].ID)
+}
+
+// --- GetRun ---
+
+func TestGetRun_HTTP(t *testing.T) {
+	_, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/v1/runs/run-123", r.URL.Path)
+		assert.Equal(t, "GET", r.Method)
+		writeEnvelope(t, w, RunSummary{
+			RunID:        "run-123",
+			WorkflowName: "code-review",
+			Status:       RunStatusRunning,
+		})
+	})
+
+	run, err := c.GetRun(context.Background(), "run-123")
+	require.NoError(t, err)
+	require.NotNil(t, run)
+	assert.Equal(t, "run-123", run.RunID)
+	assert.Equal(t, "code-review", run.WorkflowName)
+	assert.Equal(t, RunStatusRunning, run.Status)
+}
+
+func TestGetRun_Exec(t *testing.T) {
+	c := newExecClient(func(_ context.Context, args ...string) ([]byte, error) {
+		assert.Equal(t, []string{"run", "get", "run-456", "--format", "json"}, args)
+		return json.Marshal(RunSummary{
+			RunID:        "run-456",
+			WorkflowName: "deploy",
+			Status:       RunStatusFinished,
+		})
+	})
+
+	run, err := c.GetRun(context.Background(), "run-456")
+	require.NoError(t, err)
+	require.NotNil(t, run)
+	assert.Equal(t, "run-456", run.RunID)
+	assert.Equal(t, RunStatusFinished, run.Status)
+}
+
+// --- GetChatOutput ---
+
+func TestGetChatOutput_HTTP(t *testing.T) {
+	_, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/v1/runs/run-789/chat", r.URL.Path)
+		assert.Equal(t, "GET", r.Method)
+		writeEnvelope(t, w, []ChatBlock{
+			{RunID: "run-789", NodeID: "n1", Role: ChatRoleAssistant, Content: "Hello", TimestampMs: 1000},
+		})
+	})
+
+	blocks, err := c.GetChatOutput(context.Background(), "run-789")
+	require.NoError(t, err)
+	require.Len(t, blocks, 1)
+	assert.Equal(t, ChatRoleAssistant, blocks[0].Role)
+	assert.Equal(t, "Hello", blocks[0].Content)
+}
+
+func TestGetChatOutput_Exec(t *testing.T) {
+	c := newExecClient(func(_ context.Context, args ...string) ([]byte, error) {
+		assert.Equal(t, []string{"run", "chat", "run-abc", "--format", "json"}, args)
+		return json.Marshal([]ChatBlock{
+			{RunID: "run-abc", NodeID: "n1", Role: ChatRoleSystem, Content: "System prompt", TimestampMs: 500},
+			{RunID: "run-abc", NodeID: "n1", Role: ChatRoleAssistant, Content: "Response", TimestampMs: 1500},
+		})
+	})
+
+	blocks, err := c.GetChatOutput(context.Background(), "run-abc")
+	require.NoError(t, err)
+	require.Len(t, blocks, 2)
+	assert.Equal(t, ChatRoleSystem, blocks[0].Role)
+	assert.Equal(t, "System prompt", blocks[0].Content)
+	assert.Equal(t, ChatRoleAssistant, blocks[1].Role)
+}
+
+func TestGetChatOutput_Empty(t *testing.T) {
+	c := newExecClient(func(_ context.Context, args ...string) ([]byte, error) {
+		return json.Marshal([]ChatBlock{})
+	})
+
+	blocks, err := c.GetChatOutput(context.Background(), "run-empty")
+	require.NoError(t, err)
+	assert.Empty(t, blocks)
+}
+
+// --- ListAgents detection ---
+
+// newDetectionClient creates a Client with mocked lookPath and statFunc.
+func newDetectionClient(
+	lp func(string) (string, error),
+	sf func(string) (os.FileInfo, error),
+) *Client {
+	return NewClient(withLookPath(lp), withStatFunc(sf))
+}
+
+func TestListAgents_BinaryFound_WithAuthDir(t *testing.T) {
+	c := newDetectionClient(
+		func(file string) (string, error) {
+			if file == "claude" {
+				return "/usr/local/bin/claude", nil
+			}
+			return "", os.ErrNotExist
+		},
+		func(name string) (os.FileInfo, error) {
+			// Simulate ~/.claude existing
+			if strings.HasSuffix(name, ".claude") {
+				return nil, nil // stat succeeds
+			}
+			return nil, os.ErrNotExist
+		},
+	)
+
+	agents, err := c.ListAgents(context.Background())
+	require.NoError(t, err)
+	require.Len(t, agents, 6)
+
+	var claude Agent
+	for _, a := range agents {
+		if a.ID == "claude-code" {
+			claude = a
+			break
+		}
+	}
+	assert.Equal(t, "likely-subscription", claude.Status)
+	assert.True(t, claude.HasAuth)
+	assert.True(t, claude.Usable)
+	assert.Equal(t, "/usr/local/bin/claude", claude.BinaryPath)
+}
+
+func TestListAgents_BinaryFound_WithAPIKey(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "sk-test-key")
+
+	c := newDetectionClient(
+		func(file string) (string, error) {
+			if file == "codex" {
+				return "/usr/local/bin/codex", nil
+			}
+			return "", os.ErrNotExist
+		},
+		func(name string) (os.FileInfo, error) {
+			return nil, os.ErrNotExist // no auth dirs present
+		},
+	)
+
+	agents, err := c.ListAgents(context.Background())
+	require.NoError(t, err)
+
+	var codex Agent
+	for _, a := range agents {
+		if a.ID == "codex" {
+			codex = a
+			break
+		}
+	}
+	assert.Equal(t, "api-key", codex.Status)
+	assert.False(t, codex.HasAuth)
+	assert.True(t, codex.HasAPIKey)
+	assert.True(t, codex.Usable)
+}
+
+func TestListAgents_BinaryFound_NoAuth(t *testing.T) {
+	c := newDetectionClient(
+		func(file string) (string, error) {
+			if file == "gemini" {
+				return "/usr/local/bin/gemini", nil
+			}
+			return "", os.ErrNotExist
+		},
+		func(name string) (os.FileInfo, error) {
+			return nil, os.ErrNotExist
+		},
+	)
+	// Ensure no API key env vars are set for gemini
+	t.Setenv("GEMINI_API_KEY", "")
+
+	agents, err := c.ListAgents(context.Background())
+	require.NoError(t, err)
+
+	var gemini Agent
+	for _, a := range agents {
+		if a.ID == "gemini" {
+			gemini = a
+			break
+		}
+	}
+	assert.Equal(t, "binary-only", gemini.Status)
+	assert.False(t, gemini.HasAuth)
+	assert.False(t, gemini.HasAPIKey)
+	assert.True(t, gemini.Usable)
+}
+
+func TestListAgents_BinaryNotFound(t *testing.T) {
+	c := newDetectionClient(
+		func(file string) (string, error) {
+			return "", os.ErrNotExist
+		},
+		func(name string) (os.FileInfo, error) {
+			return nil, os.ErrNotExist
+		},
+	)
+
+	agents, err := c.ListAgents(context.Background())
+	require.NoError(t, err)
+	require.Len(t, agents, 6)
+
+	for _, a := range agents {
+		assert.Equal(t, "unavailable", a.Status, "agent %s should be unavailable", a.ID)
+		assert.False(t, a.Usable, "agent %s should not be usable", a.ID)
+		assert.Empty(t, a.BinaryPath, "agent %s should have no binary path", a.ID)
+	}
+}
+
+func TestListAgents_AllSix_Returned(t *testing.T) {
+	c := newDetectionClient(
+		func(file string) (string, error) {
+			return "", os.ErrNotExist
+		},
+		func(name string) (os.FileInfo, error) {
+			return nil, os.ErrNotExist
+		},
+	)
+
+	agents, err := c.ListAgents(context.Background())
+	require.NoError(t, err)
+	assert.Len(t, agents, 6)
+
+	ids := make([]string, len(agents))
+	for i, a := range agents {
+		ids[i] = a.ID
+	}
+	assert.Contains(t, ids, "claude-code")
+	assert.Contains(t, ids, "codex")
+	assert.Contains(t, ids, "gemini")
+	assert.Contains(t, ids, "kimi")
+	assert.Contains(t, ids, "amp")
+	assert.Contains(t, ids, "forge")
+}
+
+func TestListAgents_ContextCancelled_DoesNotPanic(t *testing.T) {
+	c := newDetectionClient(
+		func(file string) (string, error) {
+			return "", os.ErrNotExist
+		},
+		func(name string) (os.FileInfo, error) {
+			return nil, os.ErrNotExist
+		},
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	// Detection is synchronous; cancelled context should not cause panic or error.
+	agents, err := c.ListAgents(ctx)
+	require.NoError(t, err)
+	assert.Len(t, agents, 6)
+}
+
+func TestListAgents_RolesPopulated(t *testing.T) {
+	c := newDetectionClient(
+		func(file string) (string, error) {
+			if file == "claude" {
+				return "/usr/local/bin/claude", nil
+			}
+			return "", os.ErrNotExist
+		},
+		func(name string) (os.FileInfo, error) {
+			return nil, os.ErrNotExist
+		},
+	)
+
+	agents, err := c.ListAgents(context.Background())
+	require.NoError(t, err)
+
+	var claude Agent
+	for _, a := range agents {
+		if a.ID == "claude-code" {
+			claude = a
+			break
+		}
+	}
+	assert.NotEmpty(t, claude.Roles)
+	assert.Contains(t, claude.Roles, "coding")
+}
+
+// --- ListTickets ---
+
+func TestListTickets_HTTP(t *testing.T) {
+	_, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/ticket/list", r.URL.Path)
+		assert.Equal(t, "GET", r.Method)
+		writeEnvelope(t, w, []Ticket{
+			{ID: "auth-bug", Content: "# Auth Bug\n\n## Summary\n\nFix the auth module."},
+			{ID: "deploy-fix", Content: "# Deploy Fix\n\n## Summary\n\nFix deploys."},
+		})
+	})
+	tickets, err := c.ListTickets(context.Background())
+	require.NoError(t, err)
+	require.Len(t, tickets, 2)
+	assert.Equal(t, "auth-bug", tickets[0].ID)
+	assert.Contains(t, tickets[0].Content, "Auth Bug")
+}
+
+func TestListTickets_Filesystem(t *testing.T) {
+	// ListTickets now reads from .smithers/tickets/*.md on the filesystem.
+	dir := t.TempDir()
+	ticketsDir := filepath.Join(dir, ".smithers", "tickets")
+	require.NoError(t, os.MkdirAll(ticketsDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(ticketsDir, "test-ticket.md"), []byte("# Test\n\nContent here."), 0644))
+
+	c := NewClient(WithWorkingDir(dir))
+	tickets, err := c.ListTickets(context.Background())
+	require.NoError(t, err)
+	require.Len(t, tickets, 1)
+	assert.Equal(t, "test-ticket", tickets[0].ID)
+	assert.Contains(t, tickets[0].Content, "Content here.")
+}
+
+func TestListTickets_Empty(t *testing.T) {
+	c := newExecClient(func(_ context.Context, args ...string) ([]byte, error) {
+		return json.Marshal([]Ticket{})
+	})
+	tickets, err := c.ListTickets(context.Background())
+	require.NoError(t, err)
+	assert.Empty(t, tickets)
+}
+
+// --- ListRecentScores and AggregateAllScores ---
+
+// TestListRecentScores_SQLite seeds a temporary database and asserts ordering.
+func TestListRecentScores_SQLite(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "smithers.db")
+
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	_, err = db.Exec(`CREATE TABLE _smithers_scorer_results (
+		id TEXT, run_id TEXT, node_id TEXT, iteration INTEGER, attempt INTEGER,
+		scorer_id TEXT, scorer_name TEXT, source TEXT, score REAL, reason TEXT,
+		meta_json TEXT, input_json TEXT, output_json TEXT,
+		latency_ms INTEGER, scored_at_ms INTEGER, duration_ms INTEGER)`)
+	require.NoError(t, err)
+
+	// Insert 3 rows with different scored_at_ms values (out of order).
+	// Column order: id, run_id, node_id, iteration, attempt, scorer_id, scorer_name,
+	// source, score, reason, meta_json, input_json, output_json, latency_ms, scored_at_ms, duration_ms
+	for i, ts := range []int64{100, 300, 200} {
+		_, err = db.Exec(`INSERT INTO _smithers_scorer_results VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			fmt.Sprintf("s%d", i), "run-1", "node-1", 0, 0,
+			"relevancy", "Relevancy", "live", 0.8+float64(i)*0.05,
+			nil, nil, nil, nil, nil, ts, nil)
+		require.NoError(t, err)
+	}
+	db.Close()
+
+	c := NewClient(WithDBPath(dbPath))
+	defer c.Close()
+
+	scores, err := c.ListRecentScores(context.Background(), 10)
+	require.NoError(t, err)
+	require.Len(t, scores, 3)
+
+	// Results must be ordered by scored_at_ms DESC: 300, 200, 100.
+	assert.Equal(t, int64(300), scores[0].ScoredAtMs)
+	assert.Equal(t, int64(200), scores[1].ScoredAtMs)
+	assert.Equal(t, int64(100), scores[2].ScoredAtMs)
+}
+
+// TestListRecentScores_NoTable treats a missing table as empty (not an error).
+func TestListRecentScores_NoTable(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "smithers_notables.db")
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	_, _ = db.Exec("CREATE TABLE unrelated (id TEXT)")
+	db.Close()
+
+	c := NewClient(WithDBPath(dbPath))
+	defer c.Close()
+
+	scores, err := c.ListRecentScores(context.Background(), 10)
+	require.NoError(t, err) // must NOT return an error
+	assert.Empty(t, scores)
+}
+
+// TestListRecentScores_LimitRespected asserts limit is applied.
+func TestListRecentScores_LimitRespected(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "smithers_limit.db")
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	_, err = db.Exec(`CREATE TABLE _smithers_scorer_results (
+		id TEXT, run_id TEXT, node_id TEXT, iteration INTEGER, attempt INTEGER,
+		scorer_id TEXT, scorer_name TEXT, source TEXT, score REAL, reason TEXT,
+		meta_json TEXT, input_json TEXT, output_json TEXT,
+		latency_ms INTEGER, scored_at_ms INTEGER, duration_ms INTEGER)`)
+	require.NoError(t, err)
+	for i := 0; i < 10; i++ {
+		_, _ = db.Exec(`INSERT INTO _smithers_scorer_results VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			fmt.Sprintf("s%d", i), "run-1", "node-1", 0, 0,
+			"q", "Quality", "live", 0.5, nil, nil, nil, nil, nil, int64(i), nil)
+	}
+	db.Close()
+
+	c := NewClient(WithDBPath(dbPath))
+	defer c.Close()
+
+	scores, err := c.ListRecentScores(context.Background(), 3)
+	require.NoError(t, err)
+	assert.Len(t, scores, 3)
+}
+
+// TestListRecentScores_NoDB returns nil when no database is configured.
+func TestListRecentScores_NoDB(t *testing.T) {
+	c := NewClient() // no DB configured
+	scores, err := c.ListRecentScores(context.Background(), 10)
+	require.NoError(t, err)
+	assert.Empty(t, scores)
+}
+
+// TestAggregateAllScores_NoDB returns empty aggregates when no database is configured.
+func TestAggregateAllScores_NoDB(t *testing.T) {
+	c := NewClient() // no DB, no exec func override
+	aggs, err := c.AggregateAllScores(context.Background(), 100)
+	require.NoError(t, err)
+	assert.Empty(t, aggs)
+}
+
+// TestAggregateAllScores_SQLite verifies aggregation over cross-run data.
+func TestAggregateAllScores_SQLite(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "smithers_agg.db")
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	_, err = db.Exec(`CREATE TABLE _smithers_scorer_results (
+		id TEXT, run_id TEXT, node_id TEXT, iteration INTEGER, attempt INTEGER,
+		scorer_id TEXT, scorer_name TEXT, source TEXT, score REAL, reason TEXT,
+		meta_json TEXT, input_json TEXT, output_json TEXT,
+		latency_ms INTEGER, scored_at_ms INTEGER, duration_ms INTEGER)`)
+	require.NoError(t, err)
+	// Two scorers, two runs.
+	rows := []struct {
+		id, runID, scorerID, scorerName, source string
+		score                                    float64
+		ts                                       int64
+	}{
+		{"s1", "run-a", "relevancy", "Relevancy", "live", 0.90, 100},
+		{"s2", "run-a", "faithfulness", "Faithfulness", "live", 0.80, 200},
+		{"s3", "run-b", "relevancy", "Relevancy", "live", 0.70, 300},
+		{"s4", "run-b", "faithfulness", "Faithfulness", "live", 1.00, 400},
+	}
+	for _, r := range rows {
+		_, err = db.Exec(`INSERT INTO _smithers_scorer_results VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			r.id, r.runID, "node-1", 0, 0,
+			r.scorerID, r.scorerName, r.source, r.score,
+			nil, nil, nil, nil, nil, r.ts, nil)
+		require.NoError(t, err)
+	}
+	db.Close()
+
+	c := NewClient(WithDBPath(dbPath))
+	defer c.Close()
+
+	aggs, err := c.AggregateAllScores(context.Background(), 100)
+	require.NoError(t, err)
+	require.Len(t, aggs, 2)
+
+	// Find relevancy aggregate.
+	var rel AggregateScore
+	for _, a := range aggs {
+		if a.ScorerID == "relevancy" {
+			rel = a
+		}
+	}
+	assert.Equal(t, 2, rel.Count)
+	assert.InDelta(t, 0.80, rel.Mean, 0.01) // (0.90+0.70)/2
+}
+
+// --- Approve ---
+
+func TestApprove_Exec(t *testing.T) {
+	var capturedArgs []string
+	c := newExecClient(func(_ context.Context, args ...string) ([]byte, error) {
+		capturedArgs = args
+		return json.Marshal(map[string]any{"runId": "run-1", "ok": true})
+	})
+
+	err := c.Approve(context.Background(), "run-1", "node-a", 2, "looks good")
+	require.NoError(t, err)
+	assert.Equal(t, []string{
+		"approve", "run-1",
+		"--node", "node-a",
+		"--iteration", "2",
+		"--format", "json",
+		"--note", "looks good",
+	}, capturedArgs)
+}
+
+func TestApprove_Exec_NoNote(t *testing.T) {
+	var capturedArgs []string
+	c := newExecClient(func(_ context.Context, args ...string) ([]byte, error) {
+		capturedArgs = args
+		return nil, nil
+	})
+
+	err := c.Approve(context.Background(), "run-1", "node-a", 1, "")
+	require.NoError(t, err)
+	// --note should be omitted when note is empty
+	assert.NotContains(t, capturedArgs, "--note")
+}
+
+func TestApprove_Exec_Error(t *testing.T) {
+	c := newExecClient(func(_ context.Context, args ...string) ([]byte, error) {
+		return nil, &ExecError{Command: "approve run-1", Stderr: "run not active", Exit: 1}
+	})
+
+	err := c.Approve(context.Background(), "run-1", "node-a", 1, "")
+	require.Error(t, err)
+	var execErr *ExecError
+	require.True(t, errors.As(err, &execErr))
+	assert.Equal(t, 1, execErr.Exit)
+}
+
+// --- Deny ---
+
+func TestDeny_Exec(t *testing.T) {
+	var capturedArgs []string
+	c := newExecClient(func(_ context.Context, args ...string) ([]byte, error) {
+		capturedArgs = args
+		return json.Marshal(map[string]any{"runId": "run-2", "ok": true})
+	})
+
+	err := c.Deny(context.Background(), "run-2", "node-b", 3, "insufficient quality")
+	require.NoError(t, err)
+	assert.Equal(t, []string{
+		"deny", "run-2",
+		"--node", "node-b",
+		"--iteration", "3",
+		"--format", "json",
+		"--reason", "insufficient quality",
+	}, capturedArgs)
+}
+
+func TestDeny_Exec_NoReason(t *testing.T) {
+	var capturedArgs []string
+	c := newExecClient(func(_ context.Context, args ...string) ([]byte, error) {
+		capturedArgs = args
+		return nil, nil
+	})
+
+	err := c.Deny(context.Background(), "run-2", "node-b", 1, "")
+	require.NoError(t, err)
+	// --reason should be omitted when reason is empty
+	assert.NotContains(t, capturedArgs, "--reason")
+}
+
+func TestDeny_Exec_Error(t *testing.T) {
+	c := newExecClient(func(_ context.Context, args ...string) ([]byte, error) {
+		return nil, &ExecError{Command: "deny run-2", Stderr: "approval not found", Exit: 1}
+	})
+
+	err := c.Deny(context.Background(), "run-2", "node-b", 1, "")
+	require.Error(t, err)
+	var execErr *ExecError
+	require.True(t, errors.As(err, &execErr))
+	assert.Equal(t, 1, execErr.Exit)
+}
+
+// --- JSONParseError classification for existing helpers ---
+
+func TestParseSQLResultJSON_JSONParseError(t *testing.T) {
+	// parseSQLResultJSON should return *JSONParseError for unrecognised output.
+	_, err := parseSQLResultJSON([]byte(`not valid json`))
+	require.Error(t, err)
+	var parseErr *JSONParseError
+	require.True(t, errors.As(err, &parseErr), "expected *JSONParseError, got %T: %v", err, err)
+	assert.Equal(t, "sql", parseErr.Command)
+}
+
+func TestListCrons_Exec_JSONParseError(t *testing.T) {
+	c := newExecClient(func(_ context.Context, args ...string) ([]byte, error) {
+		return []byte("{invalid}"), nil
+	})
+	_, err := c.ListCrons(context.Background())
+	require.Error(t, err)
+	var parseErr *JSONParseError
+	require.True(t, errors.As(err, &parseErr), "expected *JSONParseError, got %T: %v", err, err)
+	assert.Equal(t, "cron list", parseErr.Command)
+}
+
+func TestListPendingApprovals_NoExecFallback(t *testing.T) {
+	// The exec fallback for approvals returns nil (no CLI command exists).
+	c := newExecClient(func(_ context.Context, args ...string) ([]byte, error) {
+		t.Fatal("exec should not be called for approvals")
+		return nil, nil
+	})
+	approvals, err := c.ListPendingApprovals(context.Background())
+	require.NoError(t, err)
+	assert.Nil(t, approvals)
+}
+
+func TestListTickets_NoDirectory(t *testing.T) {
+	// When .smithers/tickets/ doesn't exist, return nil (empty list)
+	dir := t.TempDir()
+	c := NewClient(WithWorkingDir(dir))
+	tickets, err := c.ListTickets(context.Background())
+	require.NoError(t, err)
+	assert.Nil(t, tickets)
+}
+
+// TestParseApprovalsJSON_JSONParseError verifies that malformed output yields *JSONParseError.
+func TestParseApprovalsJSON_JSONParseError(t *testing.T) {
+	_, err := parseApprovalsJSON([]byte(`{broken`))
+	require.Error(t, err)
+	var parseErr *JSONParseError
+	require.True(t, errors.As(err, &parseErr))
+	assert.Equal(t, "approval list", parseErr.Command)
+}
+
+// TestParseCronSchedulesJSON_JSONParseError verifies that malformed cron output
+// yields *JSONParseError.
+func TestParseCronSchedulesJSON_JSONParseError(t *testing.T) {
+	_, err := parseCronSchedulesJSON([]byte(`not-json`))
+	require.Error(t, err)
+	var parseErr *JSONParseError
+	require.True(t, errors.As(err, &parseErr))
+	assert.Equal(t, "cron list", parseErr.Command)
+}
+
+// --- HTTPError ---
+
+// TestHTTPError_401 verifies that httpGetJSON returns *HTTPError with StatusCode 401
+// when the server responds with 401, and IsUnauthorized returns true.
+func TestHTTPError_401(t *testing.T) {
+	_, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte("Unauthorized"))
+	})
+
+	// Call httpGetJSON directly — domain methods may fall through to SQLite/exec.
+	var out interface{}
+	err := c.httpGetJSON(context.Background(), "/some/path", &out)
+	require.Error(t, err)
+
+	var he *HTTPError
+	require.True(t, errors.As(err, &he), "expected *HTTPError, got: %T %v", err, err)
+	assert.Equal(t, http.StatusUnauthorized, he.StatusCode)
+	assert.True(t, IsUnauthorized(err))
+}
+
+// TestHTTPError_401_Post verifies that httpPostJSON returns *HTTPError with StatusCode 401.
+func TestHTTPError_401_Post(t *testing.T) {
+	_, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte("Unauthorized"))
+	})
+
+	var out interface{}
+	err := c.httpPostJSON(context.Background(), "/some/path", nil, &out)
+	require.Error(t, err)
+
+	var he *HTTPError
+	require.True(t, errors.As(err, &he), "expected *HTTPError, got: %T %v", err, err)
+	assert.Equal(t, http.StatusUnauthorized, he.StatusCode)
+	assert.True(t, IsUnauthorized(err))
+}
+
+// TestHTTPError_503 verifies that httpGetJSON returns *HTTPError and
+// invalidates the server availability cache on 5xx responses.
+func TestHTTPError_503(t *testing.T) {
+	_, c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte("service unavailable"))
+	})
+
+	// Pre-condition: server is marked as up.
+	c.serverUp = true
+
+	var out interface{}
+	err := c.httpGetJSON(context.Background(), "/some/path", &out)
+	require.Error(t, err)
+
+	var he *HTTPError
+	require.True(t, errors.As(err, &he))
+	assert.Equal(t, http.StatusServiceUnavailable, he.StatusCode)
+
+	// Server availability cache must have been invalidated.
+	c.serverMu.RLock()
+	up := c.serverUp
+	checked := c.serverChecked
+	c.serverMu.RUnlock()
+	assert.False(t, up, "server should be marked down after 503")
+	assert.True(t, checked.IsZero(), "serverChecked should be zero after invalidation")
+}
+
+// TestInvalidateServerCache verifies that a transport error on httpGetJSON
+// resets serverUp and serverChecked.
+func TestInvalidateServerCache(t *testing.T) {
+	// Create a client pointing at a URL that refuses connections.
+	c := NewClient(
+		WithAPIURL("http://127.0.0.1:1"), // port 1 is almost always refused
+	)
+	c.serverUp = true
+	c.serverChecked = c.serverChecked.Add(1) // make it non-zero
+
+	// Calling httpGetJSON directly to exercise the transport-error path.
+	err := c.httpGetJSON(context.Background(), "/some/path", nil)
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrServerUnavailable)
+
+	c.serverMu.RLock()
+	up := c.serverUp
+	checked := c.serverChecked
+	c.serverMu.RUnlock()
+	assert.False(t, up, "serverUp should be false after transport error")
+	assert.True(t, checked.IsZero(), "serverChecked should be zero to force re-probe")
+}
+
+// TestIsUnauthorized verifies the IsUnauthorized helper function.
+func TestIsUnauthorized(t *testing.T) {
+	assert.True(t, IsUnauthorized(&HTTPError{StatusCode: http.StatusUnauthorized}))
+	assert.False(t, IsUnauthorized(&HTTPError{StatusCode: http.StatusForbidden}))
+	assert.False(t, IsUnauthorized(errors.New("some other error")))
+	assert.False(t, IsUnauthorized(nil))
+}
+
+// TestIsServerUnavailable verifies the IsServerUnavailable helper function.
+func TestIsServerUnavailable(t *testing.T) {
+	assert.True(t, IsServerUnavailable(ErrServerUnavailable))
+	assert.True(t, IsServerUnavailable(fmt.Errorf("wrapped: %w", ErrServerUnavailable)))
+	assert.False(t, IsServerUnavailable(errors.New("other error")))
 }

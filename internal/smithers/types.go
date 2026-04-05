@@ -4,15 +4,17 @@ package smithers
 // Maps to AgentAvailability in smithers/src/cli/agent-detection.ts
 // and AgentCli in smithers/gui-ref/packages/shared/src/schemas/agent.ts.
 type Agent struct {
-	ID         string   // e.g. "claude-code", "codex", "gemini"
-	Name       string   // Display name, e.g. "Claude Code"
-	Command    string   // CLI binary name, e.g. "claude"
-	BinaryPath string   // Resolved full path, e.g. "/usr/local/bin/claude"
-	Status     string   // "likely-subscription" | "api-key" | "binary-only" | "unavailable"
-	HasAuth    bool     // Authentication signal detected
-	HasAPIKey  bool     // API key env var present
-	Usable     bool     // Agent can be launched
-	Roles      []string // e.g. ["coding", "review"]
+	ID          string   // e.g. "claude-code", "codex", "gemini"
+	Name        string   // Display name, e.g. "Claude Code"
+	Command     string   // CLI binary name, e.g. "claude"
+	BinaryPath  string   // Resolved full path, e.g. "/usr/local/bin/claude"
+	Status      string   // "likely-subscription" | "api-key" | "binary-only" | "unavailable"
+	HasAuth     bool     // Authentication signal detected
+	HasAPIKey   bool     // API key env var present
+	Usable      bool     // Agent can be launched
+	Roles       []string // e.g. ["coding", "review"]
+	Version     string   // from --version probe; "" while unresolved, "(unknown)" on failure
+	AuthExpired bool     // true if Claude Code credentials file indicates token is expired
 }
 
 // SQLResult holds the result of an arbitrary SQL query.
@@ -93,6 +95,37 @@ type Approval struct {
 	RequestedAt  int64   `json:"requestedAt"`  // Unix ms
 	ResolvedAt   *int64  `json:"resolvedAt"`   // Unix ms, nil if pending
 	ResolvedBy   *string `json:"resolvedBy"`   // Who resolved, nil if pending
+}
+
+// ApprovalDecision represents a historical approval decision (approved or denied).
+// Derived from resolved rows in _smithers_approvals where status IN ('approved','denied').
+// Maps to the daemon approval-repository shape and upstream _smithers_approvals schema.
+type ApprovalDecision struct {
+	ID           string  `json:"id"`
+	RunID        string  `json:"runId"`
+	NodeID       string  `json:"nodeId"`
+	WorkflowPath string  `json:"workflowPath"`
+	Gate         string  `json:"gate"`         // Gate label / question
+	Decision     string  `json:"decision"`     // "approved" | "denied"
+	DecidedAt    int64   `json:"decidedAt"`    // Unix ms
+	DecidedBy    *string `json:"decidedBy"`    // Who made the decision (nil if unknown)
+	RequestedAt  int64   `json:"requestedAt"`  // Unix ms
+}
+
+// RunContext holds lightweight run-level metadata used by the approval detail
+// pane and other views that need run context without full node trees.
+// Distinct from RunSummary (the canonical v1 API shape in types_runs.go):
+// RunContext is populated from SQLite or exec inspect and includes progress
+// counters (NodeTotal, NodesDone) and ElapsedMs for display in approval details.
+type RunContext struct {
+	ID           string `json:"id"`
+	WorkflowPath string `json:"workflowPath"`
+	WorkflowName string `json:"workflowName"` // Derived from path basename
+	Status       string `json:"status"`       // "running" | "paused" | "completed" | "failed"
+	NodeTotal    int    `json:"nodeTotal"`    // Total nodes in the DAG
+	NodesDone    int    `json:"nodesDone"`    // Nodes that have finished
+	StartedAtMs  int64  `json:"startedAtMs"`  // Unix ms
+	ElapsedMs    int64  `json:"elapsedMs"`    // Duration since start
 }
 
 // CronSchedule holds a cron trigger definition.
