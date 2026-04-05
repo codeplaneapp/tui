@@ -49,7 +49,7 @@ func InitiateDeviceAuth(ctx context.Context) (*DeviceAuthResponse, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "crush")
+	req.Header.Set("User-Agent", "smithers-tui")
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)

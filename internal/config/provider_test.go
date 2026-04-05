@@ -279,7 +279,7 @@ func TestCachePathFor(t *testing.T) {
 		{
 			name:        "with XDG_DATA_HOME",
 			xdgDataHome: "/custom/data",
-			expected:    "/custom/data/crush/providers.json",
+			expected:    "/custom/data/smithers-tui/providers.json",
 		},
 		{
 			name:        "without XDG_DATA_HOME",
@@ -300,7 +300,7 @@ func TestCachePathFor(t *testing.T) {
 			if tt.expected != "" {
 				require.Equal(t, tt.expected, filepath.ToSlash(result))
 			} else {
-				require.Contains(t, result, "crush")
+				require.Contains(t, result, "smithers-tui")
 				require.Contains(t, result, "providers.json")
 			}
 		})

@@ -3,8 +3,10 @@ package commands
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/charmbracelet/crush/internal/config"
 	"github.com/stretchr/testify/require"
 )
 
@@ -50,4 +52,29 @@ func TestLoadAll_MixedSources(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, cmds, 1)
 	require.Equal(t, "user:cmd", cmds[0].ID)
+}
+
+// TestBuildCommandSources asserts that all returned source paths reference
+// smithers-tui and none reference crush.
+func TestBuildCommandSources(t *testing.T) {
+	cfg := &config.Config{
+		Options: &config.Options{
+			DataDirectory: "/tmp/test-project/.smithers-tui",
+		},
+	}
+
+	sources := buildCommandSources(cfg)
+	require.NotEmpty(t, sources)
+
+	for _, src := range sources {
+		lower := strings.ToLower(src.path)
+		require.True(t,
+			strings.Contains(lower, "smithers-tui"),
+			"expected source path to contain smithers-tui, got: %s", src.path,
+		)
+		require.False(t,
+			strings.Contains(lower, "/crush/") || strings.HasSuffix(lower, "/.crush"),
+			"expected source path to not contain crush dir, got: %s", src.path,
+		)
+	}
 }

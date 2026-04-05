@@ -391,9 +391,28 @@ func (c *Config) setDefaults(workingDir, dataDir string) {
 	if c.LSP == nil {
 		c.LSP = make(map[string]LSPConfig)
 	}
+	// Auto-detect Smithers mode: if .smithers/ directory exists in cwd, activate Smithers.
+	if c.Smithers == nil {
+		if info, err := os.Stat(".smithers"); err == nil && info.IsDir() {
+			c.Smithers = &SmithersConfig{}
+		}
+	}
 	if c.Smithers != nil {
 		c.Smithers.DBPath = cmp.Or(c.Smithers.DBPath, filepath.Join(".smithers", "smithers.db"))
 		c.Smithers.WorkflowDir = cmp.Or(c.Smithers.WorkflowDir, filepath.Join(".smithers", "workflows"))
+
+		// Default the large model to claude-opus-4-6 when Smithers config is
+		// present and the user has not explicitly chosen a large model.
+		if _, ok := c.Models[SelectedModelTypeLarge]; !ok {
+			if c.Models == nil {
+				c.Models = make(map[SelectedModelType]SelectedModel)
+			}
+			c.Models[SelectedModelTypeLarge] = SelectedModel{
+				Model:    "claude-opus-4-6",
+				Provider: "anthropic",
+				Think:    true,
+			}
+		}
 	}
 
 	// Add default Smithers MCP server if not already configured by user.
@@ -424,11 +443,11 @@ func (c *Config) setDefaults(workingDir, dataDir string) {
 	// Project specific skills dirs.
 	c.Options.SkillsPaths = append(c.Options.SkillsPaths, ProjectSkillsDir(workingDir)...)
 
-	if str, ok := os.LookupEnv("SMITHERS_TUI_DISABLE_PROVIDER_AUTO_UPDATE"); ok {
+	if str := envWithFallback("SMITHERS_TUI_DISABLE_PROVIDER_AUTO_UPDATE", "CRUSH_DISABLE_PROVIDER_AUTO_UPDATE"); str != "" {
 		c.Options.DisableProviderAutoUpdate, _ = strconv.ParseBool(str)
 	}
 
-	if str, ok := os.LookupEnv("SMITHERS_TUI_DISABLE_DEFAULT_PROVIDERS"); ok {
+	if str := envWithFallback("SMITHERS_TUI_DISABLE_DEFAULT_PROVIDERS", "CRUSH_DISABLE_DEFAULT_PROVIDERS"); str != "" {
 		c.Options.DisableDefaultProviders, _ = strconv.ParseBool(str)
 	}
 
@@ -750,7 +769,7 @@ func hasAWSCredentials(env env.Env) bool {
 
 // GlobalConfig returns the global configuration file path for the application.
 func GlobalConfig() string {
-	if globalConfig := os.Getenv("SMITHERS_TUI_GLOBAL_CONFIG"); globalConfig != "" {
+	if globalConfig := envWithFallback("SMITHERS_TUI_GLOBAL_CONFIG", "CRUSH_GLOBAL_CONFIG"); globalConfig != "" {
 		return filepath.Join(globalConfig, fmt.Sprintf("%s.json", appName))
 	}
 	return filepath.Join(home.Config(), appName, fmt.Sprintf("%s.json", appName))
@@ -778,7 +797,7 @@ func GlobalCacheDir() string {
 // GlobalConfigData returns the path to the main data directory for the application.
 // this config is used when the app overrides configurations instead of updating the global config.
 func GlobalConfigData() string {
-	if globalData := os.Getenv("SMITHERS_TUI_GLOBAL_DATA"); globalData != "" {
+	if globalData := envWithFallback("SMITHERS_TUI_GLOBAL_DATA", "CRUSH_GLOBAL_DATA"); globalData != "" {
 		return filepath.Join(globalData, fmt.Sprintf("%s.json", appName))
 	}
 	if xdgDataHome := os.Getenv("XDG_DATA_HOME"); xdgDataHome != "" {
@@ -827,7 +846,7 @@ func isInsideWorktree() bool {
 // Skills in these directories are auto-discovered and their files can be read
 // without permission prompts.
 func GlobalSkillsDirs() []string {
-	if skillsDir := os.Getenv("SMITHERS_TUI_SKILLS_DIR"); skillsDir != "" {
+	if skillsDir := envWithFallback("SMITHERS_TUI_SKILLS_DIR", "CRUSH_SKILLS_DIR"); skillsDir != "" {
 		return []string{skillsDir}
 	}
 
@@ -865,3 +884,19 @@ func ProjectSkillsDir(workingDir string) []string {
 }
 
 func isAppleTerminal() bool { return os.Getenv("TERM_PROGRAM") == "Apple_Terminal" }
+
+// envWithFallback returns the value of the primary env var, falling back to
+// the legacy CRUSH_* name if unset. A warning is logged when the legacy name
+// is used so operators can migrate.
+// TODO(smithers-tui): remove CRUSH_* fallback after v1.0
+func envWithFallback(primary, legacy string) string {
+	if v := os.Getenv(primary); v != "" {
+		return v
+	}
+	if v := os.Getenv(legacy); v != "" {
+		slog.Warn("Using legacy environment variable; please migrate to the new name",
+			"legacy", legacy, "replacement", primary)
+		return v
+	}
+	return ""
+}

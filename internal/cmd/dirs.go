@@ -18,13 +18,13 @@ var dirsCmd = &cobra.Command{
 This includes the global configuration directory and data directory.`,
 	Example: `
 # Print all directories
-crush dirs
+smithers-tui dirs
 
 # Print only the config directory
-crush dirs config
+smithers-tui dirs config
 
 # Print only the data directory
-crush dirs data
+smithers-tui dirs data
   `,
 	Run: func(cmd *cobra.Command, args []string) {
 		if term.IsTerminal(os.Stdout.Fd()) {

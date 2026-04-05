@@ -1501,3 +1501,131 @@ func TestConfig_configureSelectedModels(t *testing.T) {
 		require.Equal(t, int64(100), large.MaxTokens)
 	})
 }
+
+// TestConfig_lookupConfigs verifies that smithers-tui.json is discovered and
+// crush.json is not.
+func TestConfig_lookupConfigs(t *testing.T) {
+	dir := t.TempDir()
+
+	// Write a smithers-tui.json config in the temp dir.
+	configPath := filepath.Join(dir, "smithers-tui.json")
+	require.NoError(t, os.WriteFile(configPath, []byte(`{}`), 0o644))
+
+	paths := lookupConfigs(dir)
+
+	// smithers-tui.json must appear in the results.
+	require.Contains(t, paths, configPath)
+
+	// crush.json must NOT appear.
+	for _, p := range paths {
+		require.NotContains(t, p, "crush.json")
+	}
+}
+
+// TestConfig_envVarFallback verifies that CRUSH_* variables are honoured when
+// SMITHERS_TUI_* equivalents are not set, and that SMITHERS_TUI_* takes
+// precedence when both are set.
+func TestConfig_envVarFallback(t *testing.T) {
+	t.Run("CRUSH_GLOBAL_CONFIG is used when SMITHERS_TUI_GLOBAL_CONFIG is unset", func(t *testing.T) {
+		t.Setenv("SMITHERS_TUI_GLOBAL_CONFIG", "")
+		t.Setenv("CRUSH_GLOBAL_CONFIG", "/tmp/legacy")
+
+		got := GlobalConfig()
+		require.Contains(t, got, "/tmp/legacy")
+	})
+
+	t.Run("SMITHERS_TUI_GLOBAL_CONFIG takes precedence over CRUSH_GLOBAL_CONFIG", func(t *testing.T) {
+		t.Setenv("SMITHERS_TUI_GLOBAL_CONFIG", "/tmp/primary")
+		t.Setenv("CRUSH_GLOBAL_CONFIG", "/tmp/legacy")
+
+		got := GlobalConfig()
+		require.Contains(t, got, "/tmp/primary")
+		require.NotContains(t, got, "/tmp/legacy")
+	})
+
+	t.Run("CRUSH_GLOBAL_DATA is used when SMITHERS_TUI_GLOBAL_DATA is unset", func(t *testing.T) {
+		t.Setenv("SMITHERS_TUI_GLOBAL_DATA", "")
+		t.Setenv("CRUSH_GLOBAL_DATA", "/tmp/legacy-data")
+
+		got := GlobalConfigData()
+		require.Contains(t, got, "/tmp/legacy-data")
+	})
+
+	t.Run("SMITHERS_TUI_GLOBAL_DATA takes precedence over CRUSH_GLOBAL_DATA", func(t *testing.T) {
+		t.Setenv("SMITHERS_TUI_GLOBAL_DATA", "/tmp/primary-data")
+		t.Setenv("CRUSH_GLOBAL_DATA", "/tmp/legacy-data")
+
+		got := GlobalConfigData()
+		require.Contains(t, got, "/tmp/primary-data")
+		require.NotContains(t, got, "/tmp/legacy-data")
+	})
+}
+
+// TestConfig_GlobalSkillsDirs asserts that global skills dirs reference
+// smithers-tui and agents, not crush.
+func TestConfig_GlobalSkillsDirs(t *testing.T) {
+	// Ensure the override env var is not set so we get the default paths.
+	t.Setenv("SMITHERS_TUI_SKILLS_DIR", "")
+	t.Setenv("CRUSH_SKILLS_DIR", "")
+
+	dirs := GlobalSkillsDirs()
+
+	var combined string
+	for _, d := range dirs {
+		combined += d + "\n"
+	}
+
+	require.Contains(t, combined, "smithers-tui")
+	require.NotContains(t, combined, "/crush/")
+}
+
+// TestConfig_ProjectSkillsDir asserts that .smithers-tui/skills appears and
+// .crush/skills does not.
+func TestConfig_ProjectSkillsDir(t *testing.T) {
+	dirs := ProjectSkillsDir("/tmp/proj")
+
+	var combined string
+	for _, d := range dirs {
+		combined += d + "\n"
+	}
+
+	require.Contains(t, combined, ".smithers-tui/skills")
+	require.NotContains(t, combined, ".crush/skills")
+}
+
+// TestConfig_SmithersDefaultModel verifies that when SmithersConfig is present
+// and the user has not configured a large model, setDefaults defaults it to
+// claude-opus-4-6 via the anthropic provider.
+func TestConfig_SmithersDefaultModel(t *testing.T) {
+	cfg := &Config{
+		Smithers: &SmithersConfig{},
+	}
+
+	cfg.setDefaults("/tmp", "")
+
+	large, ok := cfg.Models[SelectedModelTypeLarge]
+	require.True(t, ok, "large model should be set when Smithers config is present")
+	require.Equal(t, "claude-opus-4-6", large.Model)
+	require.Equal(t, "anthropic", large.Provider)
+	require.True(t, large.Think)
+}
+
+// TestConfig_SmithersDefaultModelNotOverridden verifies that an explicitly
+// configured large model is not replaced by the Smithers default.
+func TestConfig_SmithersDefaultModelNotOverridden(t *testing.T) {
+	cfg := &Config{
+		Smithers: &SmithersConfig{},
+		Models: map[SelectedModelType]SelectedModel{
+			SelectedModelTypeLarge: {
+				Model:    "gpt-4o",
+				Provider: "openai",
+			},
+		},
+	}
+
+	cfg.setDefaults("/tmp", "")
+
+	large := cfg.Models[SelectedModelTypeLarge]
+	require.Equal(t, "gpt-4o", large.Model, "user-configured model must not be replaced by Smithers default")
+	require.Equal(t, "openai", large.Provider)
+}

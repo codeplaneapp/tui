@@ -34,6 +34,7 @@ import (
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/charmbracelet/crush/internal/session"
 	"github.com/charmbracelet/crush/internal/shell"
+	"github.com/charmbracelet/crush/internal/smithers"
 	"github.com/charmbracelet/crush/internal/ui/anim"
 	"github.com/charmbracelet/crush/internal/ui/styles"
 	"github.com/charmbracelet/crush/internal/update"
@@ -541,6 +542,20 @@ func (app *App) InitCoderAgent(ctx context.Context) error {
 	if coderAgentCfg.ID == "" {
 		return fmt.Errorf("coder agent configuration is missing")
 	}
+	var coordinatorOpts []agent.CoordinatorOption
+	if smithersCfg := app.config.Config().Smithers; smithersCfg != nil {
+		clientOpts := []smithers.ClientOption{}
+		if smithersCfg.APIURL != "" {
+			clientOpts = append(clientOpts, smithers.WithAPIURL(smithersCfg.APIURL))
+		}
+		if smithersCfg.APIToken != "" {
+			clientOpts = append(clientOpts, smithers.WithAPIToken(smithersCfg.APIToken))
+		}
+		if smithersCfg.DBPath != "" {
+			clientOpts = append(clientOpts, smithers.WithDBPath(smithersCfg.DBPath))
+		}
+		coordinatorOpts = append(coordinatorOpts, agent.WithSmithersClient(smithers.NewClient(clientOpts...)))
+	}
 	var err error
 	app.AgentCoordinator, err = agent.NewCoordinator(
 		ctx,
@@ -552,6 +567,7 @@ func (app *App) InitCoderAgent(ctx context.Context) error {
 		app.FileTracker,
 		app.LSPManager,
 		app.agentNotifications,
+		coordinatorOpts...,
 	)
 	if err != nil {
 		slog.Error("Failed to create coder agent", "err", err)

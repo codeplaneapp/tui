@@ -35,28 +35,28 @@ var runCmd = &cobra.Command{
 The prompt can be provided as arguments or piped from stdin.`,
 	Example: `
 # Run a simple prompt
-crush run "Guess my 5 favorite Pokémon"
+smithers-tui run "Guess my 5 favorite Pokémon"
 
 # Pipe input from stdin
-curl https://charm.land | crush run "Summarize this website"
+curl https://charm.land | smithers-tui run "Summarize this website"
 
 # Read from a file
-crush run "What is this code doing?" <<< prrr.go
+smithers-tui run "What is this code doing?" <<< prrr.go
 
 # Redirect output to a file
-crush run "Generate a hot README for this project" > MY_HOT_README.md
+smithers-tui run "Generate a hot README for this project" > MY_HOT_README.md
 
 # Run in quiet mode (hide the spinner)
-crush run --quiet "Generate a README for this project"
+smithers-tui run --quiet "Generate a README for this project"
 
 # Run in verbose mode (show logs)
-crush run --verbose "Generate a README for this project"
+smithers-tui run --verbose "Generate a README for this project"
 
 # Continue a previous session
-crush run --session {session-id} "Follow up on your last response"
+smithers-tui run --session {session-id} "Follow up on your last response"
 
 # Continue the most recent session
-crush run --continue "Follow up on your last response"
+smithers-tui run --continue "Follow up on your last response"
 
   `,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -72,6 +72,28 @@ crush run --continue "Follow up on your last response"
 		// Cancel on SIGINT or SIGTERM.
 		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 		defer cancel()
+
+		app, err := setupApp(cmd)
+		if err != nil {
+			return err
+		}
+		defer app.Shutdown()
+
+		if sessionID != "" {
+			sess, err := resolveSessionID(ctx, app.Sessions, sessionID)
+			if err != nil {
+				return err
+			}
+			sessionID = sess.ID
+		}
+
+		if !app.Config().IsConfigured() {
+			return fmt.Errorf("no providers configured - please run 'smithers-tui' to set up a provider interactively")
+		}
+
+		if verbose {
+			slog.SetDefault(slog.New(log.New(os.Stderr)))
+		}
 
 		prompt := strings.Join(args, " ")
 
