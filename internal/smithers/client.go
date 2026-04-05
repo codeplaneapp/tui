@@ -7,10 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -26,6 +29,30 @@ var (
 	// ErrNoTransport is returned when no transport (HTTP, SQLite, or exec) can handle the request.
 	ErrNoTransport = errors.New("no smithers transport available")
 )
+
+// HTTPError is returned when the Smithers legacy HTTP server responds with a
+// non-2xx status code on the envelope-wrapped API paths (/sql, /cron/*, etc.).
+// v1 API paths (/v1/runs, ...) use decodeV1Response which maps status codes to
+// sentinel errors (ErrRunNotFound, ErrUnauthorized, etc.) instead.
+type HTTPError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *HTTPError) Error() string {
+	return fmt.Sprintf("smithers API HTTP %d: %s", e.StatusCode, e.Message)
+}
+
+// IsUnauthorized returns true if err is an *HTTPError with StatusCode 401.
+func IsUnauthorized(err error) bool {
+	var he *HTTPError
+	return errors.As(err, &he) && he.StatusCode == http.StatusUnauthorized
+}
+
+// IsServerUnavailable returns true if err indicates the server is unreachable.
+func IsServerUnavailable(err error) bool {
+	return errors.Is(err, ErrServerUnavailable)
+}
 
 // ClientOption configures a Client.
 type ClientOption func(*Client)
@@ -74,51 +101,60 @@ func withStatFunc(fn func(name string) (os.FileInfo, error)) ClientOption {
 
 // agentManifestEntry defines detection parameters for a single CLI agent.
 type agentManifestEntry struct {
-	id        string
-	name      string
-	command   string
-	roles     []string
-	authDir   string // relative to $HOME, e.g. ".claude"
-	apiKeyEnv string // env var name, e.g. "ANTHROPIC_API_KEY"
+	id          string
+	name        string
+	command     string
+	roles       []string
+	authDir     string // relative to $HOME, e.g. ".claude"
+	apiKeyEnv   string // env var name, e.g. "ANTHROPIC_API_KEY"
+	versionFlag string // flag to pass for version output, e.g. "--version"; empty = skip version probe
+	credFile    string // path relative to authDir for credentials JSON, e.g. ".credentials.json"
 }
 
 // knownAgents is the canonical detection manifest for CLI agents.
 var knownAgents = []agentManifestEntry{
 	{
 		id: "claude-code", name: "Claude Code", command: "claude",
-		roles:     []string{"coding", "review", "spec"},
-		authDir:   ".claude",
-		apiKeyEnv: "ANTHROPIC_API_KEY",
+		roles:       []string{"coding", "review", "spec"},
+		authDir:     ".claude",
+		apiKeyEnv:   "ANTHROPIC_API_KEY",
+		versionFlag: "--version",
+		credFile:    ".credentials.json",
 	},
 	{
 		id: "codex", name: "Codex", command: "codex",
-		roles:     []string{"coding", "implement"},
-		authDir:   ".codex",
-		apiKeyEnv: "OPENAI_API_KEY",
+		roles:       []string{"coding", "implement"},
+		authDir:     ".codex",
+		apiKeyEnv:   "OPENAI_API_KEY",
+		versionFlag: "--version",
 	},
 	{
 		id: "gemini", name: "Gemini", command: "gemini",
-		roles:     []string{"coding", "research"},
-		authDir:   ".gemini",
-		apiKeyEnv: "GEMINI_API_KEY",
+		roles:       []string{"coding", "research"},
+		authDir:     ".gemini",
+		apiKeyEnv:   "GEMINI_API_KEY",
+		versionFlag: "--version",
 	},
 	{
 		id: "kimi", name: "Kimi", command: "kimi",
 		roles:     []string{"research", "plan"},
 		authDir:   "",
 		apiKeyEnv: "KIMI_API_KEY",
+		// versionFlag intentionally omitted — kimi has no --version support
 	},
 	{
 		id: "amp", name: "Amp", command: "amp",
-		roles:     []string{"coding", "validate"},
-		authDir:   ".amp",
-		apiKeyEnv: "",
+		roles:       []string{"coding", "validate"},
+		authDir:     ".amp",
+		apiKeyEnv:   "",
+		versionFlag: "--version",
 	},
 	{
 		id: "forge", name: "Forge", command: "forge",
-		roles:     []string{"coding"},
-		authDir:   "",
-		apiKeyEnv: "FORGE_API_KEY",
+		roles:       []string{"coding"},
+		authDir:     "",
+		apiKeyEnv:   "FORGE_API_KEY",
+		versionFlag: "--version",
 	},
 }
 
@@ -140,10 +176,25 @@ type Client struct {
 	// statFunc checks whether a filesystem path exists (injectable for testing).
 	statFunc func(name string) (os.FileInfo, error)
 
+	// Exec infrastructure fields (configured via With* options).
+	binaryPath  string        // path to the smithers CLI binary; default "smithers"
+	execTimeout time.Duration // default exec timeout; 0 means none
+	workingDir  string        // working directory for exec; "" inherits TUI process cwd
+	logger      Logger        // optional transport logger; nil = no-op
+
 	// Cached server availability probe.
 	serverMu      sync.RWMutex
 	serverUp      bool
 	serverChecked time.Time
+
+	// Per-runID cache for GetRunContext results (30-second TTL).
+	runSummaryCache sync.Map // map[string]*runContextCacheEntry
+}
+
+// runContextCacheEntry holds a cached RunContext with its fetch timestamp.
+type runContextCacheEntry struct {
+	context   *RunContext
+	fetchedAt time.Time
 }
 
 // NewClient creates a new Smithers client.
@@ -153,6 +204,7 @@ func NewClient(opts ...ClientOption) *Client {
 		httpClient: &http.Client{Timeout: 10 * time.Second},
 		lookPath:   exec.LookPath,
 		statFunc:   os.Stat,
+		binaryPath: "smithers",
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -177,6 +229,17 @@ func (c *Client) Close() error {
 		return c.db.Close()
 	}
 	return nil
+}
+
+// SmithersBinaryPath resolves the full path to the smithers CLI binary using
+// the configured lookPath function (defaults to exec.LookPath).
+// Returns ErrBinaryNotFound if smithers is not on PATH.
+func (c *Client) SmithersBinaryPath() (string, error) {
+	path, err := c.lookPath(c.binaryPath)
+	if err != nil {
+		return "", ErrBinaryNotFound
+	}
+	return path, nil
 }
 
 // ListAgents detects CLI agents installed on the system using pure-Go binary
@@ -289,7 +352,27 @@ func (c *Client) isServerAvailable() bool {
 	return c.serverUp
 }
 
-// httpGetJSON sends a GET request and decodes the JSON response.
+// SetServerUp sets the cached server-availability flag directly.
+// This is intended for use in tests that construct a mock server and need
+// to bypass the health-check probe.
+func (c *Client) SetServerUp(up bool) {
+	c.serverMu.Lock()
+	c.serverUp = up
+	c.serverChecked = time.Now().Add(30 * time.Second) // suppress re-probe
+	c.serverMu.Unlock()
+}
+
+// invalidateServerCache resets the availability cache so the next call
+// re-probes the server instead of waiting up to 30 seconds.
+// Call this whenever a mid-flight HTTP request fails with a transport error.
+func (c *Client) invalidateServerCache() {
+	c.serverMu.Lock()
+	c.serverUp = false
+	c.serverChecked = time.Time{} // zero time forces re-probe on next call
+	c.serverMu.Unlock()
+}
+
+// httpGetJSON sends a GET request and decodes the JSON response envelope.
 func (c *Client) httpGetJSON(ctx context.Context, path string, out any) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", c.apiURL+path, nil)
 	if err != nil {
@@ -301,9 +384,19 @@ func (c *Client) httpGetJSON(ctx context.Context, path string, out any) error {
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return ErrServerUnavailable
+		c.invalidateServerCache()
+		return fmt.Errorf("%w: %w", ErrServerUnavailable, err)
 	}
 	defer resp.Body.Close()
+
+	// Handle non-2xx status codes before attempting JSON decode.
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		rawBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		if resp.StatusCode >= 500 {
+			c.invalidateServerCache()
+		}
+		return &HTTPError{StatusCode: resp.StatusCode, Message: strings.TrimSpace(string(rawBody))}
+	}
 
 	var env apiEnvelope
 	if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
@@ -318,7 +411,7 @@ func (c *Client) httpGetJSON(ctx context.Context, path string, out any) error {
 	return nil
 }
 
-// httpPostJSON sends a POST request with a JSON body and decodes the response.
+// httpPostJSON sends a POST request with a JSON body and decodes the response envelope.
 func (c *Client) httpPostJSON(ctx context.Context, path string, body any, out any) error {
 	var buf bytes.Buffer
 	if body != nil {
@@ -338,9 +431,19 @@ func (c *Client) httpPostJSON(ctx context.Context, path string, body any, out an
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return ErrServerUnavailable
+		c.invalidateServerCache()
+		return fmt.Errorf("%w: %w", ErrServerUnavailable, err)
 	}
 	defer resp.Body.Close()
+
+	// Handle non-2xx status codes before attempting JSON decode.
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		rawBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		if resp.StatusCode >= 500 {
+			c.invalidateServerCache()
+		}
+		return &HTTPError{StatusCode: resp.StatusCode, Message: strings.TrimSpace(string(rawBody))}
+	}
 
 	var env apiEnvelope
 	if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
@@ -363,22 +466,7 @@ func (c *Client) queryDB(ctx context.Context, query string, args ...any) (*sql.R
 	return c.db.QueryContext(ctx, query, args...)
 }
 
-// execSmithers shells out to the smithers CLI and returns stdout.
-func (c *Client) execSmithers(ctx context.Context, args ...string) ([]byte, error) {
-	if c.execFunc != nil {
-		return c.execFunc(ctx, args...)
-	}
-	cmd := exec.CommandContext(ctx, "smithers", args...)
-	out, err := cmd.Output()
-	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			return nil, fmt.Errorf("smithers %s: %s", strings.Join(args, " "), string(exitErr.Stderr))
-		}
-		return nil, fmt.Errorf("smithers %s: %w", strings.Join(args, " "), err)
-	}
-	return out, nil
-}
+// execSmithers is defined in exec.go.
 
 // --- Approvals ---
 
@@ -406,12 +494,91 @@ func (c *Client) ListPendingApprovals(ctx context.Context) ([]Approval, error) {
 		return scanApprovals(rows)
 	}
 
-	// 3. Fall back to exec
-	out, err := c.execSmithers(ctx, "approval", "list", "--format", "json")
-	if err != nil {
-		return nil, err
+	// 3. Fall back to exec — no `smithers approval list` command exists.
+	// Approvals are embedded in run inspection output. Return empty list
+	// since both HTTP and SQLite paths were already attempted.
+	return nil, nil
+}
+
+// ListRecentDecisions returns a list of recently decided (approved/denied) approvals.
+// Routes: HTTP GET /approval/decisions → SQLite → exec smithers approval decisions.
+func (c *Client) ListRecentDecisions(ctx context.Context, limit int) ([]ApprovalDecision, error) {
+	if limit <= 0 {
+		limit = 20
 	}
-	return parseApprovalsJSON(out)
+
+	// 1. Try HTTP
+	if c.isServerAvailable() {
+		var decisions []ApprovalDecision
+		err := c.httpGetJSON(ctx, "/approval/decisions", &decisions)
+		if err == nil {
+			return decisions, nil
+		}
+	}
+
+	// 2. Try direct SQLite (read resolved rows from _smithers_approvals)
+	if c.db != nil {
+		rows, err := c.queryDB(ctx,
+			`SELECT id, run_id, node_id, workflow_path, gate,
+			status, resolved_at, resolved_by, requested_at
+			FROM _smithers_approvals
+			WHERE status IN ('"approved"', '"denied"')
+			ORDER BY resolved_at DESC
+			LIMIT ?`, limit)
+		if err == nil {
+			return scanApprovalDecisions(rows)
+		}
+	}
+
+	// 3. Fall back to exec — no `smithers approval decisions` command exists.
+	// Return empty list since both HTTP and SQLite paths were already attempted.
+	return nil, nil
+}
+
+// Approve submits an approval decision for a pending approval gate.
+// Routes: HTTP POST /v1/runs/:runID/nodes/:nodeID/approve → exec smithers approve.
+func (c *Client) Approve(ctx context.Context, runID, nodeID string, iteration int, note string) error {
+	// 1. Try HTTP
+	if c.isServerAvailable() {
+		err := c.httpPostJSON(ctx,
+			fmt.Sprintf("/v1/runs/%s/nodes/%s/approve", runID, nodeID),
+			map[string]any{"iteration": iteration, "note": note}, nil)
+		if err == nil {
+			return nil
+		}
+	}
+
+	// 2. Fall back to exec (no SQLite tier for mutations)
+	args := []string{"approve", runID, "--node", nodeID,
+		"--iteration", strconv.Itoa(iteration), "--format", "json"}
+	if note != "" {
+		args = append(args, "--note", note)
+	}
+	_, err := c.execSmithers(ctx, args...)
+	return err
+}
+
+// Deny submits a denial decision for a pending approval gate.
+// Routes: HTTP POST /v1/runs/:runID/nodes/:nodeID/deny → exec smithers deny.
+func (c *Client) Deny(ctx context.Context, runID, nodeID string, iteration int, reason string) error {
+	// 1. Try HTTP
+	if c.isServerAvailable() {
+		err := c.httpPostJSON(ctx,
+			fmt.Sprintf("/v1/runs/%s/nodes/%s/deny", runID, nodeID),
+			map[string]any{"iteration": iteration, "reason": reason}, nil)
+		if err == nil {
+			return nil
+		}
+	}
+
+	// 2. Fall back to exec (no SQLite tier for mutations)
+	args := []string{"deny", runID, "--node", nodeID,
+		"--iteration", strconv.Itoa(iteration), "--format", "json"}
+	if reason != "" {
+		args = append(args, "--reason", reason)
+	}
+	_, err := c.execSmithers(ctx, args...)
+	return err
 }
 
 // --- SQL Browser ---
@@ -439,12 +606,9 @@ func (c *Client) ExecuteSQL(ctx context.Context, query string) (*SQLResult, erro
 		return scanSQLResult(rows)
 	}
 
-	// 3. Fall back to exec
-	out, err := c.execSmithers(ctx, "sql", "--query", query, "--format", "json")
-	if err != nil {
-		return nil, err
-	}
-	return parseSQLResultJSON(out)
+	// 3. The smithers CLI has no `sql` subcommand — return ErrNoTransport
+	// with an actionable hint. SQL queries require the HTTP server.
+	return nil, fmt.Errorf("%w: SQL requires a running smithers server; start with: smithers up --serve", ErrNoTransport)
 }
 
 // isSelectQuery performs a simple prefix check to prevent mutation queries
@@ -466,7 +630,7 @@ func (c *Client) GetScores(ctx context.Context, runID string, nodeID *string) ([
 		query := `SELECT id, run_id, node_id, iteration, attempt, scorer_id, scorer_name,
 			source, score, reason, meta_json, input_json, output_json,
 			latency_ms, scored_at_ms, duration_ms
-			FROM _smithers_scorer_results WHERE run_id = ?`
+			FROM _smithers_scorers WHERE run_id = ?`	// upstream: smithers/src/scorers/schema.ts
 		args := []any{runID}
 		if nodeID != nil {
 			query += " AND node_id = ?"
@@ -502,6 +666,44 @@ func (c *Client) GetAggregateScores(ctx context.Context, runID string) ([]Aggreg
 	return aggregateScores(rows), nil
 }
 
+// ListRecentScores retrieves the most recent scorer results across all runs.
+// Routes: SQLite (preferred — no HTTP endpoint exists) → returns nil on exec fallback
+// (smithers scores requires a runID; cross-run queries need a direct DB connection).
+func (c *Client) ListRecentScores(ctx context.Context, limit int) ([]ScoreRow, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if c.db != nil {
+		query := `SELECT id, run_id, node_id, iteration, attempt, scorer_id, scorer_name,
+			source, score, reason, meta_json, input_json, output_json,
+			latency_ms, scored_at_ms, duration_ms
+			FROM _smithers_scorer_results ORDER BY scored_at_ms DESC LIMIT ?`
+		rows, err := c.queryDB(ctx, query, limit)
+		if err != nil {
+			// Treat "no such table" as an empty result — older Smithers DBs may not
+			// have the scoring system tables.
+			if strings.Contains(err.Error(), "no such table") {
+				return nil, nil
+			}
+			return nil, err
+		}
+		return scanScoreRows(rows)
+	}
+	// Exec fallback: smithers scores requires a runID; omit rather than error.
+	// The view will show the empty state. Downstream tickets can add an HTTP endpoint.
+	return nil, nil
+}
+
+// AggregateAllScores computes aggregated scorer statistics across all recent runs.
+// Reuses the aggregateScores() helper already in client.go.
+func (c *Client) AggregateAllScores(ctx context.Context, limit int) ([]AggregateScore, error) {
+	rows, err := c.ListRecentScores(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+	return aggregateScores(rows), nil
+}
+
 // --- Memory ---
 
 // ListMemoryFacts lists memory facts for a namespace.
@@ -525,6 +727,30 @@ func (c *Client) ListMemoryFacts(ctx context.Context, namespace string, workflow
 		args = append(args, "--workflow", workflowPath)
 	}
 	out, err := c.execSmithers(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+	return parseMemoryFactsJSON(out)
+}
+
+// ListAllMemoryFacts lists all memory facts across all namespaces.
+// Routes: SQLite → exec smithers memory list --all.
+func (c *Client) ListAllMemoryFacts(ctx context.Context) ([]MemoryFact, error) {
+	// 1. Try direct SQLite (preferred — no dedicated HTTP endpoint)
+	if c.db != nil {
+		rows, err := c.queryDB(ctx,
+			`SELECT namespace, key, value_json, schema_sig, created_at_ms, updated_at_ms, ttl_ms
+			FROM _smithers_memory_facts ORDER BY updated_at_ms DESC`)
+		if err != nil {
+			return nil, err
+		}
+		return scanMemoryFacts(rows)
+	}
+
+	// 2. Fall back to exec
+	// TODO: The --all flag requires smithers CLI support. If unavailable, the exec path will
+	// return an error that MemoryView renders gracefully.
+	out, err := c.execSmithers(ctx, "memory", "list", "--all", "--format", "json")
 	if err != nil {
 		return nil, err
 	}
@@ -566,7 +792,7 @@ func (c *Client) ListCrons(ctx context.Context) ([]CronSchedule, error) {
 	if c.db != nil {
 		rows, err := c.queryDB(ctx,
 			`SELECT cron_id, pattern, workflow_path, enabled, created_at_ms,
-			last_run_at_ms, next_run_at_ms, error_json FROM _smithers_crons`)
+			last_run_at_ms, next_run_at_ms, error_json FROM _smithers_cron`)	// upstream: smithers/src/db/internal-schema.ts
 		if err != nil {
 			return nil, err
 		}
@@ -616,8 +842,13 @@ func (c *Client) ToggleCron(ctx context.Context, cronID string, enabled bool) er
 	}
 
 	// 2. Fall back to exec
-	_, err := c.execSmithers(ctx, "cron", "toggle", cronID,
-		"--enabled", strconv.FormatBool(enabled))
+	// The upstream CLI uses `cron enable <id>` / `cron disable <id>`.
+	// The flag-based form `cron toggle --enabled <bool>` does not exist.
+	subcmd := "enable"
+	if !enabled {
+		subcmd = "disable"
+	}
+	_, err := c.execSmithers(ctx, "cron", subcmd, cronID)
 	return err
 }
 
@@ -652,6 +883,101 @@ func (c *Client) GetRun(ctx context.Context, runID string) (*RunSummary, error) 
 		return nil, fmt.Errorf("parse run: %w", err)
 	}
 	return &run, nil
+}
+
+// GetRunContext returns lightweight run metadata enriched with progress counters
+// and elapsed time. Used by the approval detail pane and other views that need
+// run context without full node trees.
+// Routes: HTTP GET /v1/runs/{runID} → SQLite → exec smithers inspect.
+// Results are cached for 30 seconds per runID.
+func (c *Client) GetRunContext(ctx context.Context, runID string) (*RunContext, error) {
+	if cached, ok := c.getRunContextCache(runID); ok {
+		return cached, nil
+	}
+
+	var rc *RunContext
+
+	// 1. Try HTTP
+	if c.isServerAvailable() {
+		var s RunContext
+		err := c.httpGetJSON(ctx, "/v1/runs/"+runID, &s)
+		if err == nil {
+			if s.WorkflowName == "" && s.WorkflowPath != "" {
+				s.WorkflowName = workflowNameFromPath(s.WorkflowPath)
+			}
+			if s.ElapsedMs == 0 && s.StartedAtMs > 0 {
+				s.ElapsedMs = time.Now().UnixMilli() - s.StartedAtMs
+			}
+			rc = &s
+		}
+	}
+
+	// 2. Try direct SQLite
+	if rc == nil && c.db != nil {
+		row := c.db.QueryRowContext(ctx,
+			`SELECT r.id, r.workflow_path, r.status, r.started_at,
+			 (SELECT COUNT(*) FROM _smithers_nodes n WHERE n.run_id = r.id) AS node_total,
+			 (SELECT COUNT(*) FROM _smithers_nodes n WHERE n.run_id = r.id
+			  AND n.status IN ('completed', 'failed')) AS nodes_done
+			 FROM _smithers_runs r WHERE r.id = ?`, runID)
+		var s RunContext
+		var startedAt int64
+		if err := row.Scan(&s.ID, &s.WorkflowPath, &s.Status, &startedAt, &s.NodeTotal, &s.NodesDone); err == nil {
+			s.StartedAtMs = startedAt
+			s.ElapsedMs = time.Now().UnixMilli() - startedAt
+			s.WorkflowName = workflowNameFromPath(s.WorkflowPath)
+			rc = &s
+		}
+	}
+
+	// 3. Fall back to exec
+	if rc == nil {
+		out, err := c.execSmithers(ctx, "inspect", runID, "--format", "json")
+		if err != nil {
+			return nil, err
+		}
+		var s RunContext
+		if err := json.Unmarshal(out, &s); err != nil {
+			return nil, fmt.Errorf("parse run context: %w", err)
+		}
+		if s.WorkflowName == "" && s.WorkflowPath != "" {
+			s.WorkflowName = workflowNameFromPath(s.WorkflowPath)
+		}
+		if s.ElapsedMs == 0 && s.StartedAtMs > 0 {
+			s.ElapsedMs = time.Now().UnixMilli() - s.StartedAtMs
+		}
+		rc = &s
+	}
+
+	c.setRunContextCache(runID, rc)
+	return rc, nil
+}
+
+// ClearRunContextCache removes the cached RunContext for runID.
+func (c *Client) ClearRunContextCache(runID string) {
+	c.runSummaryCache.Delete(runID)
+}
+
+// getRunContextCache returns a cached RunContext if present and not expired (30s TTL).
+func (c *Client) getRunContextCache(runID string) (*RunContext, bool) {
+	v, ok := c.runSummaryCache.Load(runID)
+	if !ok {
+		return nil, false
+	}
+	entry := v.(*runContextCacheEntry)
+	if time.Since(entry.fetchedAt) > 30*time.Second {
+		c.runSummaryCache.Delete(runID)
+		return nil, false
+	}
+	return entry.context, true
+}
+
+// setRunContextCache stores a RunContext in the cache for runID.
+func (c *Client) setRunContextCache(runID string, rc *RunContext) {
+	c.runSummaryCache.Store(runID, &runContextCacheEntry{
+		context:   rc,
+		fetchedAt: time.Now(),
+	})
 }
 
 // GetChatOutput retrieves the full chat transcript for a run (all attempts, all nodes).
@@ -705,12 +1031,32 @@ func (c *Client) ListTickets(ctx context.Context) ([]Ticket, error) {
 		}
 	}
 
-	// 2. Fall back to exec
-	out, err := c.execSmithers(ctx, "ticket", "list", "--format", "json")
-	if err != nil {
-		return nil, err
+	// 2. Read directly from .smithers/tickets/*.md on the filesystem.
+	// There is no `smithers ticket list` CLI command — tickets are plain files.
+	ticketsDir := filepath.Join(".smithers", "tickets")
+	if c.workingDir != "" {
+		ticketsDir = filepath.Join(c.workingDir, ".smithers", "tickets")
 	}
-	return parseTicketsJSON(out)
+	entries, err := os.ReadDir(ticketsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil // No tickets directory — empty list
+		}
+		return nil, fmt.Errorf("reading tickets dir: %w", err)
+	}
+	var tickets []Ticket
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+			continue
+		}
+		id := strings.TrimSuffix(e.Name(), ".md")
+		content, err := os.ReadFile(filepath.Join(ticketsDir, e.Name()))
+		if err != nil {
+			continue
+		}
+		tickets = append(tickets, Ticket{ID: id, Content: string(content)})
+	}
+	return tickets, nil
 }
 
 // --- Scan/parse helpers ---
@@ -776,7 +1122,7 @@ func parseSQLResultJSON(data []byte) (*SQLResult, error) {
 	// Try array-of-objects format.
 	var arr []map[string]interface{}
 	if err := json.Unmarshal(data, &arr); err != nil {
-		return nil, fmt.Errorf("parse SQL result: %w", err)
+		return nil, &JSONParseError{Command: "sql", Output: data, Err: err}
 	}
 	return convertResultMaps(arr), nil
 }
@@ -804,7 +1150,7 @@ func scanScoreRows(rows *sql.Rows) ([]ScoreRow, error) {
 func parseScoreRowsJSON(data []byte) ([]ScoreRow, error) {
 	var rows []ScoreRow
 	if err := json.Unmarshal(data, &rows); err != nil {
-		return nil, fmt.Errorf("parse score rows: %w", err)
+		return nil, &JSONParseError{Command: "scores", Output: data, Err: err}
 	}
 	return rows, nil
 }
@@ -898,7 +1244,7 @@ func scanMemoryFacts(rows *sql.Rows) ([]MemoryFact, error) {
 func parseMemoryFactsJSON(data []byte) ([]MemoryFact, error) {
 	var facts []MemoryFact
 	if err := json.Unmarshal(data, &facts); err != nil {
-		return nil, fmt.Errorf("parse memory facts: %w", err)
+		return nil, &JSONParseError{Command: "memory list", Output: data, Err: err}
 	}
 	return facts, nil
 }
@@ -907,7 +1253,7 @@ func parseMemoryFactsJSON(data []byte) ([]MemoryFact, error) {
 func parseRecallResultsJSON(data []byte) ([]MemoryRecallResult, error) {
 	var results []MemoryRecallResult
 	if err := json.Unmarshal(data, &results); err != nil {
-		return nil, fmt.Errorf("parse recall results: %w", err)
+		return nil, &JSONParseError{Command: "memory recall", Output: data, Err: err}
 	}
 	return results, nil
 }
@@ -933,7 +1279,7 @@ func scanCronSchedules(rows *sql.Rows) ([]CronSchedule, error) {
 func parseCronSchedulesJSON(data []byte) ([]CronSchedule, error) {
 	var crons []CronSchedule
 	if err := json.Unmarshal(data, &crons); err != nil {
-		return nil, fmt.Errorf("parse cron schedules: %w", err)
+		return nil, &JSONParseError{Command: "cron list", Output: data, Err: err}
 	}
 	return crons, nil
 }
@@ -942,7 +1288,7 @@ func parseCronSchedulesJSON(data []byte) ([]CronSchedule, error) {
 func parseCronScheduleJSON(data []byte) (*CronSchedule, error) {
 	var cron CronSchedule
 	if err := json.Unmarshal(data, &cron); err != nil {
-		return nil, fmt.Errorf("parse cron schedule: %w", err)
+		return nil, &JSONParseError{Command: "cron add", Output: data, Err: err}
 	}
 	return &cron, nil
 }
@@ -951,7 +1297,7 @@ func parseCronScheduleJSON(data []byte) (*CronSchedule, error) {
 func parseTicketsJSON(data []byte) ([]Ticket, error) {
 	var tickets []Ticket
 	if err := json.Unmarshal(data, &tickets); err != nil {
-		return nil, fmt.Errorf("parse tickets: %w", err)
+		return nil, &JSONParseError{Command: "ticket list", Output: data, Err: err}
 	}
 	return tickets, nil
 }
@@ -977,7 +1323,7 @@ func scanApprovals(rows *sql.Rows) ([]Approval, error) {
 func parseApprovalsJSON(data []byte) ([]Approval, error) {
 	var approvals []Approval
 	if err := json.Unmarshal(data, &approvals); err != nil {
-		return nil, fmt.Errorf("parse approvals: %w", err)
+		return nil, &JSONParseError{Command: "approval list", Output: data, Err: err}
 	}
 	return approvals, nil
 }
@@ -996,4 +1342,47 @@ func scanChatBlocks(rows *sql.Rows) ([]ChatBlock, error) {
 		result = append(result, b)
 	}
 	return result, rows.Err()
+}
+
+// scanApprovalDecisions converts sql.Rows into ApprovalDecision slice.
+// Expected column order: id, run_id, node_id, workflow_path, gate, status (used as decision), resolved_at, resolved_by, requested_at.
+func scanApprovalDecisions(rows *sql.Rows) ([]ApprovalDecision, error) {
+	defer rows.Close()
+	var result []ApprovalDecision
+	for rows.Next() {
+		var d ApprovalDecision
+		var resolvedAt *int64
+		if err := rows.Scan(
+			&d.ID, &d.RunID, &d.NodeID, &d.WorkflowPath, &d.Gate,
+			&d.Decision, &resolvedAt, &d.DecidedBy, &d.RequestedAt,
+		); err != nil {
+			return nil, err
+		}
+		if resolvedAt != nil {
+			d.DecidedAt = *resolvedAt
+		}
+		result = append(result, d)
+	}
+	return result, rows.Err()
+}
+
+// parseApprovalDecisionsJSON parses exec output into ApprovalDecision slice.
+func parseApprovalDecisionsJSON(data []byte) ([]ApprovalDecision, error) {
+	var decisions []ApprovalDecision
+	if err := json.Unmarshal(data, &decisions); err != nil {
+		return nil, fmt.Errorf("parse approval decisions: %w", err)
+	}
+	return decisions, nil
+}
+
+// workflowNameFromPath extracts a human-readable workflow name from a file path.
+// E.g., ".smithers/workflows/deploy.ts" → "deploy".
+func workflowNameFromPath(p string) string {
+	base := path.Base(p)
+	for _, ext := range []string{".ts", ".tsx", ".js", ".jsx", ".yaml", ".yml"} {
+		if strings.HasSuffix(base, ext) {
+			return base[:len(base)-len(ext)]
+		}
+	}
+	return base
 }
