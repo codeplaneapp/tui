@@ -62,6 +62,48 @@ func TestSmithersPromptOmitsWorkspaceWithoutWorkflowDir(t *testing.T) {
 	require.NotContains(t, rendered, "Workflow directory:")
 }
 
+func TestSmithersPromptActiveRunsInjected(t *testing.T) {
+	t.Parallel()
+
+	activeRuns := []prompt.ActiveRunContext{
+		{RunID: "run-abc", WorkflowName: "code-review", WorkflowPath: "workflows/code-review.tsx", Status: "running"},
+		{RunID: "run-def", WorkflowName: "deploy", WorkflowPath: "workflows/deploy.tsx", Status: "waiting-approval"},
+	}
+	rendered := renderSmithersPrompt(t,
+		prompt.WithSmithersMode(".smithers/workflows", "smithers"),
+		prompt.WithSmithersActiveRuns(activeRuns, 1),
+	)
+
+	require.Contains(t, rendered, "Active runs (2 total, 1 pending approval)")
+	require.Contains(t, rendered, "run-abc: code-review (running)")
+	require.Contains(t, rendered, "run-def: deploy (waiting-approval)")
+}
+
+func TestSmithersPromptActiveRunsOmittedWhenEmpty(t *testing.T) {
+	t.Parallel()
+
+	rendered := renderSmithersPrompt(t,
+		prompt.WithSmithersMode(".smithers/workflows", "smithers"),
+		prompt.WithSmithersActiveRuns(nil, 0),
+	)
+
+	require.NotContains(t, rendered, "Active runs")
+	require.Contains(t, rendered, "Workflow directory: .smithers/workflows")
+}
+
+func TestSmithersPromptPendingApprovalsOnlyWhenNoActiveRuns(t *testing.T) {
+	t.Parallel()
+
+	// This tests the edge case where pending approvals exist but the active runs list
+	// itself is empty (shouldn't normally happen, but defensive test).
+	rendered := renderSmithersPrompt(t,
+		prompt.WithSmithersMode(".smithers/workflows", "smithers"),
+		prompt.WithSmithersActiveRuns(nil, 3),
+	)
+
+	require.Contains(t, rendered, "Pending approvals: 3")
+}
+
 func TestSmithersPromptSnapshot(t *testing.T) {
 	t.Parallel()
 
@@ -75,4 +117,22 @@ func TestSmithersPromptSnapshot(t *testing.T) {
 	golden, err := os.ReadFile(goldenPath)
 	require.NoError(t, err)
 	require.Equal(t, string(golden), rendered)
+}
+
+func TestSmithersPromptSnapshotWithActiveRuns(t *testing.T) {
+	t.Parallel()
+
+	activeRuns := []prompt.ActiveRunContext{
+		{RunID: "run-001", WorkflowName: "ci-pipeline", WorkflowPath: ".smithers/workflows/ci.tsx", Status: "running"},
+		{RunID: "run-002", WorkflowName: "deploy-prod", WorkflowPath: ".smithers/workflows/deploy.tsx", Status: "waiting-approval"},
+	}
+	rendered := renderSmithersPrompt(t,
+		prompt.WithSmithersMode(".smithers/workflows", "smithers"),
+		prompt.WithSmithersActiveRuns(activeRuns, 1),
+	)
+
+	require.Contains(t, rendered, "Active runs (2 total, 1 pending approval)")
+	require.Contains(t, rendered, "run-001: ci-pipeline (running)")
+	require.Contains(t, rendered, "run-002: deploy-prod (waiting-approval)")
+	require.Contains(t, rendered, "Workflow directory: .smithers/workflows")
 }

@@ -50,3 +50,51 @@ func TestPromptData_WithoutSmithersMode(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "default||", rendered)
 }
+
+func TestPromptData_WithSmithersActiveRuns(t *testing.T) {
+	t.Parallel()
+
+	workingDir := t.TempDir()
+	store, err := config.Init(workingDir, "", false)
+	require.NoError(t, err)
+
+	activeRuns := []ActiveRunContext{
+		{RunID: "run-1", WorkflowName: "ci", Status: "running"},
+		{RunID: "run-2", WorkflowName: "deploy", Status: "waiting-approval"},
+	}
+
+	tmpl := "runs:{{len .SmithersActiveRuns}}|approvals:{{.SmithersPendingApprovals}}"
+	p, err := NewPrompt(
+		"test-active-runs",
+		tmpl,
+		WithWorkingDir(workingDir),
+		WithSmithersMode(".smithers/workflows", "smithers"),
+		WithSmithersActiveRuns(activeRuns, 1),
+	)
+	require.NoError(t, err)
+
+	rendered, err := p.Build(context.Background(), "mock", "model", store)
+	require.NoError(t, err)
+	require.Equal(t, "runs:2|approvals:1", rendered)
+}
+
+func TestPromptData_WithSmithersActiveRuns_Empty(t *testing.T) {
+	t.Parallel()
+
+	workingDir := t.TempDir()
+	store, err := config.Init(workingDir, "", false)
+	require.NoError(t, err)
+
+	tmpl := "runs:{{len .SmithersActiveRuns}}|approvals:{{.SmithersPendingApprovals}}"
+	p, err := NewPrompt(
+		"test-no-runs",
+		tmpl,
+		WithWorkingDir(workingDir),
+		WithSmithersMode(".smithers/workflows", "smithers"),
+	)
+	require.NoError(t, err)
+
+	rendered, err := p.Build(context.Background(), "mock", "model", store)
+	require.NoError(t, err)
+	require.Equal(t, "runs:0|approvals:0", rendered)
+}

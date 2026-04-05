@@ -28,6 +28,16 @@ type Prompt struct {
 	smithersMode        bool
 	smithersWorkflowDir string
 	smithersMCPServer   string
+	smithersActiveRuns  []ActiveRunContext
+	smithersPendingApprovals int
+}
+
+// ActiveRunContext is a lightweight run summary injected into the system prompt.
+type ActiveRunContext struct {
+	RunID        string
+	WorkflowName string
+	WorkflowPath string
+	Status       string
 }
 
 type PromptDat struct {
@@ -44,6 +54,10 @@ type PromptDat struct {
 	SmithersMode        bool
 	SmithersWorkflowDir string
 	SmithersMCPServer   string
+	// SmithersActiveRuns holds active (non-terminal) runs pre-fetched at session start.
+	SmithersActiveRuns []ActiveRunContext
+	// SmithersPendingApprovals is the count of runs currently in waiting-approval state.
+	SmithersPendingApprovals int
 }
 
 type ContextFile struct {
@@ -76,6 +90,16 @@ func WithSmithersMode(workflowDir, mcpServer string) Option {
 		p.smithersMode = true
 		p.smithersWorkflowDir = workflowDir
 		p.smithersMCPServer = mcpServer
+	}
+}
+
+// WithSmithersActiveRuns injects pre-fetched active run context into the system prompt.
+// activeRuns should be filtered to non-terminal statuses before passing here.
+// pendingApprovals is the count of runs currently in waiting-approval state.
+func WithSmithersActiveRuns(activeRuns []ActiveRunContext, pendingApprovals int) Option {
+	return func(p *Prompt) {
+		p.smithersActiveRuns = activeRuns
+		p.smithersPendingApprovals = pendingApprovals
 	}
 }
 
@@ -216,17 +240,19 @@ func (p *Prompt) promptData(ctx context.Context, provider, model string, store *
 
 	isGit := isGitRepo(store.WorkingDir())
 	data := PromptDat{
-		Provider:            provider,
-		Model:               model,
-		Config:              *cfg,
-		WorkingDir:          filepath.ToSlash(workingDir),
-		IsGitRepo:           isGit,
-		Platform:            platform,
-		Date:                p.now().Format("1/2/2006"),
-		AvailSkillXML:       availSkillXML,
-		SmithersMode:        p.smithersMode,
-		SmithersWorkflowDir: p.smithersWorkflowDir,
-		SmithersMCPServer:   p.smithersMCPServer,
+		Provider:                 provider,
+		Model:                    model,
+		Config:                   *cfg,
+		WorkingDir:               filepath.ToSlash(workingDir),
+		IsGitRepo:                isGit,
+		Platform:                 platform,
+		Date:                     p.now().Format("1/2/2006"),
+		AvailSkillXML:            availSkillXML,
+		SmithersMode:             p.smithersMode,
+		SmithersWorkflowDir:      p.smithersWorkflowDir,
+		SmithersMCPServer:        p.smithersMCPServer,
+		SmithersActiveRuns:       p.smithersActiveRuns,
+		SmithersPendingApprovals: p.smithersPendingApprovals,
 	}
 	if isGit {
 		var err error
