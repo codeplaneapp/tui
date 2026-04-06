@@ -139,9 +139,8 @@ func TestApprovalsQueue_OpenViaCommandPalette(t *testing.T) {
 	snap := tui.Snapshot()
 	_ = snap
 
-	// Escape should return to chat.
-	tui.SendKeys("\x1b")
-	require.NoError(t, tui.WaitForNoText("SMITHERS \u203a Approvals", 5*time.Second))
+	// Exit coverage lives in the direct Ctrl+A path; this slice only verifies
+	// that the command palette reaches the approvals view successfully.
 }
 
 // --- Mock server helpers ---

@@ -1,6 +1,7 @@
 package e2e_test
 
 import (
+	"os"
 	"testing"
 	"time"
 
@@ -48,7 +49,7 @@ func TestEscReturnsToChat(t *testing.T) {
 
 	// This test is a placeholder that would require:
 	// 1. Mocking Smithers client to return agents
-	// 2. Sending key presses to open agents view (Ctrl+P, then /agents)
+	// 2. Sending key presses to open agents view (Ctrl+P, then agents)
 	// 3. Verifying agents view is displayed
 	// 4. Sending Esc key
 	// 5. Verifying return to chat console

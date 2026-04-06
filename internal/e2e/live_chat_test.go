@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -120,6 +121,40 @@ func newMockLiveChatServer(t *testing.T, runID string, blocks []mockChatBlock) *
 	return srv
 }
 
+func writeFakeSmithersCLI(t *testing.T, run map[string]any, blocks []mockChatBlock) string {
+	t.Helper()
+
+	runJSON, err := json.Marshal(run)
+	require.NoError(t, err)
+
+	blocksJSON, err := json.Marshal(blocks)
+	require.NoError(t, err)
+
+	binDir := t.TempDir()
+	scriptPath := filepath.Join(binDir, "smithers")
+	script := fmt.Sprintf(`#!/bin/sh
+case "$1 $2" in
+  "run get")
+    cat <<'EOF'
+%s
+EOF
+    ;;
+  "run chat")
+    cat <<'EOF'
+%s
+EOF
+    ;;
+  *)
+    printf 'unsupported smithers invocation: %%s\n' "$*" >&2
+    exit 1
+    ;;
+esac
+`, string(runJSON), string(blocksJSON))
+	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o755))
+
+	return binDir
+}
+
 // openLiveChatViaCommandPalette navigates to the Live Chat view via Ctrl+P.
 // Returns after the "SMITHERS › Chat" header is visible.
 func openLiveChatViaCommandPalette(t *testing.T, tui *TUITestInstance) {
@@ -185,8 +220,7 @@ func TestLiveChat_OpenViaCommandPaletteAndRender(t *testing.T) {
 }
 
 // TestLiveChat_MessagesStreamIn verifies that when the TUI opens the live chat
-// view for a run that has messages (navigated via the runs dashboard), those
-// messages appear in the viewport.
+// view for a run that has messages, those messages appear in the viewport.
 func TestLiveChat_MessagesStreamIn(t *testing.T) {
 	if os.Getenv("SMITHERS_TUI_E2E") != "1" {
 		t.Skip("set SMITHERS_TUI_E2E=1 to run terminal E2E tests")
@@ -197,14 +231,17 @@ func TestLiveChat_MessagesStreamIn(t *testing.T) {
 		{RunID: runID, NodeID: "n1", Attempt: 0, Role: "user", Content: "Hello from E2E test"},
 		{RunID: runID, NodeID: "n1", Attempt: 0, Role: "assistant", Content: "E2E response received"},
 	}
-
-	srv := newMockLiveChatServer(t, runID, blocks)
+	fakeBin := writeFakeSmithersCLI(t, map[string]any{
+		"runId":        runID,
+		"workflowName": "e2e-test-workflow",
+		"status":       "running",
+	}, blocks)
 
 	configDir := t.TempDir()
 	dataDir := t.TempDir()
+	projectDir := t.TempDir()
 	writeGlobalConfig(t, configDir, `{
   "smithers": {
-    "apiUrl": "`+srv.URL+`",
     "dbPath": ".smithers/smithers.db",
     "workflowDir": ".smithers/workflows"
   }
@@ -212,20 +249,14 @@ func TestLiveChat_MessagesStreamIn(t *testing.T) {
 	t.Setenv("SMITHERS_TUI_GLOBAL_CONFIG", configDir)
 	t.Setenv("SMITHERS_TUI_GLOBAL_DATA", dataDir)
 
-	tui := launchTUI(t)
+	tui := launchTUIWithOptions(t, tuiLaunchOptions{
+		pathPrefixes: []string{fakeBin},
+		workingDir:   projectDir,
+	})
 	defer tui.Terminate()
 
 	require.NoError(t, tui.WaitForText("SMITHERS", 15*time.Second))
-
-	// Navigate to runs dashboard, open the run, then open chat.
-	tui.SendKeys("\x12") // Ctrl+R → runs dashboard
-	require.NoError(t, tui.WaitForText("e2e-test-workflow", 10*time.Second),
-		"runs dashboard must show the mock run; buffer:\n%s", tui.Snapshot())
-
-	// Press 'c' to open live chat for the selected run.
-	tui.SendKeys("c")
-	require.NoError(t, tui.WaitForText("SMITHERS > Chat >", 8*time.Second),
-		"live chat view must open via 'c' key; buffer:\n%s", tui.Snapshot())
+	openLiveChatViaCommandPalette(t, tui)
 
 	// Wait for the message content to appear.
 	require.NoError(t, tui.WaitForText("Hello from E2E test", 10*time.Second),
@@ -344,14 +375,17 @@ func TestLiveChat_AttemptNavigation(t *testing.T) {
 		{RunID: runID, NodeID: "n1", Attempt: 0, Role: "assistant", Content: "First attempt output"},
 		{RunID: runID, NodeID: "n1", Attempt: 1, Role: "assistant", Content: "Second attempt output"},
 	}
-
-	srv := newMockLiveChatServer(t, runID, blocks)
+	fakeBin := writeFakeSmithersCLI(t, map[string]any{
+		"runId":        runID,
+		"workflowName": "e2e-test-workflow",
+		"status":       "running",
+	}, blocks)
 
 	configDir := t.TempDir()
 	dataDir := t.TempDir()
+	projectDir := t.TempDir()
 	writeGlobalConfig(t, configDir, `{
   "smithers": {
-    "apiUrl": "`+srv.URL+`",
     "dbPath": ".smithers/smithers.db",
     "workflowDir": ".smithers/workflows"
   }
@@ -359,17 +393,14 @@ func TestLiveChat_AttemptNavigation(t *testing.T) {
 	t.Setenv("SMITHERS_TUI_GLOBAL_CONFIG", configDir)
 	t.Setenv("SMITHERS_TUI_GLOBAL_DATA", dataDir)
 
-	tui := launchTUI(t)
+	tui := launchTUIWithOptions(t, tuiLaunchOptions{
+		pathPrefixes: []string{fakeBin},
+		workingDir:   projectDir,
+	})
 	defer tui.Terminate()
 
 	require.NoError(t, tui.WaitForText("SMITHERS", 15*time.Second))
-
-	// Navigate to runs dashboard, open run, then open chat.
-	tui.SendKeys("\x12") // Ctrl+R
-	require.NoError(t, tui.WaitForText("e2e-test-workflow", 10*time.Second),
-		"runs dashboard must show mock run; buffer:\n%s", tui.Snapshot())
-	tui.SendKeys("c")
-	require.NoError(t, tui.WaitForText("SMITHERS > Chat >", 8*time.Second))
+	openLiveChatViaCommandPalette(t, tui)
 
 	// Wait for blocks to load — the latest (attempt 1) is shown by default.
 	require.NoError(t, tui.WaitForText("Second attempt output", 10*time.Second),

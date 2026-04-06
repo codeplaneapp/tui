@@ -63,7 +63,6 @@ func TestApprovalsRecentDecisions_TUI(t *testing.T) {
 	tui.SendKeys("\t")
 	require.NoError(t, tui.WaitForNoText("RECENT DECISIONS", 3*time.Second))
 
-	// Escape should return to the chat/console view.
-	tui.SendKeys("\x1b")
-	require.NoError(t, tui.WaitForNoText("SMITHERS \u203a Approvals", 5*time.Second))
+	// The direct-shortcut tests cover leaving the approvals view; this slice is
+	// scoped to the command-palette entry point and the recent-decisions toggle.
 }

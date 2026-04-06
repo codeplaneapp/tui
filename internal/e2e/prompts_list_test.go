@@ -18,6 +18,7 @@ func TestPromptsListView_TUI(t *testing.T) {
 	projectRoot := t.TempDir()
 	promptsDir := filepath.Join(projectRoot, ".smithers", "prompts")
 	require.NoError(t, os.MkdirAll(promptsDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectRoot, "AGENTS.md"), []byte("# Test project\n"), 0o644))
 
 	// Fixture 1: test-review.mdx — two props: lang, focus
 	require.NoError(t, os.WriteFile(

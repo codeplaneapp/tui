@@ -51,12 +51,13 @@ func TestCoderAgentFallback_TUI(t *testing.T) {
 
 	configDir := t.TempDir()
 	dataDir := t.TempDir()
+	projectDir := t.TempDir()
 	writeGlobalConfig(t, configDir, `{}`)
 
 	t.Setenv("SMITHERS_TUI_GLOBAL_CONFIG", configDir)
 	t.Setenv("SMITHERS_TUI_GLOBAL_DATA", dataDir)
 
-	tui := launchTUI(t)
+	tui := launchTUIWithOptions(t, tuiLaunchOptions{workingDir: projectDir})
 	defer tui.Terminate()
 
 	require.NoError(t, tui.WaitForText("SMITHERS", 15*time.Second))
