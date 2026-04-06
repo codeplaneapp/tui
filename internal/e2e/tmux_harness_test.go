@@ -1,0 +1,351 @@
+package e2e_test
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"testing"
+	"time"
+)
+
+const (
+	tmuxWaitTimeout = 20 * time.Second
+	tmuxPoll        = 200 * time.Millisecond
+	defaultCols     = 120
+	defaultRows     = 40
+)
+
+// ansiStripPattern strips ANSI escape sequences from captured pane output.
+var ansiStripPattern = regexp.MustCompile(`\x1B(?:\[[0-9;]*[a-zA-Z]|\].*?\x07|\(B)`)
+
+// TmuxSession wraps a real tmux session running the TUI binary with a proper PTY.
+type TmuxSession struct {
+	t          *testing.T
+	sessionID  string
+	binaryPath string
+	configDir  string
+	dataDir    string
+	cols       int
+	rows       int
+}
+
+// TmuxOpt configures a TmuxSession.
+type TmuxOpt func(*TmuxSession)
+
+// WithSize sets the tmux pane dimensions.
+func WithSize(cols, rows int) TmuxOpt {
+	return func(s *TmuxSession) {
+		s.cols = cols
+		s.rows = rows
+	}
+}
+
+// WithSmithersConfig writes a smithers config that points at the given API URL.
+// If apiURL is empty, a minimal offline config is written.
+func WithSmithersConfig(apiURL string) TmuxOpt {
+	return func(s *TmuxSession) {
+		writeSmithersConfig(s.t, s.configDir, apiURL, ".smithers/smithers.db")
+	}
+}
+
+// WithSmithersDBPath writes an offline smithers config that points at the
+// given SQLite database path.
+func WithSmithersDBPath(dbPath string) TmuxOpt {
+	return func(s *TmuxSession) {
+		writeSmithersConfig(s.t, s.configDir, "", dbPath)
+	}
+}
+
+// buildBinary compiles the TUI binary once per test run and returns its path.
+// The binary is placed in a temp directory and cleaned up automatically.
+func buildBinary(t *testing.T) string {
+	t.Helper()
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatalf("resolve repo root: %v", err)
+	}
+	binDir := t.TempDir()
+	binPath := filepath.Join(binDir, "crush-e2e")
+	cmd := exec.Command("go", "build", "-o", binPath, ".")
+	cmd.Dir = repoRoot
+	cmd.Env = os.Environ()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("build binary: %v\n%s", err, out)
+	}
+	return binPath
+}
+
+// NewTmuxSession creates a tmux session running the TUI binary.
+// The session, temp dirs, and process are cleaned up via t.Cleanup.
+func NewTmuxSession(t *testing.T, binary string, opts ...TmuxOpt) *TmuxSession {
+	t.Helper()
+
+	sess := &TmuxSession{
+		t:          t,
+		sessionID:  fmt.Sprintf("e2e-%s-%d", t.Name(), time.Now().UnixNano()),
+		binaryPath: binary,
+		configDir:  t.TempDir(),
+		dataDir:    t.TempDir(),
+		cols:       defaultCols,
+		rows:       defaultRows,
+	}
+
+	for _, o := range opts {
+		o(sess)
+	}
+
+	// Default smithers config if none was set by opts.
+	cfgPath := filepath.Join(sess.configDir, "smithers-tui.json")
+	if _, err := os.Stat(cfgPath); os.IsNotExist(err) {
+		WithSmithersConfig("")(sess)
+	}
+
+	// Create the tmux session with the TUI binary.
+	env := fmt.Sprintf(
+		"CRUSH_GLOBAL_CONFIG=%s CRUSH_GLOBAL_DATA=%s TERM=xterm-256color COLORTERM=truecolor LANG=en_US.UTF-8",
+		sess.configDir, sess.dataDir,
+	)
+	shellCmd := fmt.Sprintf("%s %s", env, sess.binaryPath)
+
+	args := []string{
+		"new-session",
+		"-d",                 // detached
+		"-s", sess.sessionID, // session name
+		"-x", fmt.Sprintf("%d", sess.cols),
+		"-y", fmt.Sprintf("%d", sess.rows),
+		shellCmd,
+	}
+
+	out, err := exec.Command("tmux", args...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("tmux new-session: %v\n%s", err, out)
+	}
+
+	// Set escape-time to 0 so bare Escape keys are forwarded immediately
+	// to BubbleTea v2 (which uses Kitty keyboard protocol).
+	_ = exec.Command("tmux", "set-option", "-t", sess.sessionID, "escape-time", "0").Run()
+
+	t.Cleanup(func() {
+		// Kill the tmux session and all processes in it.
+		_ = exec.Command("tmux", "kill-session", "-t", sess.sessionID).Run()
+	})
+
+	return sess
+}
+
+func writeSmithersConfig(t *testing.T, configDir, apiURL, dbPath string) {
+	t.Helper()
+
+	cfg := `{
+  "smithers": {
+    "dbPath": ` + fmt.Sprintf("%q", dbPath) + `,
+    "workflowDir": ".smithers/workflows"`
+	if apiURL != "" {
+		cfg += fmt.Sprintf(",\n    \"apiUrl\": %q", apiURL)
+	}
+	cfg += "\n  }\n}"
+
+	path := filepath.Join(configDir, "smithers-tui.json")
+	if err := os.WriteFile(path, []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write smithers config: %v", err)
+	}
+}
+
+// SendKeys sends key sequences to the tmux pane.
+// Uses tmux send-keys which properly handles control characters.
+// For Escape keys, a small delay is added to ensure BubbleTea v2's
+// Kitty keyboard input parser recognizes the bare escape byte.
+func (s *TmuxSession) SendKeys(keys ...string) {
+	s.t.Helper()
+	args := append([]string{"send-keys", "-t", s.sessionID}, keys...)
+	out, err := exec.Command("tmux", args...).CombinedOutput()
+	if err != nil {
+		s.t.Fatalf("tmux send-keys %v: %v\n%s", keys, err, out)
+	}
+	// BubbleTea v2 uses Kitty keyboard protocol. When it receives a bare
+	// \x1b, it waits briefly to see if more bytes follow (escape sequence).
+	// Adding a short sleep after Escape gives the parser time to timeout
+	// and emit the key event.
+	for _, k := range keys {
+		if k == "Escape" {
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+}
+
+// SendText types literal text into the tmux pane (no special key interpretation).
+func (s *TmuxSession) SendText(text string) {
+	s.t.Helper()
+	args := []string{"send-keys", "-t", s.sessionID, "-l", text}
+	out, err := exec.Command("tmux", args...).CombinedOutput()
+	if err != nil {
+		s.t.Fatalf("tmux send-keys -l: %v\n%s", err, out)
+	}
+}
+
+// CapturePane returns the current visible content of the tmux pane
+// with ANSI escapes stripped.
+func (s *TmuxSession) CapturePane() string {
+	s.t.Helper()
+	out, err := exec.Command(
+		"tmux", "capture-pane",
+		"-t", s.sessionID,
+		"-p", // print to stdout
+		"-e", // include escape sequences (we strip them)
+	).Output()
+	if err != nil {
+		s.t.Fatalf("tmux capture-pane: %v", err)
+	}
+	return stripANSI(string(out))
+}
+
+// WaitForText polls the tmux pane until the given text appears or timeout.
+func (s *TmuxSession) WaitForText(text string, timeout ...time.Duration) {
+	s.t.Helper()
+	to := tmuxWaitTimeout
+	if len(timeout) > 0 {
+		to = timeout[0]
+	}
+	deadline := time.Now().Add(to)
+	var lastCapture string
+	for time.Now().Before(deadline) {
+		lastCapture = s.CapturePane()
+		if containsNormalized(lastCapture, text) {
+			return
+		}
+		time.Sleep(tmuxPoll)
+	}
+	s.t.Fatalf("WaitForText: %q not found within %s\nPane content:\n%s", text, to, lastCapture)
+}
+
+// WaitForNoText polls until the given text is NOT present or timeout.
+func (s *TmuxSession) WaitForNoText(text string, timeout ...time.Duration) {
+	s.t.Helper()
+	to := tmuxWaitTimeout
+	if len(timeout) > 0 {
+		to = timeout[0]
+	}
+	deadline := time.Now().Add(to)
+	var lastCapture string
+	for time.Now().Before(deadline) {
+		lastCapture = s.CapturePane()
+		if !containsNormalized(lastCapture, text) {
+			return
+		}
+		time.Sleep(tmuxPoll)
+	}
+	s.t.Fatalf("WaitForNoText: %q still present after %s\nPane content:\n%s", text, to, lastCapture)
+}
+
+// WaitForAnyText polls until any of the given texts appear or timeout.
+func (s *TmuxSession) WaitForAnyText(texts []string, timeout ...time.Duration) string {
+	s.t.Helper()
+	to := tmuxWaitTimeout
+	if len(timeout) > 0 {
+		to = timeout[0]
+	}
+	deadline := time.Now().Add(to)
+	var lastCapture string
+	for time.Now().Before(deadline) {
+		lastCapture = s.CapturePane()
+		for _, text := range texts {
+			if containsNormalized(lastCapture, text) {
+				return text
+			}
+		}
+		time.Sleep(tmuxPoll)
+	}
+	s.t.Fatalf("WaitForAnyText: none of %v found within %s\nPane content:\n%s", texts, to, lastCapture)
+	return ""
+}
+
+// AssertVisible asserts that the given text is currently visible in the pane.
+func (s *TmuxSession) AssertVisible(text string) {
+	s.t.Helper()
+	capture := s.CapturePane()
+	if !containsNormalized(capture, text) {
+		s.t.Errorf("AssertVisible: %q not found\nPane content:\n%s", text, capture)
+	}
+}
+
+// AssertNotVisible asserts that the given text is NOT currently visible in the pane.
+func (s *TmuxSession) AssertNotVisible(text string) {
+	s.t.Helper()
+	capture := s.CapturePane()
+	if containsNormalized(capture, text) {
+		s.t.Errorf("AssertNotVisible: %q was found\nPane content:\n%s", text, capture)
+	}
+}
+
+// Snapshot returns a snapshot of the current pane for debugging.
+func (s *TmuxSession) Snapshot() string {
+	return s.CapturePane()
+}
+
+func openChatTargetPickerViaDashboard(t *testing.T, s *TmuxSession) {
+	t.Helper()
+	s.SendKeys("Enter")
+	s.WaitForAnyText([]string{
+		"Choose how you want to chat in this workspace.",
+		"Start Chat",
+	}, 10*time.Second)
+}
+
+func openSmithersChatViaDashboard(t *testing.T, s *TmuxSession) {
+	t.Helper()
+	openChatTargetPickerViaDashboard(t, s)
+	s.SendKeys("Enter")
+	s.WaitForAnyText([]string{
+		"MCPs",
+		"Ready for instructions",
+		"Ready...",
+		"New Session",
+	}, 15*time.Second)
+}
+
+// stripANSI removes ANSI escape sequences from text.
+func stripANSI(s string) string {
+	return ansiStripPattern.ReplaceAllString(s, "")
+}
+
+// containsNormalized checks if haystack contains needle after normalizing
+// whitespace and box-drawing characters.
+func containsNormalized(haystack, needle string) bool {
+	if strings.Contains(haystack, needle) {
+		return true
+	}
+	// Also try with normalized box-drawing chars and collapsed whitespace.
+	normH := normalizeForMatch(haystack)
+	normN := normalizeForMatch(needle)
+	return strings.Contains(normH, normN)
+}
+
+// normalizeForMatch replaces box-drawing characters with spaces and
+// collapses whitespace for fuzzy text matching.
+func normalizeForMatch(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r >= 0x2500 && r <= 0x257F {
+			b.WriteRune(' ')
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return strings.Join(strings.Fields(b.String()), " ")
+}
+
+// skipUnlessTmuxE2E skips the test unless SMITHERS_E2E=1 is set.
+func skipUnlessTmuxE2E(t *testing.T) {
+	t.Helper()
+	if os.Getenv("SMITHERS_E2E") != "1" {
+		t.Skip("set SMITHERS_E2E=1 to run tmux E2E tests")
+	}
+	// Verify tmux is available.
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not found in PATH")
+	}
+}

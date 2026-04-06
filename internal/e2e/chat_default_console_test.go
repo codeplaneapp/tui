@@ -2,70 +2,45 @@ package e2e_test
 
 import (
 	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
-// TestChatDefaultConsole verifies that chat is the default view on startup
-// when Smithers config is present.
+// TestChatDefaultConsole verifies that the Smithers dashboard is the default
+// startup view when Smithers config is present.
 func TestChatDefaultConsole(t *testing.T) {
-	if os.Getenv("CRUSH_TUI_E2E") == "" {
-		t.Skip("Skipping E2E test: set CRUSH_TUI_E2E=1 to run")
+	if os.Getenv("CRUSH_TUI_E2E") != "1" {
+		t.Skip("set CRUSH_TUI_E2E=1 to run terminal E2E tests")
 	}
 
-	// Create a temporary directory for the test config and data
-	tmpDir := t.TempDir()
-	dataDir := filepath.Join(tmpDir, "data")
-	if err := os.Mkdir(dataDir, 0755); err != nil {
-		t.Fatalf("create data dir: %v", err)
-	}
-
-	// Create a minimal crush.json with Smithers config
-	configPath := filepath.Join(tmpDir, "crush.json")
-	configContent := `{
-  "defaultModel": "claude-opus-4-6",
+	configDir := t.TempDir()
+	dataDir := t.TempDir()
+	writeGlobalConfig(t, configDir, `{
   "smithers": {
     "dbPath": ".smithers/smithers.db",
-    "apiUrl": "http://localhost:7331",
     "workflowDir": ".smithers/workflows"
   }
-}`
-	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
+}`)
+	t.Setenv("SMITHERS_TUI_GLOBAL_CONFIG", configDir)
+	t.Setenv("SMITHERS_TUI_GLOBAL_DATA", dataDir)
 
-	// Launch TUI with test config
-	tui := launchTUI(t,
-		"--config", configPath,
-		"--data-dir", dataDir,
-		"--skip-version-check",
-	)
+	tui := launchTUI(t)
 	defer tui.Terminate()
 
-	// Wait for initial render and verify chat prompt is visible
-	if err := tui.WaitForText("Ready", 5*time.Second); err != nil {
-		t.Logf("Initial render snapshot:\n%s", tui.Snapshot())
-		t.Errorf("expected chat prompt 'Ready' at startup: %v", err)
-	}
-
-	text := tui.bufferText()
-
-	// Verify no landing view elements are present (Smithers mode should skip landing)
-	// Landing view shows model information and LSP/MCP status in columns
-	if strings.Contains(text, "LSP") && strings.Contains(text, "MCP") {
-		t.Logf("Unexpected landing view detected:\n%s", text)
-		// This is informational; landing might appear during init, but should transition to chat
-	}
+	require.NoError(t, tui.WaitForAnyText([]string{"CRUSH", "SMITHERS"}, 15*time.Second))
+	require.NoError(t, tui.WaitForText("Start Chat", 10*time.Second))
+	require.NoError(t, tui.WaitForText("At a Glance", 10*time.Second))
+	require.NoError(t, tui.WaitForText("Run Dashboard", 10*time.Second))
 }
 
 // TestEscReturnsToChat verifies that Esc from a pushed view returns to chat.
 // This test is minimal since it requires mock Smithers agents/data.
 // A full test would use VHS to record terminal interactions.
 func TestEscReturnsToChat(t *testing.T) {
-	if os.Getenv("CRUSH_TUI_E2E") == "" {
-		t.Skip("Skipping E2E test: set CRUSH_TUI_E2E=1 to run")
+	if os.Getenv("CRUSH_TUI_E2E") != "1" {
+		t.Skip("set CRUSH_TUI_E2E=1 to run terminal E2E tests")
 	}
 
 	// This test is a placeholder that would require:

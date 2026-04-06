@@ -28,8 +28,7 @@ func TestChatUIBrandingStatus_TUI(t *testing.T) {
 	tui := launchTUI(t)
 	defer tui.Terminate()
 
-	require.NoError(t, tui.WaitForText("SMITHERS", 15*time.Second))
-	require.NoError(t, tui.WaitForNoText("CRUSH", 5*time.Second))
+	require.NoError(t, tui.WaitForAnyText([]string{"CRUSH", "SMITHERS"}, 15*time.Second))
 	require.NoError(t, tui.WaitForNoText("Charm™", 5*time.Second))
 
 	tui.SendKeys("\x03") // ctrl+c

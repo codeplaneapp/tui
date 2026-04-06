@@ -35,7 +35,11 @@ func TestSmithersDomainSystemPrompt_TUI(t *testing.T) {
 	tui := launchTUI(t)
 	defer tui.Terminate()
 
-	require.NoError(t, tui.WaitForText("SMITHERS", 15*time.Second))
+	require.NoError(t, tui.WaitForAnyText([]string{"CRUSH", "SMITHERS"}, 15*time.Second))
+	require.NoError(t, tui.WaitForText("Run Dashboard", 10*time.Second))
+	require.NoError(t, tui.WaitForText("Workflows", 10*time.Second))
+	require.NoError(t, tui.WaitForNoText("Init Smithers", 5*time.Second))
+	require.NoError(t, tui.WaitForNoText("Init Crush", 5*time.Second))
 }
 
 func TestSmithersDomainSystemPrompt_CoderFallback_TUI(t *testing.T) {
@@ -50,8 +54,12 @@ func TestSmithersDomainSystemPrompt_CoderFallback_TUI(t *testing.T) {
 	t.Setenv("SMITHERS_TUI_GLOBAL_CONFIG", configDir)
 	t.Setenv("SMITHERS_TUI_GLOBAL_DATA", dataDir)
 
-	tui := launchTUI(t)
+	tui := launchTUIWithOptions(t, tuiLaunchOptions{
+		workingDir: t.TempDir(),
+	})
 	defer tui.Terminate()
 
-	require.NoError(t, tui.WaitForText("SMITHERS", 15*time.Second))
+	require.NoError(t, tui.WaitForAnyText([]string{"CRUSH", "SMITHERS"}, 15*time.Second))
+	require.NoError(t, tui.WaitForAnyText([]string{"Init Crush", "Init Smithers"}, 10*time.Second))
+	require.NoError(t, tui.WaitForNoText("Run Dashboard", 5*time.Second))
 }
