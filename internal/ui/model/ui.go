@@ -2327,7 +2327,9 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 	// Only active when the editor is not focused to avoid capturing text input.
 	// TODO: inline approval — wire smithersClient.ApproveGate(approvalID) directly
 	// from the toast key handler for < 3-keystroke approval (notifications-approval-inline).
-	if key.Matches(msg, m.keyMap.ViewApprovalsShort) && m.focus != uiFocusEditor {
+	if key.Matches(msg, m.keyMap.ViewApprovalsShort) &&
+		m.focus != uiFocusEditor &&
+		(m.state == uiChat || m.state == uiLanding || m.state == uiSmithersDashboard) {
 		cmds = append(cmds, m.navigateToView("approvals"))
 		return tea.Batch(cmds...)
 	}
@@ -2372,6 +2374,9 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 		cmds = append(cmds, m.updateInitializeView(msg)...)
 		return tea.Batch(cmds...)
 	case uiSmithersDashboard:
+		if handleGlobalKeys(msg) {
+			return tea.Batch(cmds...)
+		}
 		// Forward all keys to the dashboard view.
 		if m.dashboard != nil {
 			updated, cmd := m.dashboard.Update(msg)
@@ -2971,6 +2976,10 @@ func (m *UI) ShortHelp() []key.Binding {
 	case uiSmithersView:
 		if current := m.viewRouter.Current(); current != nil {
 			binds = append(binds, current.ShortHelp()...)
+		}
+	case uiSmithersDashboard:
+		if m.dashboard != nil {
+			binds = append(binds, m.dashboard.ShortHelp()...)
 		}
 	default:
 		// TODO: other states
