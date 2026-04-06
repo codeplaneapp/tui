@@ -50,7 +50,7 @@ tmux kill-session -t "$SESSION" 2>/dev/null
 - **`node-pty`**: Fails with "posix_spawnp failed" in sandboxed environments
 - **`pyte` (Python terminal emulator)**: Crashes on modern escape sequences bubbletea v2 emits
 
-### Existing test frameworks
+### Current test harness
 
-- `@microsoft/tui-test` (in `tests/`) — uses node-pty + xterm headless. Works in real terminals and CI but NOT from Claude Code's sandbox
-- Go e2e tests (in `internal/e2e/`) — use pipe-based helpers that only work when the Go test process itself has a terminal
+- Go e2e tests live in `internal/e2e/` and launch the compiled TUI inside a detached `tmux` session.
+- Use `CRUSH_TUI_E2E=1 SMITHERS_TUI_E2E=1 go test ./internal/e2e -run '<regex>' -v` when you want deterministic terminal E2E coverage from the CLI.
