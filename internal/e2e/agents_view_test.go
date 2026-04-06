@@ -26,12 +26,12 @@ func TestAgentsView_Navigation(t *testing.T) {
 	// Wait for the TUI to start.
 	require.NoError(t, tui.WaitForText("SMITHERS", 15*time.Second))
 
-	// Open the command palette with Ctrl+K (or /).
-	tui.SendKeys("/")
-	require.NoError(t, tui.WaitForText("agents", 5*time.Second))
+	openCommandsPalette(t, tui)
+	tui.SendKeys("agents")
+	require.NoError(t, tui.WaitForText("Agents", 5*time.Second))
 
 	// Navigate to the agents view.
-	tui.SendKeys("agents\r")
+	tui.SendKeys("\r")
 	require.NoError(t, tui.WaitForText("SMITHERS \u203a Agents", 5*time.Second))
 
 	// Agents should be grouped. At least one section header should be visible.

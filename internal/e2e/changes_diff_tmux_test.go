@@ -111,7 +111,7 @@ func buildTUIBinary(t *testing.T) string {
 	t.Helper()
 
 	binary := filepath.Join(t.TempDir(), "smithers-tui")
-	cmd := exec.Command("go", "build", "-o", binary, ".")
+	cmd := exec.Command("go", "build", "-o", binary, "./main.go")
 	cmd.Dir = repoRoot(t)
 	require.NoError(t, cmd.Run())
 	return binary

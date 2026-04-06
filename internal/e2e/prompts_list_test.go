@@ -55,8 +55,7 @@ func TestPromptsListView_TUI(t *testing.T) {
 	require.NoError(t, tui.WaitForText("SMITHERS", 15*time.Second))
 
 	// 2. Open the command palette and filter to "Prompt Templates".
-	tui.SendKeys("/")
-	require.NoError(t, tui.WaitForText("Commands", 5*time.Second))
+	openCommandsPalette(t, tui)
 	tui.SendKeys("Prompt")
 	time.Sleep(300 * time.Millisecond)
 	tui.SendKeys("\r")
