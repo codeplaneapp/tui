@@ -28,12 +28,12 @@ func TestApprovalsRecentDecisions_TUI(t *testing.T) {
 	// Wait for the TUI to start.
 	require.NoError(t, tui.WaitForText("SMITHERS", 15*time.Second))
 
-	// Open the command palette.
-	tui.SendKeys("/")
-	require.NoError(t, tui.WaitForText("approvals", 5*time.Second))
+	openCommandsPalette(t, tui)
+	tui.SendKeys("approvals")
+	require.NoError(t, tui.WaitForText("Approvals", 5*time.Second))
 
 	// Navigate to the approvals view.
-	tui.SendKeys("approvals\r")
+	tui.SendKeys("\r")
 	require.NoError(t, tui.WaitForText("SMITHERS \u203a Approvals", 5*time.Second))
 
 	// The pending queue is displayed first.  The mode hint should mention [Tab] History.
@@ -46,8 +46,8 @@ func TestApprovalsRecentDecisions_TUI(t *testing.T) {
 	tui.SendKeys("\t")
 	require.NoError(t, tui.WaitForText("RECENT DECISIONS", 5*time.Second))
 
-	// The mode hint should now mention Queue.
-	require.NoError(t, tui.WaitForText("Queue", 3*time.Second))
+	// The mode hint should now mention the pending queue.
+	require.NoError(t, tui.WaitForText("Pending", 3*time.Second))
 
 	// Navigate down/up in the decisions list (should not crash even if empty).
 	tui.SendKeys("j")

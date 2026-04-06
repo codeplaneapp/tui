@@ -31,7 +31,7 @@ func TestApprovalsApproveAction_RemovesItemFromQueue(t *testing.T) {
 	}
 
 	var (
-		mu       sync.Mutex
+		mu        sync.Mutex
 		approvals = []mockApproval{
 			{ID: "appr-1", RunID: "run-abc", NodeID: "deploy", Gate: "Deploy to staging", Status: "pending"},
 			{ID: "appr-2", RunID: "run-xyz", NodeID: "notify", Gate: "Send notification", Status: "pending"},
@@ -145,8 +145,8 @@ func TestApprovalsDenyAction_RemovesItemFromQueue(t *testing.T) {
 	}
 
 	var (
-		mu       sync.Mutex
-		pending  = true
+		mu      sync.Mutex
+		pending = true
 	)
 
 	mux := http.NewServeMux()
@@ -233,12 +233,12 @@ func TestApprovalsTabToggle_QueueToRecentAndBack(t *testing.T) {
 
 	now := time.Now().UnixMilli()
 	recentDecision := map[string]interface{}{
-		"id":         "dec-1",
-		"runId":      "run-rec",
-		"nodeId":     "build",
-		"gate":       "Build artifact",
-		"decision":   "approved",
-		"decidedAt":  now - 60000,
+		"id":          "dec-1",
+		"runId":       "run-rec",
+		"nodeId":      "build",
+		"gate":        "Build artifact",
+		"decision":    "approved",
+		"decidedAt":   now - 60000,
 		"requestedAt": now - 120000,
 	}
 
@@ -293,9 +293,9 @@ func TestApprovalsTabToggle_QueueToRecentAndBack(t *testing.T) {
 	require.NoError(t, tui.WaitForText("RECENT DECISIONS", 5*time.Second),
 		"Tab must switch to recent decisions; buffer:\n%s", tui.Snapshot())
 
-	// The "Queue" mode hint should be visible to allow switching back.
-	require.NoError(t, tui.WaitForText("Queue", 3*time.Second),
-		"mode hint should mention Queue; buffer:\n%s", tui.Snapshot())
+	// The mode hint should advertise the pending queue as the way back.
+	require.NoError(t, tui.WaitForText("Pending", 3*time.Second),
+		"mode hint should mention Pending; buffer:\n%s", tui.Snapshot())
 
 	// Navigate in recent decisions (should not crash even if list is short).
 	tui.SendKeys("j")

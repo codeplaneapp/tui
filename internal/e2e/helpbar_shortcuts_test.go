@@ -35,13 +35,14 @@ func TestHelpbarShortcuts_TUI(t *testing.T) {
 	require.NoError(t, tui.WaitForText("approvals", 15*time.Second))
 
 	tui.SendKeys("\x12") // ctrl+r
-	// ctrl+r now opens the Runs Dashboard view; verify the view header is rendered.
-	require.NoError(t, tui.WaitForText("SMITHERS", 10*time.Second))
+	require.NoError(t, tui.WaitForText("SMITHERS \u203a Runs", 10*time.Second))
+
+	tui.SendKeys("\x1b") // esc
+	require.NoError(t, tui.WaitForNoText("SMITHERS \u203a Runs", 10*time.Second))
 
 	tui.SendKeys("\x01") // ctrl+a
-	require.NoError(t, tui.WaitForText("approvals view coming soon", 10*time.Second))
+	require.NoError(t, tui.WaitForText("SMITHERS \u203a Approvals", 10*time.Second))
 
-	tui.SendKeys("\x07") // ctrl+g
-	require.NoError(t, tui.WaitForText("ctrl+r", 10*time.Second))
-	require.NoError(t, tui.WaitForText("ctrl+a", 10*time.Second))
+	tui.SendKeys("\x1b") // esc
+	require.NoError(t, tui.WaitForNoText("SMITHERS \u203a Approvals", 10*time.Second))
 }

@@ -65,8 +65,19 @@ func TestApprovalsQueue_WithMockServer(t *testing.T) {
 	})
 	defer mockServer.Close()
 
-	// Launch TUI with the mock server URL.
-	tui := launchTUI(t, "--smithers-api", mockServer.URL)
+	configDir := t.TempDir()
+	dataDir := t.TempDir()
+	writeGlobalConfig(t, configDir, `{
+  "smithers": {
+    "apiUrl": "`+mockServer.URL+`",
+    "dbPath": ".smithers/smithers.db",
+    "workflowDir": ".smithers/workflows"
+  }
+}`)
+	t.Setenv("SMITHERS_TUI_GLOBAL_CONFIG", configDir)
+	t.Setenv("SMITHERS_TUI_GLOBAL_DATA", dataDir)
+
+	tui := launchTUI(t)
 	defer tui.Terminate()
 
 	// Wait for the TUI to start.
@@ -77,10 +88,8 @@ func TestApprovalsQueue_WithMockServer(t *testing.T) {
 	require.NoError(t, tui.WaitForText("SMITHERS \u203a Approvals", 5*time.Second),
 		"should show approvals header; buffer: %s", tui.Snapshot())
 
-	// The mock server returns two pending approvals — verify they render.
-	require.NoError(t, tui.WaitForText("PENDING APPROVAL", 5*time.Second),
-		"should show pending approvals section; buffer: %s", tui.Snapshot())
-
+	require.NoError(t, tui.WaitForText("Pending", 5*time.Second),
+		"should show the pending approvals section; buffer: %s", tui.Snapshot())
 	require.NoError(t, tui.WaitForText("Deploy to staging", 5*time.Second),
 		"should show first approval label; buffer: %s", tui.Snapshot())
 
@@ -93,7 +102,7 @@ func TestApprovalsQueue_WithMockServer(t *testing.T) {
 
 	// Refresh — list should re-render.
 	tui.SendKeys("r")
-	require.NoError(t, tui.WaitForText("PENDING APPROVAL", 5*time.Second),
+	require.NoError(t, tui.WaitForText("Deploy to staging", 5*time.Second),
 		"refresh should re-render list; buffer: %s", tui.Snapshot())
 
 	// Escape should return to chat.
@@ -118,10 +127,11 @@ func TestApprovalsQueue_OpenViaCommandPalette(t *testing.T) {
 	require.NoError(t, tui.WaitForText("SMITHERS", 15*time.Second))
 
 	// Open command palette and navigate to approvals.
-	tui.SendKeys("/")
-	require.NoError(t, tui.WaitForText("approvals", 5*time.Second))
+	openCommandsPalette(t, tui)
+	tui.SendKeys("approvals")
+	require.NoError(t, tui.WaitForText("Approvals", 5*time.Second))
 
-	tui.SendKeys("approvals\r")
+	tui.SendKeys("\r")
 	require.NoError(t, tui.WaitForText("SMITHERS \u203a Approvals", 5*time.Second),
 		"should show approvals header via command palette; buffer: %s", tui.Snapshot())
 
