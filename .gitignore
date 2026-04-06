@@ -43,9 +43,12 @@ Thumbs.db
 .env.local
 
 **/.crush/**
+**/.smithers-tui/**
 
 /crush
+/main
 /tmp/
+build_errors.txt
 
 manpages/
 completions/crush.*sh
@@ -58,3 +61,5 @@ tests/.tui-test/
 jjhub-tui
 /poc/jjhub-tui/jjhub-tui
 smithers.db*
+.smithers/tickets/
+.claude/scheduled_tasks.lock
