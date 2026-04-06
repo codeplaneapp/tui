@@ -12,6 +12,9 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/crush/internal/jjhub"
 	"github.com/charmbracelet/crush/internal/smithers"
+	"github.com/charmbracelet/crush/internal/ui/components"
+	"github.com/charmbracelet/crush/internal/ui/diffnav"
+	"github.com/charmbracelet/crush/internal/ui/handoff"
 )
 
 // DashboardTab identifies a tab on the Smithers homepage.
@@ -23,6 +26,7 @@ const (
 	DashTabWorkflows
 	DashTabSessions
 	DashTabLandings
+	DashTabChanges
 	DashTabIssues
 	DashTabWorkspaces
 )
@@ -39,6 +43,8 @@ func (t DashboardTab) String() string {
 		return "Sessions"
 	case DashTabLandings:
 		return "Landings"
+	case DashTabChanges:
+		return "Changes"
 	case DashTabIssues:
 		return "Issues"
 	case DashTabWorkspaces:
@@ -71,8 +77,8 @@ type DashboardView struct {
 	tabs         []DashboardTab // instance-level tab list (not the global)
 
 	// Smithers data
-	runs         []smithers.RunSummary
-	workflows    []smithers.Workflow
+	runs             []smithers.RunSummary
+	workflows        []smithers.Workflow
 	runsLoading      bool
 	wfLoading        bool
 	approvalsLoading bool
@@ -82,15 +88,18 @@ type DashboardView struct {
 	approvals        []smithers.Approval
 
 	// JJHub data
-	landings         []jjhub.Landing
-	issues           []jjhub.Issue
-	workspaces       []jjhub.Workspace
-	landingsLoading  bool
-	issuesLoading    bool
+	landings          []jjhub.Landing
+	changes           []jjhub.Change
+	issues            []jjhub.Issue
+	workspaces        []jjhub.Workspace
+	landingsLoading   bool
+	changesLoading    bool
+	issuesLoading     bool
 	workspacesLoading bool
-	landingsErr      error
-	issuesErr        error
-	workspacesErr    error
+	landingsErr       error
+	changesErr        error
+	issuesErr         error
+	workspacesErr     error
 
 	// repo name shown in header when jjhub is available
 	repoName string
@@ -134,6 +143,12 @@ type dashLandingsFetchedMsg struct {
 	err      error
 }
 
+// dashChangesFetchedMsg delivers change data from jjhub.
+type dashChangesFetchedMsg struct {
+	changes []jjhub.Change
+	err     error
+}
+
 // dashIssuesFetchedMsg delivers issue data from jjhub.
 type dashIssuesFetchedMsg struct {
 	issues []jjhub.Issue
@@ -170,6 +185,7 @@ func NewDashboardViewWithJJHub(client *smithers.Client, hasSmithers bool, jc *jj
 		wfLoading:         hasSmithers,
 		approvalsLoading:  hasSmithers,
 		landingsLoading:   hasJJHub,
+		changesLoading:    hasJJHub,
 		issuesLoading:     hasJJHub,
 		workspacesLoading: hasJJHub,
 	}
@@ -177,7 +193,7 @@ func NewDashboardViewWithJJHub(client *smithers.Client, hasSmithers bool, jc *jj
 	// Build the instance-level tab list.
 	baseTabs := []DashboardTab{DashTabOverview, DashTabRuns, DashTabWorkflows, DashTabSessions}
 	if hasJJHub {
-		baseTabs = append(baseTabs, DashTabLandings, DashTabIssues, DashTabWorkspaces)
+		baseTabs = append(baseTabs, DashTabLandings, DashTabChanges, DashTabIssues, DashTabWorkspaces)
 	}
 	d.tabs = baseTabs
 
@@ -205,6 +221,7 @@ func NewDashboardViewWithJJHub(client *smithers.Client, hasSmithers bool, jc *jj
 	if hasJJHub {
 		d.menuItems = append(d.menuItems,
 			menuItem{icon: "⬆", label: "Landings", desc: "Browse landing requests", action: func() tea.Msg { return DashboardNavigateMsg{View: "landings"} }},
+			menuItem{icon: "±", label: "Changes", desc: "Browse recent changes", action: func() tea.Msg { return DashboardNavigateMsg{View: "changes"} }},
 			menuItem{icon: "◉", label: "Issues", desc: "Browse issues", action: func() tea.Msg { return DashboardNavigateMsg{View: "issues"} }},
 			menuItem{icon: "▣", label: "Workspaces", desc: "Manage cloud workspaces", action: func() tea.Msg { return DashboardNavigateMsg{View: "workspaces"} }},
 		)
@@ -219,7 +236,7 @@ func (d *DashboardView) Init() tea.Cmd {
 		cmds = append(cmds, d.fetchRuns(), d.fetchWorkflows(), d.fetchApprovals())
 	}
 	if d.jjhubEnabled {
-		cmds = append(cmds, d.fetchLandings(), d.fetchIssues(), d.fetchWorkspaces(), d.fetchRepoName())
+		cmds = append(cmds, d.fetchLandings(), d.fetchChanges(), d.fetchIssues(), d.fetchWorkspaces(), d.fetchRepoName())
 	}
 	if len(cmds) == 0 {
 		return nil
@@ -258,6 +275,14 @@ func (d *DashboardView) Update(msg tea.Msg) (View, tea.Cmd) {
 		d.landingsErr = msg.err
 		if msg.err == nil {
 			d.landings = msg.landings
+		}
+		return d, nil
+
+	case dashChangesFetchedMsg:
+		d.changesLoading = false
+		d.changesErr = msg.err
+		if msg.err == nil {
+			d.changes = msg.changes
 		}
 		return d, nil
 
@@ -332,6 +357,11 @@ func (d *DashboardView) Update(msg tea.Msg) (View, tea.Cmd) {
 				d.activeTab = 6
 			}
 			return d, nil
+		case key.Matches(msg, key.NewBinding(key.WithKeys("8"))):
+			if len(d.tabs) > 7 {
+				d.activeTab = 7
+			}
+			return d, nil
 
 		// Navigation within tab
 		case key.Matches(msg, key.NewBinding(key.WithKeys("down", "j"))):
@@ -354,6 +384,12 @@ func (d *DashboardView) Update(msg tea.Msg) (View, tea.Cmd) {
 			if len(d.tabs) > 0 && d.tabs[d.activeTab] == DashTabWorkflows {
 				return d, func() tea.Msg { return DashboardNavigateMsg{View: "workflows"} }
 			}
+			if len(d.tabs) > 0 && d.tabs[d.activeTab] == DashTabLandings {
+				return d, func() tea.Msg { return DashboardNavigateMsg{View: "landings"} }
+			}
+			if len(d.tabs) > 0 && d.tabs[d.activeTab] == DashTabChanges {
+				return d, func() tea.Msg { return DashboardNavigateMsg{View: "changes"} }
+			}
 			return d, nil
 
 		// c for quick chat
@@ -365,6 +401,7 @@ func (d *DashboardView) Update(msg tea.Msg) (View, tea.Cmd) {
 			d.runsLoading = d.client != nil
 			d.wfLoading = d.client != nil
 			d.landingsLoading = d.jjhubEnabled
+			d.changesLoading = d.jjhubEnabled
 			d.issuesLoading = d.jjhubEnabled
 			d.workspacesLoading = d.jjhubEnabled
 			var cmds []tea.Cmd
@@ -372,14 +409,54 @@ func (d *DashboardView) Update(msg tea.Msg) (View, tea.Cmd) {
 				cmds = append(cmds, d.fetchRuns(), d.fetchWorkflows())
 			}
 			if d.jjhubEnabled {
-				cmds = append(cmds, d.fetchLandings(), d.fetchIssues(), d.fetchWorkspaces())
+				cmds = append(cmds, d.fetchLandings(), d.fetchChanges(), d.fetchIssues(), d.fetchWorkspaces())
 			}
 			return d, tea.Batch(cmds...)
+
+		// d for diff (landings and changes tabs)
+		case key.Matches(msg, key.NewBinding(key.WithKeys("d"))):
+			if len(d.tabs) > 0 {
+				switch d.tabs[d.activeTab] {
+				case DashTabLandings:
+					if d.landingsLoading {
+						return d, showDashToast("Still loading landings...")
+					}
+					if len(d.landings) > 0 && d.menuCursor < len(d.landings) {
+						l := d.landings[d.menuCursor]
+						return d, diffnav.LaunchDiffnavWithCommand(fmt.Sprintf("jjhub land diff %d", l.Number), "", "landing-diff")
+					}
+					return d, showDashToast("No landings to diff")
+				case DashTabChanges:
+					if d.changesLoading {
+						return d, showDashToast("Still loading changes...")
+					}
+					if len(d.changes) > 0 && d.menuCursor < len(d.changes) {
+						c := d.changes[d.menuCursor]
+						return d, diffnav.LaunchDiffnavWithCommand(buildChangeDiffCommand(c), "", "change-diff")
+					}
+					return d, showDashToast("No changes to diff")
+				}
+			}
+			return d, nil
+
+		// esc: if on a sub-tab, return to Overview; if already on Overview, pop to chat
+		case key.Matches(msg, key.NewBinding(key.WithKeys("esc"))):
+			if len(d.tabs) > 0 && d.tabs[d.activeTab] != DashTabOverview {
+				d.activeTab = 0
+				d.menuCursor = 0
+				return d, nil
+			}
+			return d, func() tea.Msg { return PopViewMsg{} }
 
 		// q to quit (dashboard is the root, so quit the app)
 		case key.Matches(msg, key.NewBinding(key.WithKeys("q", "ctrl+c"))):
 			return d, tea.Quit
 		}
+
+	case handoff.HandoffMsg:
+		// TUI is resumed automatically by tea.ExecProcess.
+		// For now we don't need to do anything with the exit code.
+		return d, nil
 	}
 	return d, nil
 }
@@ -412,6 +489,15 @@ func (d *DashboardView) View() string {
 
 func (d *DashboardView) Name() string { return "Dashboard" }
 
+func showDashToast(msg string) tea.Cmd {
+	return func() tea.Msg {
+		return components.ShowToastMsg{
+			Title: msg,
+			Level: components.ToastLevelInfo,
+		}
+	}
+}
+
 func (d *DashboardView) SetSize(w, h int) {
 	d.width = w
 	d.height = h
@@ -434,7 +520,7 @@ func (d *DashboardView) renderHeader() string {
 
 	// Show jjhub repo name in header if available.
 	if d.repoName != "" {
-		logo += lipgloss.NewStyle().Faint(true).Render("  "+d.repoName)
+		logo += lipgloss.NewStyle().Faint(true).Render("  " + d.repoName)
 	}
 
 	status := ""
@@ -523,6 +609,8 @@ func (d *DashboardView) renderContent(height int) string {
 		return d.renderSessionsSummary(height)
 	case DashTabLandings:
 		return d.renderLandingsSummary(height)
+	case DashTabChanges:
+		return d.renderChangesSummary(height)
 	case DashTabIssues:
 		return d.renderIssuesSummary(height)
 	case DashTabWorkspaces:
@@ -652,6 +740,24 @@ func (d *DashboardView) renderOverview(height int) string {
 			}
 			if merged > 0 {
 				b.WriteString("  " + jjLandingStateStyle("merged").Render(fmt.Sprintf("✓ %d merged", merged)))
+			}
+			b.WriteString("\n")
+		}
+
+		if d.changesLoading {
+			b.WriteString("  ⟳ Loading changes...\n")
+		} else if d.changesErr != nil {
+			b.WriteString("  " + lipgloss.NewStyle().Faint(true).Render("No changes data") + "\n")
+		} else {
+			wc := 0
+			for _, c := range d.changes {
+				if c.IsWorkingCopy {
+					wc++
+				}
+			}
+			b.WriteString(fmt.Sprintf("  Changes: %d total", len(d.changes)))
+			if wc > 0 {
+				b.WriteString("  " + lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render("● working copy"))
 			}
 			b.WriteString("\n")
 		}
@@ -829,12 +935,86 @@ func (d *DashboardView) renderLandingsSummary(height int) string {
 		author := truncateStr(l.Author.Login, 14)
 		changes := fmt.Sprintf("%d", len(l.ChangeIDs))
 		updated := jjRelativeTime(l.UpdatedAt)
-		b.WriteString(fmt.Sprintf("  %-3s  %-5s  %-40s  %-14s  %-7s  %s\n",
-			icon, num, title, author, changes, lipgloss.NewStyle().Faint(true).Render(updated)))
+
+		prefix := "  "
+		style := lipgloss.NewStyle()
+		if i == d.menuCursor {
+			prefix = "▸ "
+			style = style.Bold(true).Foreground(lipgloss.Color("63"))
+		}
+
+		b.WriteString(fmt.Sprintf("%s%-3s  %-5s  %-40s  %-14s  %-7s  %s\n",
+			prefix, icon, num, style.Render(title), author, changes, lipgloss.NewStyle().Faint(true).Render(updated)))
 	}
 
 	if len(d.landings) > limit {
 		b.WriteString(fmt.Sprintf("\n  ... and %d more.\n", len(d.landings)-limit))
+	}
+	return b.String()
+}
+
+func (d *DashboardView) renderChangesSummary(height int) string {
+	var b strings.Builder
+	b.WriteString("\n  " + lipgloss.NewStyle().Bold(true).Render("Recent Changes") + "\n")
+	b.WriteString("  ─────────────\n")
+
+	if d.changesLoading {
+		b.WriteString("  ⟳ Loading...\n")
+		return b.String()
+	}
+	if d.changesErr != nil {
+		b.WriteString("  " + lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Render("✗ "+d.changesErr.Error()) + "\n")
+		return b.String()
+	}
+	if len(d.changes) == 0 {
+		b.WriteString("  " + lipgloss.NewStyle().Faint(true).Render("No changes found.") + "\n")
+		return b.String()
+	}
+
+	limit := height - 5
+	if limit > len(d.changes) {
+		limit = len(d.changes)
+	}
+	if limit > 15 {
+		limit = 15
+	}
+
+	// Header row
+	b.WriteString(fmt.Sprintf("  %-3s  %-12s  %-40s  %-14s  %s\n",
+		lipgloss.NewStyle().Faint(true).Render(""),
+		lipgloss.NewStyle().Faint(true).Render("Change ID"),
+		lipgloss.NewStyle().Faint(true).Render("Description"),
+		lipgloss.NewStyle().Faint(true).Render("Author"),
+		lipgloss.NewStyle().Faint(true).Render("Timestamp"),
+	))
+
+	for i := 0; i < limit; i++ {
+		c := d.changes[i]
+		icon := " "
+		if c.IsWorkingCopy {
+			icon = lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render("●")
+		}
+		id := c.ChangeID
+		if len(id) > 12 {
+			id = id[:12]
+		}
+		desc := truncateStr(strings.Split(c.Description, "\n")[0], 40)
+		author := truncateStr(c.Author.Name, 14)
+		ts := jjRelativeTime(c.Timestamp)
+
+		prefix := "  "
+		style := lipgloss.NewStyle()
+		if i == d.menuCursor {
+			prefix = "▸ "
+			style = style.Bold(true).Foreground(lipgloss.Color("63"))
+		}
+
+		b.WriteString(fmt.Sprintf("%s%-3s  %-12s  %-40s  %-14s  %s\n",
+			prefix, icon, id, style.Render(desc), author, lipgloss.NewStyle().Faint(true).Render(ts)))
+	}
+
+	if len(d.changes) > limit {
+		b.WriteString(fmt.Sprintf("\n  ... and %d more.\n", len(d.changes)-limit))
 	}
 	return b.String()
 }
@@ -883,8 +1063,16 @@ func (d *DashboardView) renderIssuesSummary(height int) string {
 		author := truncateStr(iss.Author.Login, 14)
 		comments := fmt.Sprintf("%d", iss.CommentCount)
 		updated := jjRelativeTime(iss.UpdatedAt)
-		b.WriteString(fmt.Sprintf("  %-3s  %-5s  %-42s  %-14s  %-9s  %s\n",
-			icon, num, title, author, comments, lipgloss.NewStyle().Faint(true).Render(updated)))
+
+		prefix := "  "
+		style := lipgloss.NewStyle()
+		if i == d.menuCursor {
+			prefix = "▸ "
+			style = style.Bold(true).Foreground(lipgloss.Color("63"))
+		}
+
+		b.WriteString(fmt.Sprintf("%s%-3s  %-5s  %-42s  %-14s  %-9s  %s\n",
+			prefix, icon, num, style.Render(title), author, comments, lipgloss.NewStyle().Faint(true).Render(updated)))
 	}
 
 	if len(d.issues) > limit {
@@ -942,8 +1130,16 @@ func (d *DashboardView) renderWorkspacesSummary(height int) string {
 			ssh = truncateStr(*w.SSHHost, 30)
 		}
 		updated := jjRelativeTime(w.UpdatedAt)
-		b.WriteString(fmt.Sprintf("  %-3s  %-20s  %-12s  %-14s  %-30s  %s\n",
-			icon, name, w.Status, w.Persistence, ssh, lipgloss.NewStyle().Faint(true).Render(updated)))
+
+		prefix := "  "
+		style := lipgloss.NewStyle()
+		if i == d.menuCursor {
+			prefix = "▸ "
+			style = style.Bold(true).Foreground(lipgloss.Color("63"))
+		}
+
+		b.WriteString(fmt.Sprintf("%s%-3s  %-20s  %-12s  %-14s  %-30s  %s\n",
+			prefix, icon, name, w.Status, w.Persistence, ssh, lipgloss.NewStyle().Faint(true).Render(updated)))
 	}
 
 	if len(d.workspaces) > limit {
@@ -963,10 +1159,15 @@ func (d *DashboardView) renderFooter() string {
 		helpKV("j/k", "nav"),
 		helpKV(tabNums, "tabs"),
 		helpKV("enter", "select"),
+	}
+	if len(d.tabs) > 0 && (d.tabs[d.activeTab] == DashTabLandings || d.tabs[d.activeTab] == DashTabChanges) {
+		parts = append(parts, helpKV("d", "diff"))
+	}
+	parts = append(parts,
 		helpKV("c", "chat"),
 		helpKV("r", "refresh"),
 		helpKV("q", "quit"),
-	}
+	)
 	line := " " + strings.Join(parts, sep)
 	return lipgloss.NewStyle().
 		Background(lipgloss.Color("236")).
@@ -1097,14 +1298,27 @@ func jjRelativeTime(ts string) string {
 // --- Helpers ---
 
 func (d *DashboardView) clampCursor() {
-	max := len(d.menuItems) - 1
-	if len(d.tabs) > 0 && d.tabs[d.activeTab] != DashTabOverview {
-		max = 0
+	if len(d.tabs) == 0 {
+		return
 	}
+	max := 0
+	switch d.tabs[d.activeTab] {
+	case DashTabOverview:
+		max = len(d.menuItems) - 1
+	case DashTabLandings:
+		max = len(d.landings) - 1
+	case DashTabIssues:
+		max = len(d.issues) - 1
+	case DashTabWorkspaces:
+		max = len(d.workspaces) - 1
+	}
+
 	if d.menuCursor < 0 {
 		d.menuCursor = 0
 	}
-	if d.menuCursor > max {
+	if max < 0 {
+		d.menuCursor = 0
+	} else if d.menuCursor > max {
 		d.menuCursor = max
 	}
 }
@@ -1150,6 +1364,17 @@ func (d *DashboardView) fetchLandings() tea.Cmd {
 	return func() tea.Msg {
 		landings, err := jc.ListLandings("open", 30)
 		return dashLandingsFetchedMsg{landings: landings, err: err}
+	}
+}
+
+func (d *DashboardView) fetchChanges() tea.Cmd {
+	jc := d.jjhubClient
+	if jc == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		changes, err := jc.ListChanges(30)
+		return dashChangesFetchedMsg{changes: changes, err: err}
 	}
 }
 

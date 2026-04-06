@@ -33,10 +33,12 @@ import (
 	"github.com/charmbracelet/crush/internal/fsext"
 	"github.com/charmbracelet/crush/internal/history"
 	"github.com/charmbracelet/crush/internal/home"
+	"github.com/charmbracelet/crush/internal/jjhub"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/charmbracelet/crush/internal/session"
+	"github.com/charmbracelet/crush/internal/smithers"
 	"github.com/charmbracelet/crush/internal/ui/anim"
 	"github.com/charmbracelet/crush/internal/ui/attachments"
 	"github.com/charmbracelet/crush/internal/ui/chat"
@@ -44,10 +46,9 @@ import (
 	"github.com/charmbracelet/crush/internal/ui/completions"
 	"github.com/charmbracelet/crush/internal/ui/components"
 	"github.com/charmbracelet/crush/internal/ui/dialog"
+	dn "github.com/charmbracelet/crush/internal/ui/diffnav"
 	fimage "github.com/charmbracelet/crush/internal/ui/image"
 	"github.com/charmbracelet/crush/internal/ui/logo"
-	"github.com/charmbracelet/crush/internal/jjhub"
-	"github.com/charmbracelet/crush/internal/smithers"
 	"github.com/charmbracelet/crush/internal/ui/notification"
 	"github.com/charmbracelet/crush/internal/ui/styles"
 	"github.com/charmbracelet/crush/internal/ui/util"
@@ -218,10 +219,11 @@ type UI struct {
 	sseEventCh <-chan interface{}
 
 	// Smithers view router, registry, workspace model, and client.
-	viewRouter     *views.Router
-	viewRegistry   *views.Registry
-	smithersClient *smithers.Client
-	dashboard      *views.DashboardView
+	viewRouter         *views.Router
+	viewRegistry       *views.Registry
+	smithersClient     *smithers.Client
+	dashboard          *views.DashboardView
+	pendingDiffInstall *dn.InstallPromptMsg // set when user is prompted to install diffnav
 
 	// isCanceling tracks whether the user has pressed escape once to cancel.
 	isCanceling bool
@@ -1126,7 +1128,6 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.setState(uiLanding, uiFocusEditor)
 		return m, tea.Batch(cmds...)
 	case views.DashboardNavigateMsg:
-		// Dashboard requested navigation to a view
 		m.setState(uiSmithersView, uiFocusMain)
 		if cmd := m.handleNavigateToView(NavigateToViewMsg{View: msg.View}); cmd != nil {
 			cmds = append(cmds, cmd)
@@ -1138,6 +1139,82 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if cmd := m.handleNavigateToView(msg); cmd != nil {
 			cmds = append(cmds, cmd)
+		}
+	case dn.InstallPromptMsg:
+		cmds = append(cmds, func() tea.Msg {
+			return components.ShowToastMsg{
+				Title: "diffnav not installed",
+				Body:  "Install diffnav to view diffs? (y to install)",
+				Level: components.ToastLevelWarning,
+			}
+		})
+		m.pendingDiffInstall = &msg
+	case dn.InstallResultMsg:
+		m.pendingDiffInstall = nil
+		if msg.Success {
+			cmds = append(cmds, func() tea.Msg {
+				return components.ShowToastMsg{
+					Title: "diffnav installed",
+					Body:  fmt.Sprintf("Installed via %s. Press d to view diff.", msg.Method),
+					Level: components.ToastLevelSuccess,
+				}
+			})
+		} else {
+			cmds = append(cmds, func() tea.Msg {
+				return components.ShowToastMsg{
+					Title: "Install failed",
+					Body:  msg.Err.Error(),
+					Level: components.ToastLevelError,
+				}
+			})
+		}
+	case dn.PagerFallbackMsg:
+		cmds = append(cmds, func() tea.Msg {
+			return components.ShowToastMsg{
+				Title: pagerFallbackTitle(msg.Reason),
+				Body:  pagerFallbackBody(msg.Reason),
+				Level: components.ToastLevelWarning,
+			}
+		})
+		cmds = append(cmds, dn.LaunchPager(msg.Path, msg.Cwd, msg.Tag))
+	case dn.PagerErrorMsg:
+		if msg.Err != nil {
+			cmds = append(cmds, func() tea.Msg {
+				return components.ShowToastMsg{
+					Title: "Diff viewer error",
+					Body:  msg.Err.Error(),
+					Level: components.ToastLevelError,
+				}
+			})
+		}
+	case components.ShowToastMsg:
+		if m.toasts == nil {
+			cmds = append(cmds, fallbackToastStatusCmd(msg))
+		}
+	case views.PopViewMsg:
+		if m.state == uiSmithersDashboard {
+			// Dashboard is not on the router stack — go to chat.
+			if m.hasSession() {
+				m.setState(uiChat, uiFocusEditor)
+			} else {
+				m.setState(uiLanding, uiFocusEditor)
+			}
+		} else if m.state == uiSmithersView {
+			if m.viewRouter.Depth() <= 1 {
+				m.viewRouter = views.NewRouter()
+				m.viewRouter.SetSize(m.width, m.height)
+				if m.dashboard != nil {
+					m.setState(uiSmithersDashboard, uiFocusMain)
+				} else if m.hasSession() {
+					m.setState(uiChat, uiFocusEditor)
+				} else {
+					m.setState(uiLanding, uiFocusEditor)
+				}
+				break
+			}
+			if cmd := m.viewRouter.Pop(); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
 		}
 	case util.InfoMsg:
 		if msg.Type == util.InfoTypeError {
@@ -1185,14 +1262,23 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// Forward non-key messages to the dashboard (for fetch results).
+	// Navigation messages must NOT be forwarded — they need to reach the
+	// handler below (e.g. PopViewMsg to return to chat, InstallPromptMsg
+	// to push a diff view).
 	if m.state == uiSmithersDashboard && m.dashboard != nil {
 		if _, isKey := msg.(tea.KeyPressMsg); !isKey {
-			updated, cmd := m.dashboard.Update(msg)
-			if cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-			if d, ok := updated.(*views.DashboardView); ok {
-				m.dashboard = d
+			switch msg.(type) {
+			case views.PopViewMsg, views.OpenChatMsg, views.DashboardNavigateMsg,
+				dn.InstallPromptMsg, dn.InstallResultMsg, dn.PagerFallbackMsg, dn.PagerErrorMsg:
+				// Let these fall through to the handler below.
+			default:
+				updated, cmd := m.dashboard.Update(msg)
+				if cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+				if d, ok := updated.(*views.DashboardView); ok {
+					m.dashboard = d
+				}
 			}
 		}
 	}
@@ -1207,7 +1293,8 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if _, isKey := msg.(tea.KeyPressMsg); !isKey {
 			switch msg.(type) {
 			case views.PopViewMsg, views.OpenChatMsg, views.DashboardNavigateMsg,
-				views.OpenRunInspectMsg, views.OpenLiveChatMsg, views.OpenTicketDetailMsg:
+				views.OpenRunInspectMsg, views.OpenLiveChatMsg, views.OpenTicketDetailMsg,
+				dn.InstallPromptMsg, dn.InstallResultMsg, dn.PagerFallbackMsg, dn.PagerErrorMsg:
 				// These are navigation commands — let them fall through to the handler below.
 			default:
 				if cmd := m.viewRouter.Update(msg); cmd != nil {
@@ -1859,21 +1946,6 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		m.setState(uiSmithersView, uiFocusMain)
 		cmds = append(cmds, cmd)
 
-	case views.PopViewMsg:
-		if cmd := m.viewRouter.Pop(); cmd != nil {
-			cmds = append(cmds, cmd)
-		}
-		if !m.viewRouter.HasViews() {
-			// Return to dashboard in Smithers mode, chat otherwise
-			if m.dashboard != nil {
-				m.setState(uiSmithersDashboard, uiFocusMain)
-			} else if m.hasSession() {
-				m.setState(uiChat, uiFocusEditor)
-			} else {
-				m.setState(uiLanding, uiFocusEditor)
-			}
-		}
-
 	case dialog.ActionSelectModel:
 		if m.isAgentBusy() {
 			cmds = append(cmds, util.ReportWarn("Agent is busy, please wait..."))
@@ -2101,6 +2173,70 @@ func (m *UI) openAuthenticationDialog(provider catwalk.Provider, model config.Se
 	return cmd
 }
 
+func fallbackToastStatusCmd(msg components.ShowToastMsg) tea.Cmd {
+	text := strings.TrimSpace(msg.Title)
+	body := strings.TrimSpace(msg.Body)
+	if body != "" {
+		if text != "" {
+			text += ": "
+		}
+		text += body
+	}
+	if text == "" {
+		return nil
+	}
+
+	info := util.InfoMsg{
+		Msg: text,
+		TTL: msg.TTL,
+	}
+
+	switch msg.Level {
+	case components.ToastLevelSuccess:
+		info.Type = util.InfoTypeSuccess
+	case components.ToastLevelWarning:
+		info.Type = util.InfoTypeWarn
+	case components.ToastLevelError:
+		info.Type = util.InfoTypeError
+	default:
+		info.Type = util.InfoTypeInfo
+	}
+
+	return util.CmdHandler(info)
+}
+
+func pagerFallbackTitle(reason string) string {
+	if strings.Contains(strings.ToLower(reason), "panic") {
+		return "diffnav crashed"
+	}
+	return "diffnav failed"
+}
+
+func pagerFallbackBody(reason string) string {
+	body := "Opening raw diff pager instead."
+	summary := summarizeExternalError(reason)
+	if summary == "" {
+		return body
+	}
+	return body + " " + summary
+}
+
+func summarizeExternalError(reason string) string {
+	for _, line := range strings.Split(reason, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		line = strings.TrimPrefix(line, "FATA ")
+		line = strings.TrimPrefix(line, "ERROR ")
+		if len(line) > 96 {
+			line = line[:93] + "..."
+		}
+		return line
+	}
+	return ""
+}
+
 func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 	var cmds []tea.Cmd
 
@@ -2194,6 +2330,24 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 	if key.Matches(msg, m.keyMap.ViewApprovalsShort) && m.focus != uiFocusEditor {
 		cmds = append(cmds, m.navigateToView("approvals"))
 		return tea.Batch(cmds...)
+	}
+
+	// Handle diffnav install prompt. "y" starts the install; any other key
+	// dismisses the prompt and continues normal key handling.
+	if m.pendingDiffInstall != nil {
+		if key.Matches(msg, key.NewBinding(key.WithKeys("y"))) {
+			m.pendingDiffInstall = nil
+			cmds = append(cmds, func() tea.Msg {
+				return components.ShowToastMsg{
+					Title: "Installing diffnav...",
+					Body:  "This may take a moment",
+					Level: components.ToastLevelInfo,
+				}
+			})
+			cmds = append(cmds, dn.InstallDiffnav())
+			return tea.Batch(cmds...)
+		}
+		m.pendingDiffInstall = nil
 	}
 
 	// Route all messages to dialog if one is open.
