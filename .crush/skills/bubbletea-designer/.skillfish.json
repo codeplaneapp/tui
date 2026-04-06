@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "bubbletea-designer",
+  "owner": "human-frontier-labs-inc",
+  "repo": "human-frontier-labs-marketplace",
+  "path": "plugins/bubbletea-designer",
+  "branch": "master",
+  "sha": "84dc8d26c0a4351c01f6a1669617607645addb66",
+  "source": "manual"
+}

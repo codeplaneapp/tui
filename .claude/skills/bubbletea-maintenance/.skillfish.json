@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "bubbletea-maintenance",
+  "owner": "human-frontier-labs-inc",
+  "repo": "human-frontier-labs-marketplace",
+  "path": "plugins/bubbletea-maintenance",
+  "branch": "master",
+  "sha": "04c70e5e715955691670c1797a8fb96b8e6155bc",
+  "source": "manual"
+}
