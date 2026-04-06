@@ -48,11 +48,13 @@ func TestChatMCPConnectionStatus_TUI(t *testing.T) {
 
 	// TUI must show SMITHERS branding.
 	require.NoError(t, tui.WaitForText("SMITHERS", 15*time.Second))
+	openStartChatFromDashboard(t, tui)
 
-	// After the MCP server connects the header must show "smithers connected".
-	// Allow up to 20 s for the MCP handshake + first render cycle.
-	require.NoError(t, tui.WaitForText("smithers connected", 20*time.Second),
-		"header should show smithers connected after MCP handshake\nSnapshot:\n%s", tui.Snapshot())
+	// The landing view must surface the connected MCP entry and tool count.
+	require.NoError(t, tui.WaitForText("smithers", 20*time.Second),
+		"MCP section should render the smithers entry after handshake\nSnapshot:\n%s", tui.Snapshot())
+	require.NoError(t, tui.WaitForText("3 tools", 10*time.Second),
+		"MCP section should show the discovered tool count\nSnapshot:\n%s", tui.Snapshot())
 
 	tui.SendKeys("\x03") // ctrl+c
 }
@@ -91,11 +93,14 @@ func TestChatMCPConnectionStatus_DisconnectedOnStart_TUI(t *testing.T) {
 	defer tui.Terminate()
 
 	require.NoError(t, tui.WaitForText("SMITHERS", 15*time.Second))
+	openStartChatFromDashboard(t, tui)
 
-	// Should never show "connected" because the binary is missing.
-	// We allow a few seconds for the (failed) MCP startup to complete.
-	require.NoError(t, tui.WaitForText("smithers disconnected", 20*time.Second),
-		"header should show smithers disconnected when MCP command is missing\nSnapshot:\n%s", tui.Snapshot())
+	require.NoError(t, tui.WaitForText("smithers", 20*time.Second),
+		"MCP section should still render the smithers entry when startup fails\nSnapshot:\n%s", tui.Snapshot())
+	require.NoError(t, tui.WaitForText("error:", 10*time.Second),
+		"MCP section should show an error state when the command is missing\nSnapshot:\n%s", tui.Snapshot())
+	require.NoError(t, tui.WaitForNoText("3 tools", 3*time.Second),
+		"tool count must not appear when the MCP command fails\nSnapshot:\n%s", tui.Snapshot())
 
 	tui.SendKeys("\x03")
 }

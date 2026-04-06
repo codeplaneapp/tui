@@ -59,14 +59,12 @@ func TestMCPIntegration_ToolsDiscoveredOnStartup(t *testing.T) {
 	defer tui.Terminate()
 
 	require.NoError(t, tui.WaitForText("SMITHERS", 15*time.Second))
+	openStartChatFromDashboard(t, tui)
 
-	// After MCP handshake the header must report connected with tool count.
-	require.NoError(t, tui.WaitForText("smithers connected", 20*time.Second),
-		"MCP header must show smithers connected\nSnapshot:\n%s", tui.Snapshot())
-
-	// The mock server registers 3 tools.  Confirm a tool count appears.
+	require.NoError(t, tui.WaitForText("smithers", 20*time.Second),
+		"MCP section must show the smithers entry\nSnapshot:\n%s", tui.Snapshot())
 	require.NoError(t, tui.WaitForText("tools", 5*time.Second),
-		"header must show tool count after MCP handshake\nSnapshot:\n%s", tui.Snapshot())
+		"MCP section must show tool count after handshake\nSnapshot:\n%s", tui.Snapshot())
 
 	tui.SendKeys("\x03") // ctrl+c
 }
@@ -104,12 +102,13 @@ func TestMCPIntegration_ToolCountShownInHeader(t *testing.T) {
 	defer tui.Terminate()
 
 	require.NoError(t, tui.WaitForText("SMITHERS", 15*time.Second))
-	require.NoError(t, tui.WaitForText("smithers connected", 20*time.Second),
-		"smithers connected must appear\nSnapshot:\n%s", tui.Snapshot())
+	openStartChatFromDashboard(t, tui)
+	require.NoError(t, tui.WaitForText("smithers", 20*time.Second),
+		"smithers MCP entry must appear\nSnapshot:\n%s", tui.Snapshot())
 
 	// Mock exposes 3 tools: list_workflows, run_workflow, get_run_status.
 	require.NoError(t, tui.WaitForText("3 tools", 5*time.Second),
-		"header must report 3 tools\nSnapshot:\n%s", tui.Snapshot())
+		"MCP section must report 3 tools\nSnapshot:\n%s", tui.Snapshot())
 
 	tui.SendKeys("\x03")
 }
@@ -152,10 +151,10 @@ func TestMCPIntegration_DelayedConnection(t *testing.T) {
 	defer tui.Terminate()
 
 	require.NoError(t, tui.WaitForText("SMITHERS", 15*time.Second))
+	openStartChatFromDashboard(t, tui)
 
-	// Eventually transitions to connected (allow 25 s total for delay + handshake).
-	require.NoError(t, tui.WaitForText("smithers connected", 25*time.Second),
-		"should eventually show smithers connected\nSnapshot:\n%s", tui.Snapshot())
+	require.NoError(t, tui.WaitForText("3 tools", 25*time.Second),
+		"tool count should appear once the delayed MCP server connects\nSnapshot:\n%s", tui.Snapshot())
 
 	tui.SendKeys("\x03")
 }
@@ -190,13 +189,15 @@ func TestMCPIntegration_DisconnectedState(t *testing.T) {
 	defer tui.Terminate()
 
 	require.NoError(t, tui.WaitForText("SMITHERS", 15*time.Second))
+	openStartChatFromDashboard(t, tui)
 
-	require.NoError(t, tui.WaitForText("smithers disconnected", 20*time.Second),
-		"header must show disconnected when MCP binary is missing\nSnapshot:\n%s", tui.Snapshot())
+	require.NoError(t, tui.WaitForText("smithers", 20*time.Second),
+		"MCP section must show the smithers entry when startup fails\nSnapshot:\n%s", tui.Snapshot())
+	require.NoError(t, tui.WaitForText("error:", 10*time.Second),
+		"MCP section must show an error state when the binary is missing\nSnapshot:\n%s", tui.Snapshot())
 
-	// Confirm "connected" is NOT shown.
-	require.NoError(t, tui.WaitForNoText("smithers connected", 3*time.Second),
-		"smithers connected must not appear when binary is missing\nSnapshot:\n%s", tui.Snapshot())
+	require.NoError(t, tui.WaitForNoText("3 tools", 3*time.Second),
+		"tool count must not appear when the MCP binary is missing\nSnapshot:\n%s", tui.Snapshot())
 
 	tui.SendKeys("\x03")
 }

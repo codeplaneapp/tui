@@ -124,13 +124,13 @@ func newMockLiveChatServer(t *testing.T, runID string, blocks []mockChatBlock) *
 // Returns after the "SMITHERS › Chat" header is visible.
 func openLiveChatViaCommandPalette(t *testing.T, tui *TUITestInstance) {
 	t.Helper()
-	tui.SendKeys("\x10") // Ctrl+P
-	time.Sleep(300 * time.Millisecond)
+
+	openCommandsPalette(t, tui)
 	tui.SendKeys("live")
 	require.NoError(t, tui.WaitForText("Live Chat", 5*time.Second),
 		"command palette must show Live Chat entry; buffer:\n%s", tui.Snapshot())
 	tui.SendKeys("\r")
-	require.NoError(t, tui.WaitForText("SMITHERS \u203a Chat", 5*time.Second),
+	require.NoError(t, tui.WaitForText("SMITHERS > Chat >", 5*time.Second),
 		"live chat header must appear; buffer:\n%s", tui.Snapshot())
 }
 
@@ -180,7 +180,7 @@ func TestLiveChat_OpenViaCommandPaletteAndRender(t *testing.T) {
 
 	// Escape returns to the previous view.
 	tui.SendKeys("\x1b")
-	require.NoError(t, tui.WaitForNoText("SMITHERS \u203a Chat", 5*time.Second),
+	require.NoError(t, tui.WaitForNoText("SMITHERS > Chat >", 5*time.Second),
 		"Esc must pop the live chat view; buffer:\n%s", tui.Snapshot())
 }
 
@@ -222,14 +222,9 @@ func TestLiveChat_MessagesStreamIn(t *testing.T) {
 	require.NoError(t, tui.WaitForText("e2e-test-workflow", 10*time.Second),
 		"runs dashboard must show the mock run; buffer:\n%s", tui.Snapshot())
 
-	// Press Enter to open the run inspect view.
-	tui.SendKeys("\r")
-	require.NoError(t, tui.WaitForText("SMITHERS", 8*time.Second),
-		"run inspect view must open; buffer:\n%s", tui.Snapshot())
-
-	// Press 'c' to open live chat for the first task.
+	// Press 'c' to open live chat for the selected run.
 	tui.SendKeys("c")
-	require.NoError(t, tui.WaitForText("SMITHERS \u203a Chat", 8*time.Second),
+	require.NoError(t, tui.WaitForText("SMITHERS > Chat >", 8*time.Second),
 		"live chat view must open via 'c' key; buffer:\n%s", tui.Snapshot())
 
 	// Wait for the message content to appear.
@@ -239,7 +234,7 @@ func TestLiveChat_MessagesStreamIn(t *testing.T) {
 		"assistant message must render; buffer:\n%s", tui.Snapshot())
 
 	tui.SendKeys("\x1b")
-	require.NoError(t, tui.WaitForNoText("SMITHERS \u203a Chat", 5*time.Second))
+	require.NoError(t, tui.WaitForNoText("SMITHERS > Chat >", 5*time.Second))
 }
 
 // TestLiveChat_FollowModeToggle verifies that pressing 'f' toggles follow mode
@@ -289,7 +284,7 @@ func TestLiveChat_FollowModeToggle(t *testing.T) {
 		"follow mode must turn on after second 'f'; buffer:\n%s", tui.Snapshot())
 
 	tui.SendKeys("\x1b")
-	require.NoError(t, tui.WaitForNoText("SMITHERS \u203a Chat", 5*time.Second))
+	require.NoError(t, tui.WaitForNoText("SMITHERS > Chat >", 5*time.Second))
 }
 
 // TestLiveChat_UpArrowDisablesFollowMode verifies that pressing the Up arrow
@@ -373,10 +368,8 @@ func TestLiveChat_AttemptNavigation(t *testing.T) {
 	tui.SendKeys("\x12") // Ctrl+R
 	require.NoError(t, tui.WaitForText("e2e-test-workflow", 10*time.Second),
 		"runs dashboard must show mock run; buffer:\n%s", tui.Snapshot())
-	tui.SendKeys("\r") // open run inspect
-	require.NoError(t, tui.WaitForText("SMITHERS", 8*time.Second))
-	tui.SendKeys("c") // open live chat
-	require.NoError(t, tui.WaitForText("SMITHERS \u203a Chat", 8*time.Second))
+	tui.SendKeys("c")
+	require.NoError(t, tui.WaitForText("SMITHERS > Chat >", 8*time.Second))
 
 	// Wait for blocks to load — the latest (attempt 1) is shown by default.
 	require.NoError(t, tui.WaitForText("Second attempt output", 10*time.Second),
@@ -401,7 +394,7 @@ func TestLiveChat_AttemptNavigation(t *testing.T) {
 		"']' must navigate to next attempt; buffer:\n%s", tui.Snapshot())
 
 	tui.SendKeys("q")
-	require.NoError(t, tui.WaitForNoText("SMITHERS \u203a Chat", 5*time.Second))
+	require.NoError(t, tui.WaitForNoText("SMITHERS > Chat >", 5*time.Second))
 }
 
 // TestLiveChat_QKeyPopsView verifies that pressing 'q' pops the live chat view,
@@ -440,7 +433,7 @@ func TestLiveChat_QKeyPopsView(t *testing.T) {
 
 	// Press 'q' — same effect as Esc.
 	tui.SendKeys("q")
-	require.NoError(t, tui.WaitForNoText("SMITHERS \u203a Chat", 5*time.Second),
+	require.NoError(t, tui.WaitForNoText("SMITHERS > Chat >", 5*time.Second),
 		"'q' must pop the live chat view; buffer:\n%s", tui.Snapshot())
 }
 
@@ -465,15 +458,9 @@ func TestLiveChat_NoServerFallback(t *testing.T) {
 	require.NoError(t, tui.WaitForText("SMITHERS", 15*time.Second))
 	openLiveChatViaCommandPalette(t, tui)
 
-	// Should show some loading/error state rather than crashing.
-	snap := tui.Snapshot()
-	hasExpected := tui.matchesText("Loading") ||
-		tui.matchesText("unavailable") ||
-		tui.matchesText("No messages") ||
-		tui.matchesText("Error")
-	require.True(t, hasExpected,
-		"live chat must show loading/error/empty state without a server\nBuffer:\n%s", snap)
+	require.NoError(t, tui.WaitForText("Error loading run", 8*time.Second),
+		"live chat must show an error state instead of crashing\nBuffer:\n%s", tui.Snapshot())
 
 	tui.SendKeys("\x1b")
-	require.NoError(t, tui.WaitForNoText("SMITHERS \u203a Chat", 5*time.Second))
+	require.NoError(t, tui.WaitForNoText("SMITHERS > Chat >", 5*time.Second))
 }
