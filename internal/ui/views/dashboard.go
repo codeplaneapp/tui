@@ -475,14 +475,13 @@ func (d *DashboardView) View() string {
 	parts = append(parts, d.renderTabBar())
 
 	// Content
-	contentHeight := d.height - 5 // header + tab + footer + borders
+	contentHeight := d.height - 4 // header + tab + footer + borders
 	if contentHeight < 3 {
 		contentHeight = 3
 	}
 	parts = append(parts, d.renderContent(contentHeight))
 
 	// Footer
-	parts = append(parts, d.renderFooter())
 
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
@@ -620,10 +619,18 @@ func (d *DashboardView) renderContent(height int) string {
 }
 
 func (d *DashboardView) renderOverview(height int) string {
-	var b strings.Builder
+	panelStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("238")).
+		Padding(0, 2).
+		MarginRight(2).
+		MarginBottom(1)
+
+	titleStyle := lipgloss.NewStyle().Bold(true).MarginBottom(1)
 
 	// Quick actions menu
-	b.WriteString("\n")
+	var menu strings.Builder
+	menu.WriteString(titleStyle.Render("Quick Actions") + "\n")
 	for i, item := range d.menuItems {
 		cursor := "  "
 		style := lipgloss.NewStyle()
@@ -631,20 +638,19 @@ func (d *DashboardView) renderOverview(height int) string {
 			cursor = "▸ "
 			style = style.Bold(true).Foreground(lipgloss.Color("63"))
 		}
-		b.WriteString(cursor + item.icon + " " + style.Render(item.label))
-		b.WriteString("  " + lipgloss.NewStyle().Faint(true).Render(item.desc))
-		b.WriteString("\n")
+		menu.WriteString(cursor + item.icon + " " + style.Render(item.label))
+		menu.WriteString("  " + lipgloss.NewStyle().Faint(true).Render(item.desc))
+		menu.WriteString("\n")
 	}
 
 	// At-a-glance stats
-	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().Bold(true).Render("  At a Glance") + "\n")
-	b.WriteString("  ─────────────\n")
+	var glance strings.Builder
+	glance.WriteString(titleStyle.Render("At a Glance") + "\n")
 
 	if d.runsLoading {
-		b.WriteString("  ⟳ Loading runs...\n")
+		glance.WriteString("⟳ Loading runs...\n")
 	} else if d.runsErr != nil {
-		b.WriteString("  " + lipgloss.NewStyle().Faint(true).Render("No runs data") + "\n")
+		glance.WriteString(lipgloss.NewStyle().Faint(true).Render("No runs data") + "\n")
 	} else {
 		running, waiting, completed, failed := 0, 0, 0, 0
 		for _, r := range d.runs {
@@ -659,40 +665,40 @@ func (d *DashboardView) renderOverview(height int) string {
 				failed++
 			}
 		}
-		b.WriteString(fmt.Sprintf("  Runs: %d total", len(d.runs)))
+		glance.WriteString(fmt.Sprintf("Runs: %d total", len(d.runs)))
 		if running > 0 {
-			b.WriteString(fmt.Sprintf("  %s", lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render(fmt.Sprintf("● %d running", running))))
+			glance.WriteString(fmt.Sprintf("  %s", lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render(fmt.Sprintf("● %d running", running))))
 		}
 		if waiting > 0 {
-			b.WriteString(fmt.Sprintf("  %s", lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Render(fmt.Sprintf("⚠ %d waiting", waiting))))
+			glance.WriteString(fmt.Sprintf("  %s", lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Render(fmt.Sprintf("⚠ %d waiting", waiting))))
 		}
 		if failed > 0 {
-			b.WriteString(fmt.Sprintf("  %s", lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Render(fmt.Sprintf("✗ %d failed", failed))))
+			glance.WriteString(fmt.Sprintf("  %s", lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Render(fmt.Sprintf("✗ %d failed", failed))))
 		}
-		b.WriteString("\n")
+		glance.WriteString("\n")
 	}
 
 	if d.wfLoading {
-		b.WriteString("  ⟳ Loading workflows...\n")
+		glance.WriteString("⟳ Loading workflows...\n")
 	} else if d.wfErr != nil {
-		b.WriteString("  " + lipgloss.NewStyle().Faint(true).Render("No workflow data") + "\n")
+		glance.WriteString(lipgloss.NewStyle().Faint(true).Render("No workflow data") + "\n")
 	} else {
-		b.WriteString(fmt.Sprintf("  Workflows: %d available\n", len(d.workflows)))
+		glance.WriteString(fmt.Sprintf("Workflows: %d available\n", len(d.workflows)))
 	}
 
 	if d.approvalsLoading {
-		b.WriteString("  ⟳ Loading approvals...\n")
+		glance.WriteString("⟳ Loading approvals...\n")
 	} else if d.approvalsErr != nil {
-		b.WriteString("  " + lipgloss.NewStyle().Faint(true).Render("No approval data") + "\n")
+		glance.WriteString(lipgloss.NewStyle().Faint(true).Render("No approval data") + "\n")
 	} else if len(d.approvals) > 0 {
 		style := lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Bold(true)
 		if len(d.approvals) >= 5 {
 			style = style.Foreground(lipgloss.Color("1"))
 		}
-		b.WriteString(fmt.Sprintf("  %s\n", style.Render(fmt.Sprintf("⚠ Approvals: %d pending", len(d.approvals)))))
+		glance.WriteString(fmt.Sprintf("%s\n", style.Render(fmt.Sprintf("⚠ Approvals: %d pending", len(d.approvals)))))
 		for i, a := range d.approvals {
 			if i >= 3 {
-				b.WriteString(fmt.Sprintf("    ... and %d more\n", len(d.approvals)-3))
+				glance.WriteString(fmt.Sprintf("  ... and %d more\n", len(d.approvals)-3))
 				break
 			}
 			gate := a.Gate
@@ -703,22 +709,20 @@ func (d *DashboardView) renderOverview(height int) string {
 			if len(id) > 8 {
 				id = id[:8]
 			}
-			b.WriteString(fmt.Sprintf("    %s %s\n", lipgloss.NewStyle().Faint(true).Render(id), gate))
+			glance.WriteString(fmt.Sprintf("  %s %s\n", lipgloss.NewStyle().Faint(true).Render(id), gate))
 		}
 	} else {
-		b.WriteString("  Approvals: " + lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render("none pending ✓") + "\n")
+		glance.WriteString("Approvals: " + lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render("none pending ✓") + "\n")
 	}
 
-	// JJHub at-a-glance
+	var codeplane strings.Builder
 	if d.jjhubEnabled {
-		b.WriteString("\n")
-		b.WriteString(lipgloss.NewStyle().Bold(true).Render("  Codeplane") + "\n")
-		b.WriteString("  ─────────────\n")
+		codeplane.WriteString(titleStyle.Render("Codeplane") + "\n")
 
 		if d.landingsLoading {
-			b.WriteString("  ⟳ Loading landings...\n")
+			codeplane.WriteString("⟳ Loading landings...\n")
 		} else if d.landingsErr != nil {
-			b.WriteString("  " + lipgloss.NewStyle().Faint(true).Render("No landings data") + "\n")
+			codeplane.WriteString(lipgloss.NewStyle().Faint(true).Render("No landings data") + "\n")
 		} else {
 			open, merged, draft := 0, 0, 0
 			for _, l := range d.landings {
@@ -731,23 +735,23 @@ func (d *DashboardView) renderOverview(height int) string {
 					draft++
 				}
 			}
-			b.WriteString(fmt.Sprintf("  Landings: %d total", len(d.landings)))
+			codeplane.WriteString(fmt.Sprintf("Landings: %d total", len(d.landings)))
 			if open > 0 {
-				b.WriteString("  " + jjLandingStateStyle("open").Render(fmt.Sprintf("⬆ %d open", open)))
+				codeplane.WriteString("  " + jjLandingStateStyle("open").Render(fmt.Sprintf("⬆ %d open", open)))
 			}
 			if draft > 0 {
-				b.WriteString("  " + jjLandingStateStyle("draft").Render(fmt.Sprintf("◌ %d draft", draft)))
+				codeplane.WriteString("  " + jjLandingStateStyle("draft").Render(fmt.Sprintf("◌ %d draft", draft)))
 			}
 			if merged > 0 {
-				b.WriteString("  " + jjLandingStateStyle("merged").Render(fmt.Sprintf("✓ %d merged", merged)))
+				codeplane.WriteString("  " + jjLandingStateStyle("merged").Render(fmt.Sprintf("✓ %d merged", merged)))
 			}
-			b.WriteString("\n")
+			codeplane.WriteString("\n")
 		}
 
 		if d.changesLoading {
-			b.WriteString("  ⟳ Loading changes...\n")
+			codeplane.WriteString("⟳ Loading changes...\n")
 		} else if d.changesErr != nil {
-			b.WriteString("  " + lipgloss.NewStyle().Faint(true).Render("No changes data") + "\n")
+			codeplane.WriteString(lipgloss.NewStyle().Faint(true).Render("No changes data") + "\n")
 		} else {
 			wc := 0
 			for _, c := range d.changes {
@@ -755,17 +759,17 @@ func (d *DashboardView) renderOverview(height int) string {
 					wc++
 				}
 			}
-			b.WriteString(fmt.Sprintf("  Changes: %d total", len(d.changes)))
+			codeplane.WriteString(fmt.Sprintf("Changes: %d total", len(d.changes)))
 			if wc > 0 {
-				b.WriteString("  " + lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render("● working copy"))
+				codeplane.WriteString("  " + lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render("● working copy"))
 			}
-			b.WriteString("\n")
+			codeplane.WriteString("\n")
 		}
 
 		if d.issuesLoading {
-			b.WriteString("  ⟳ Loading issues...\n")
+			codeplane.WriteString("⟳ Loading issues...\n")
 		} else if d.issuesErr != nil {
-			b.WriteString("  " + lipgloss.NewStyle().Faint(true).Render("No issues data") + "\n")
+			codeplane.WriteString(lipgloss.NewStyle().Faint(true).Render("No issues data") + "\n")
 		} else {
 			openIssues := 0
 			for _, iss := range d.issues {
@@ -773,17 +777,17 @@ func (d *DashboardView) renderOverview(height int) string {
 					openIssues++
 				}
 			}
-			b.WriteString(fmt.Sprintf("  Issues: %d total", len(d.issues)))
+			codeplane.WriteString(fmt.Sprintf("Issues: %d total", len(d.issues)))
 			if openIssues > 0 {
-				b.WriteString("  " + lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render(fmt.Sprintf("◉ %d open", openIssues)))
+				codeplane.WriteString("  " + lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render(fmt.Sprintf("◉ %d open", openIssues)))
 			}
-			b.WriteString("\n")
+			codeplane.WriteString("\n")
 		}
 
 		if d.workspacesLoading {
-			b.WriteString("  ⟳ Loading workspaces...\n")
+			codeplane.WriteString("⟳ Loading workspaces...\n")
 		} else if d.workspacesErr != nil {
-			b.WriteString("  " + lipgloss.NewStyle().Faint(true).Render("No workspaces data") + "\n")
+			codeplane.WriteString(lipgloss.NewStyle().Faint(true).Render("No workspaces data") + "\n")
 		} else {
 			running := 0
 			for _, w := range d.workspaces {
@@ -791,15 +795,23 @@ func (d *DashboardView) renderOverview(height int) string {
 					running++
 				}
 			}
-			b.WriteString(fmt.Sprintf("  Workspaces: %d total", len(d.workspaces)))
+			codeplane.WriteString(fmt.Sprintf("Workspaces: %d total", len(d.workspaces)))
 			if running > 0 {
-				b.WriteString("  " + lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render(fmt.Sprintf("● %d running", running)))
+				codeplane.WriteString("  " + lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render(fmt.Sprintf("● %d running", running)))
 			}
-			b.WriteString("\n")
+			codeplane.WriteString("\n")
 		}
 	}
 
-	return b.String()
+	leftCol := panelStyle.Render(strings.TrimRight(menu.String(), "\n"))
+
+	rightBlocks := []string{panelStyle.Render(strings.TrimRight(glance.String(), "\n"))}
+	if d.jjhubEnabled {
+		rightBlocks = append(rightBlocks, panelStyle.Render(strings.TrimRight(codeplane.String(), "\n")))
+	}
+	rightCol := lipgloss.JoinVertical(lipgloss.Left, rightBlocks...)
+
+	return lipgloss.NewStyle().Padding(1, 2).Render(lipgloss.JoinHorizontal(lipgloss.Top, leftCol, rightCol))
 }
 
 func (d *DashboardView) renderRunsSummary(height int) string {
@@ -1146,37 +1158,6 @@ func (d *DashboardView) renderWorkspacesSummary(height int) string {
 		b.WriteString(fmt.Sprintf("\n  ... and %d more.\n", len(d.workspaces)-limit))
 	}
 	return b.String()
-}
-
-func (d *DashboardView) renderFooter() string {
-	sep := lipgloss.NewStyle().Faint(true).Render(" │ ")
-	numTabs := len(d.tabs)
-	tabNums := "1-4"
-	if numTabs > 4 {
-		tabNums = fmt.Sprintf("1-%d", numTabs)
-	}
-	parts := []string{
-		helpKV("j/k", "nav"),
-		helpKV(tabNums, "tabs"),
-		helpKV("enter", "select"),
-	}
-	if len(d.tabs) > 0 && (d.tabs[d.activeTab] == DashTabLandings || d.tabs[d.activeTab] == DashTabChanges) {
-		parts = append(parts, helpKV("d", "diff"))
-	}
-	parts = append(parts,
-		helpKV("c", "chat"),
-		helpKV("r", "refresh"),
-		helpKV("q", "quit"),
-	)
-	line := " " + strings.Join(parts, sep)
-	return lipgloss.NewStyle().
-		Background(lipgloss.Color("236")).
-		Width(d.width).
-		Render(line)
-}
-
-func helpKV(k, v string) string {
-	return lipgloss.NewStyle().Bold(true).Render(k) + " " + lipgloss.NewStyle().Faint(true).Render(v)
 }
 
 func statusGlyph(s smithers.RunStatus) string {
