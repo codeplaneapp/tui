@@ -207,6 +207,10 @@ func (v *LiveChatView) openStreamCmd() tea.Cmd {
 	v.streamDone = false
 
 	runID := v.runID
+	if strings.TrimSpace(runID) == "" {
+		v.streamDone = true
+		return nil
+	}
 	client := v.client
 
 	return func() tea.Msg {
@@ -1027,9 +1031,9 @@ type liveChatBodyPane struct {
 	view *LiveChatView
 }
 
-func (p *liveChatBodyPane) Init() tea.Cmd                                  { return nil }
+func (p *liveChatBodyPane) Init() tea.Cmd                                 { return nil }
 func (p *liveChatBodyPane) Update(msg tea.Msg) (components.Pane, tea.Cmd) { return p, nil }
-func (p *liveChatBodyPane) View() string                                   { return p.view.renderBody() }
+func (p *liveChatBodyPane) View() string                                  { return p.view.renderBody() }
 func (p *liveChatBodyPane) SetSize(width, height int) {
 	// The body pane shares the parent view's rendering; dimensions are
 	// governed by the parent LiveChatView.
