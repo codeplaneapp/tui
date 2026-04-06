@@ -179,6 +179,20 @@ func (c *Client) run(args ...string) ([]byte, error) {
 	return out, nil
 }
 
+func (c *Client) runRaw(args ...string) (string, error) {
+	allArgs := append(args, "--no-color")
+	cmd := exec.Command("jjhub", allArgs...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if idx := strings.Index(msg, "Error:"); idx >= 0 {
+			msg = strings.TrimSpace(msg[idx+6:])
+		}
+		return "", fmt.Errorf("%s", msg)
+	}
+	return string(out), nil
+}
+
 func (c *Client) repoArgs() []string {
 	if c.repo != "" {
 		return []string{"-R", c.repo}
@@ -323,4 +337,26 @@ func (c *Client) GetCurrentRepo() (*Repo, error) {
 		return nil, fmt.Errorf("parse repo: %w", err)
 	}
 	return &r, nil
+}
+
+// ---- Diff methods ----
+
+func (c *Client) LandingDiff(number int) (string, error) {
+	args := []string{"land", "diff", fmt.Sprint(number)}
+	args = append(args, c.repoArgs()...)
+	return c.runRaw(args...)
+}
+
+func (c *Client) ChangeDiff(changeID string) (string, error) {
+	args := []string{"change", "diff", changeID}
+	return c.runRaw(args...)
+}
+
+func (c *Client) WorkingCopyDiff() (string, error) {
+	cmd := exec.Command("jj", "diff", "--no-color")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("jj diff: %w", err)
+	}
+	return string(out), nil
 }
