@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sync"
 	"time"
 
 	"github.com/charmbracelet/crush/internal/config"
+	"github.com/charmbracelet/crush/internal/home"
 )
 
 const projectsFileName = "projects.json"
@@ -29,7 +31,28 @@ var mu sync.Mutex
 
 // projectsFilePath returns the path to the projects.json file.
 func projectsFilePath() string {
-	return filepath.Join(filepath.Dir(config.GlobalConfigData()), projectsFileName)
+	primary := filepath.Join(filepath.Dir(config.GlobalConfigData()), projectsFileName)
+	legacy := legacyProjectsFilePath()
+	if _, err := os.Stat(primary); err == nil {
+		return primary
+	}
+	if _, err := os.Stat(legacy); err == nil {
+		return legacy
+	}
+	return primary
+}
+
+func legacyProjectsFilePath() string {
+	if legacyData := os.Getenv("CRUSH_GLOBAL_DATA"); legacyData != "" && os.Getenv("SMITHERS_TUI_GLOBAL_DATA") == "" {
+		return filepath.Join(legacyData, projectsFileName)
+	}
+	if xdgDataHome := os.Getenv("XDG_DATA_HOME"); xdgDataHome != "" {
+		return filepath.Join(xdgDataHome, "crush", projectsFileName)
+	}
+	if runtime.GOOS == "windows" {
+		return filepath.Join(home.Dir(), "AppData", "Local", "crush", projectsFileName)
+	}
+	return filepath.Join(home.Dir(), ".local", "share", "crush", projectsFileName)
 }
 
 // Load reads the projects list from disk.

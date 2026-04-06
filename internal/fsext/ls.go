@@ -34,6 +34,7 @@ var fastIgnoreDirs = map[string]bool{
 	".Trash":          true,
 	".Spotlight-V100": true,
 	".fseventsd":      true,
+	".crush":          true,
 	".smithers-tui":   true,
 	"OrbStack":        true,
 	".local":          true,
@@ -108,19 +109,31 @@ var gitGlobalIgnorePatterns = sync.OnceValue(func() []gitignore.Pattern {
 	return parsePatterns(strings.Split(string(bts), "\n"), nil)
 })
 
-// smithersGlobalIgnorePatterns returns patterns from the user's
-// ~/.config/smithers-tui/ignore file.
-var smithersGlobalIgnorePatterns = sync.OnceValue(func() []gitignore.Pattern {
-	name := filepath.Join(home.Config(), "smithers-tui", "ignore")
+// appGlobalIgnorePatterns returns patterns from the user's application-specific
+// global ignore file.
+func appGlobalIgnorePatterns(appDir string) []gitignore.Pattern {
+	name := filepath.Join(home.Config(), appDir, "ignore")
 	bts, err := os.ReadFile(name)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			slog.Debug("Failed to read smithers-tui global ignore file", "path", name, "error", err)
+			slog.Debug("Failed to read application global ignore file", "path", name, "error", err)
 		}
 		return nil
 	}
 	lines := strings.Split(string(bts), "\n")
 	return parsePatterns(lines, nil)
+}
+
+// crushGlobalIgnorePatterns returns patterns from the user's
+// ~/.config/crush/ignore file.
+var crushGlobalIgnorePatterns = sync.OnceValue(func() []gitignore.Pattern {
+	return appGlobalIgnorePatterns("crush")
+})
+
+// smithersGlobalIgnorePatterns returns patterns from the user's
+// ~/.config/smithers-tui/ignore file.
+var smithersGlobalIgnorePatterns = sync.OnceValue(func() []gitignore.Pattern {
+	return appGlobalIgnorePatterns("smithers-tui")
 })
 
 // parsePatterns parses gitignore pattern strings into Pattern objects.
@@ -138,7 +151,8 @@ func parsePatterns(lines []string, domain []string) []gitignore.Pattern {
 }
 
 type directoryLister struct {
-	// dirPatterns caches parsed patterns from .gitignore/.smithersignore for each directory.
+	// dirPatterns caches parsed patterns from
+	// .gitignore/.crushignore/.smithersignore for each directory.
 	// This avoids re-reading files when building combined matchers.
 	dirPatterns *csync.Map[string, []gitignore.Pattern]
 	// combinedMatchers caches a combined matcher for each directory that includes
@@ -165,7 +179,7 @@ func pathToComponents(path string) []string {
 }
 
 // getDirPatterns returns the parsed patterns for a specific directory's
-// .gitignore and .smithersignore files. Results are cached.
+// .gitignore, .crushignore, and .smithersignore files. Results are cached.
 func (dl *directoryLister) getDirPatterns(dir string) []gitignore.Pattern {
 	return dl.dirPatterns.GetOrSet(dir, func() []gitignore.Pattern {
 		var allPatterns []gitignore.Pattern
@@ -176,7 +190,7 @@ func (dl *directoryLister) getDirPatterns(dir string) []gitignore.Pattern {
 			domain = pathToComponents(relPath)
 		}
 
-		for _, ignoreFile := range []string{".gitignore", ".smithersignore"} {
+		for _, ignoreFile := range []string{".gitignore", ".crushignore", ".smithersignore"} {
 			ignPath := filepath.Join(dir, ignoreFile)
 			if content, err := os.ReadFile(ignPath); err == nil {
 				lines := strings.Split(string(content), "\n")
@@ -197,8 +211,10 @@ func (dl *directoryLister) getCombinedMatcher(dir string) gitignore.Matcher {
 		// Add common patterns first (lowest priority).
 		allPatterns = append(allPatterns, commonIgnorePatterns()...)
 
-		// Add global ignore patterns (git core.excludesFile + smithers-tui global ignore).
+		// Add global ignore patterns (git core.excludesFile + legacy crush +
+		// smithers-tui global ignore).
 		allPatterns = append(allPatterns, gitGlobalIgnorePatterns()...)
+		allPatterns = append(allPatterns, crushGlobalIgnorePatterns()...)
 		allPatterns = append(allPatterns, smithersGlobalIgnorePatterns()...)
 
 		// Collect patterns from root to this directory.

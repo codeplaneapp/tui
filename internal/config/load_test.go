@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"charm.land/catwalk/pkg/catwalk"
@@ -53,11 +54,53 @@ func TestConfig_setDefaults(t *testing.T) {
 	require.NotNil(t, cfg.Models)
 	require.NotNil(t, cfg.LSP)
 	require.NotNil(t, cfg.MCP)
+	require.NotNil(t, cfg.Options.Observability)
+	require.Equal(t, 512, cfg.Options.Observability.TraceBufferSize)
+	require.NotNil(t, cfg.Options.Observability.TraceSampleRatio)
+	require.Equal(t, 1.0, *cfg.Options.Observability.TraceSampleRatio)
+	require.NotNil(t, cfg.Options.Observability.OTLPInsecure)
+	require.False(t, *cfg.Options.Observability.OTLPInsecure)
 	require.Equal(t, filepath.Join("/tmp", ".smithers-tui"), cfg.Options.DataDirectory)
 	require.Equal(t, "AGENTS.md", cfg.Options.InitializeAs)
 	for _, path := range defaultContextPaths {
 		require.Contains(t, cfg.Options.ContextPaths, path)
 	}
+}
+
+func TestConfig_setDefaultsObservabilityEnvOverrides(t *testing.T) {
+	t.Setenv("SMITHERS_TUI_OBSERVABILITY_ADDR", "127.0.0.1:9464")
+	t.Setenv("SMITHERS_TUI_TRACE_BUFFER_SIZE", "2048")
+	t.Setenv("SMITHERS_TUI_TRACE_SAMPLE_RATIO", "0.5")
+	t.Setenv("SMITHERS_TUI_OTLP_ENDPOINT", "http://localhost:4318")
+	t.Setenv("SMITHERS_TUI_OTLP_INSECURE", "true")
+	t.Setenv("SMITHERS_TUI_OTLP_HEADERS", "Authorization=Bearer token,X-Scope=test")
+
+	cfg := &Config{}
+	cfg.setDefaults("/tmp", "")
+
+	require.NotNil(t, cfg.Options.Observability)
+	require.Equal(t, "127.0.0.1:9464", cfg.Options.Observability.Address)
+	require.Equal(t, 2048, cfg.Options.Observability.TraceBufferSize)
+	require.NotNil(t, cfg.Options.Observability.TraceSampleRatio)
+	require.Equal(t, 0.5, *cfg.Options.Observability.TraceSampleRatio)
+	require.Equal(t, "http://localhost:4318", cfg.Options.Observability.OTLPEndpoint)
+	require.NotNil(t, cfg.Options.Observability.OTLPInsecure)
+	require.True(t, *cfg.Options.Observability.OTLPInsecure)
+	require.Equal(t, map[string]string{
+		"Authorization": "Bearer token",
+		"X-Scope":       "test",
+	}, cfg.Options.Observability.OTLPHeaders)
+}
+
+func TestConfig_setDefaultsWithLegacyDataDirectory(t *testing.T) {
+	workingDir := t.TempDir()
+	legacyDataDir := filepath.Join(workingDir, ".crush")
+	require.NoError(t, os.MkdirAll(legacyDataDir, 0o755))
+
+	cfg := &Config{}
+	cfg.setDefaults(workingDir, "")
+
+	require.Equal(t, legacyDataDir, cfg.Options.DataDirectory)
 }
 
 func TestConfig_setDefaultsWithSmithers(t *testing.T) {
@@ -1502,24 +1545,22 @@ func TestConfig_configureSelectedModels(t *testing.T) {
 	})
 }
 
-// TestConfig_lookupConfigs verifies that smithers-tui.json is discovered and
-// crush.json is not.
+// TestConfig_lookupConfigs verifies that both smithers-tui.json and crush.json
+// are discovered, with smithers-tui.json taking precedence.
 func TestConfig_lookupConfigs(t *testing.T) {
 	dir := t.TempDir()
 
-	// Write a smithers-tui.json config in the temp dir.
-	configPath := filepath.Join(dir, "smithers-tui.json")
-	require.NoError(t, os.WriteFile(configPath, []byte(`{}`), 0o644))
+	smithersPath := filepath.Join(dir, "smithers-tui.json")
+	require.NoError(t, os.WriteFile(smithersPath, []byte(`{}`), 0o644))
+
+	legacyPath := filepath.Join(dir, "crush.json")
+	require.NoError(t, os.WriteFile(legacyPath, []byte(`{}`), 0o644))
 
 	paths := lookupConfigs(dir)
 
-	// smithers-tui.json must appear in the results.
-	require.Contains(t, paths, configPath)
-
-	// crush.json must NOT appear.
-	for _, p := range paths {
-		require.NotContains(t, p, "crush.json")
-	}
+	require.Contains(t, paths, smithersPath)
+	require.Contains(t, paths, legacyPath)
+	require.Greater(t, slices.Index(paths, smithersPath), slices.Index(paths, legacyPath))
 }
 
 // TestConfig_envVarFallback verifies that CRUSH_* variables are honoured when
@@ -1531,7 +1572,7 @@ func TestConfig_envVarFallback(t *testing.T) {
 		t.Setenv("CRUSH_GLOBAL_CONFIG", "/tmp/legacy")
 
 		got := GlobalConfig()
-		require.Contains(t, got, "/tmp/legacy")
+		require.Equal(t, filepath.Join("/tmp/legacy", "crush.json"), got)
 	})
 
 	t.Run("SMITHERS_TUI_GLOBAL_CONFIG takes precedence over CRUSH_GLOBAL_CONFIG", func(t *testing.T) {
@@ -1539,8 +1580,7 @@ func TestConfig_envVarFallback(t *testing.T) {
 		t.Setenv("CRUSH_GLOBAL_CONFIG", "/tmp/legacy")
 
 		got := GlobalConfig()
-		require.Contains(t, got, "/tmp/primary")
-		require.NotContains(t, got, "/tmp/legacy")
+		require.Equal(t, filepath.Join("/tmp/primary", "smithers-tui.json"), got)
 	})
 
 	t.Run("CRUSH_GLOBAL_DATA is used when SMITHERS_TUI_GLOBAL_DATA is unset", func(t *testing.T) {
@@ -1548,7 +1588,7 @@ func TestConfig_envVarFallback(t *testing.T) {
 		t.Setenv("CRUSH_GLOBAL_DATA", "/tmp/legacy-data")
 
 		got := GlobalConfigData()
-		require.Contains(t, got, "/tmp/legacy-data")
+		require.Equal(t, filepath.Join("/tmp/legacy-data", "crush.json"), got)
 	})
 
 	t.Run("SMITHERS_TUI_GLOBAL_DATA takes precedence over CRUSH_GLOBAL_DATA", func(t *testing.T) {
@@ -1556,41 +1596,66 @@ func TestConfig_envVarFallback(t *testing.T) {
 		t.Setenv("CRUSH_GLOBAL_DATA", "/tmp/legacy-data")
 
 		got := GlobalConfigData()
-		require.Contains(t, got, "/tmp/primary-data")
-		require.NotContains(t, got, "/tmp/legacy-data")
+		require.Equal(t, filepath.Join("/tmp/primary-data", "smithers-tui.json"), got)
+	})
+}
+
+func TestConfig_prefersExistingLegacyPaths(t *testing.T) {
+	t.Run("GlobalConfig falls back to legacy config file", func(t *testing.T) {
+		cfgHome := t.TempDir()
+		t.Setenv("XDG_CONFIG_HOME", cfgHome)
+		t.Setenv("SMITHERS_TUI_GLOBAL_CONFIG", "")
+		t.Setenv("CRUSH_GLOBAL_CONFIG", "")
+
+		legacyPath := filepath.Join(cfgHome, "crush", "crush.json")
+		require.NoError(t, os.MkdirAll(filepath.Dir(legacyPath), 0o755))
+		require.NoError(t, os.WriteFile(legacyPath, []byte(`{}`), 0o644))
+
+		require.Equal(t, legacyPath, GlobalConfig())
+	})
+
+	t.Run("GlobalConfigData falls back to legacy data file", func(t *testing.T) {
+		dataHome := t.TempDir()
+		t.Setenv("XDG_DATA_HOME", dataHome)
+		t.Setenv("SMITHERS_TUI_GLOBAL_DATA", "")
+		t.Setenv("CRUSH_GLOBAL_DATA", "")
+
+		legacyPath := filepath.Join(dataHome, "crush", "crush.json")
+		require.NoError(t, os.MkdirAll(filepath.Dir(legacyPath), 0o755))
+		require.NoError(t, os.WriteFile(legacyPath, []byte(`{}`), 0o644))
+
+		require.Equal(t, legacyPath, GlobalConfigData())
+	})
+
+	t.Run("workspaceConfigPath falls back to crush.json", func(t *testing.T) {
+		dataDir := t.TempDir()
+		legacyPath := filepath.Join(dataDir, "crush.json")
+		require.NoError(t, os.WriteFile(legacyPath, []byte(`{}`), 0o644))
+
+		require.Equal(t, legacyPath, workspaceConfigPath(dataDir))
 	})
 }
 
 // TestConfig_GlobalSkillsDirs asserts that global skills dirs reference
-// smithers-tui and agents, not crush.
+// smithers-tui, crush, and agents.
 func TestConfig_GlobalSkillsDirs(t *testing.T) {
-	// Ensure the override env var is not set so we get the default paths.
+	cfgHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgHome)
 	t.Setenv("SMITHERS_TUI_SKILLS_DIR", "")
 	t.Setenv("CRUSH_SKILLS_DIR", "")
 
 	dirs := GlobalSkillsDirs()
-
-	var combined string
-	for _, d := range dirs {
-		combined += d + "\n"
-	}
-
-	require.Contains(t, combined, "smithers-tui")
-	require.NotContains(t, combined, "/crush/")
+	require.Contains(t, dirs, filepath.Join(cfgHome, "smithers-tui", "skills"))
+	require.Contains(t, dirs, filepath.Join(cfgHome, "crush", "skills"))
+	require.Contains(t, dirs, filepath.Join(cfgHome, "agents", "skills"))
 }
 
-// TestConfig_ProjectSkillsDir asserts that .smithers-tui/skills appears and
-// .crush/skills does not.
+// TestConfig_ProjectSkillsDir asserts that both .smithers-tui/skills and
+// .crush/skills are discovered.
 func TestConfig_ProjectSkillsDir(t *testing.T) {
 	dirs := ProjectSkillsDir("/tmp/proj")
-
-	var combined string
-	for _, d := range dirs {
-		combined += d + "\n"
-	}
-
-	require.Contains(t, combined, ".smithers-tui/skills")
-	require.NotContains(t, combined, ".crush/skills")
+	require.Contains(t, dirs, filepath.Join("/tmp/proj", ".smithers-tui", "skills"))
+	require.Contains(t, dirs, filepath.Join("/tmp/proj", ".crush", "skills"))
 }
 
 // TestConfig_SmithersDefaultModel verifies that when SmithersConfig is present

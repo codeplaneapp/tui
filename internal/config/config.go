@@ -16,6 +16,7 @@ import (
 	"charm.land/catwalk/pkg/catwalk"
 	"github.com/charmbracelet/crush/internal/csync"
 	"github.com/charmbracelet/crush/internal/env"
+	crushlog "github.com/charmbracelet/crush/internal/log"
 	"github.com/charmbracelet/crush/internal/oauth"
 	"github.com/charmbracelet/crush/internal/oauth/copilot"
 	"github.com/invopop/jsonschema"
@@ -23,7 +24,9 @@ import (
 
 const (
 	appName              = "smithers-tui"
+	legacyAppName        = "crush"
 	defaultDataDirectory = ".smithers-tui"
+	legacyDataDirectory  = ".crush"
 	defaultInitializeAs  = "AGENTS.md"
 )
 
@@ -41,6 +44,12 @@ var defaultContextPaths = []string{
 	"Smithers-tui.local.md",
 	"SMITHERS-TUI.md",
 	"SMITHERS-TUI.local.md",
+	"crush.md",
+	"crush.local.md",
+	"Crush.md",
+	"Crush.local.md",
+	"CRUSH.md",
+	"CRUSH.local.md",
 	"AGENTS.md",
 	"agents.md",
 	"Agents.md",
@@ -231,6 +240,20 @@ type Attribution struct {
 	GeneratedWith bool         `json:"generated_with,omitempty" jsonschema:"description=Add Generated with Smithers TUI line to commit messages and issues and PRs,default=true"`
 }
 
+type ObservabilityOptions struct {
+	Address string `json:"address,omitempty" jsonschema:"description=Address for the local observability server exposing metrics and debug endpoints,example=127.0.0.1:9464"`
+
+	TraceBufferSize int `json:"trace_buffer_size,omitempty" jsonschema:"description=Number of completed spans kept in the in-memory trace buffer,default=512,example=1024"`
+
+	TraceSampleRatio *float64 `json:"trace_sample_ratio,omitempty" jsonschema:"description=Fraction of traces to sample locally,minimum=0,maximum=1,default=1,example=1"`
+
+	OTLPEndpoint string `json:"otlp_endpoint,omitempty" jsonschema:"description=OTLP/HTTP endpoint used to export traces,example=http://localhost:4318"`
+
+	OTLPInsecure *bool `json:"otlp_insecure,omitempty" jsonschema:"description=Disable TLS certificate verification for OTLP trace exports,default=false"`
+
+	OTLPHeaders map[string]string `json:"otlp_headers,omitempty" jsonschema:"description=Additional HTTP headers sent with OTLP trace exports"`
+}
+
 // JSONSchemaExtend marks the co_authored_by field as deprecated in the schema.
 func (Attribution) JSONSchemaExtend(schema *jsonschema.Schema) {
 	if schema.Properties != nil {
@@ -241,23 +264,24 @@ func (Attribution) JSONSchemaExtend(schema *jsonschema.Schema) {
 }
 
 type Options struct {
-	ContextPaths              []string     `json:"context_paths,omitempty" jsonschema:"description=Paths to files containing context information for the AI,example=.cursorrules,example=SMITHERS-TUI.md"`
-	SkillsPaths               []string     `json:"skills_paths,omitempty" jsonschema:"description=Paths to directories containing Agent Skills (folders with SKILL.md files),example=~/.config/smithers-tui/skills,example=./skills"`
-	TUI                       *TUIOptions  `json:"tui,omitempty" jsonschema:"description=Terminal user interface options"`
-	Debug                     bool         `json:"debug,omitempty" jsonschema:"description=Enable debug logging,default=false"`
-	DebugLSP                  bool         `json:"debug_lsp,omitempty" jsonschema:"description=Enable debug logging for LSP servers,default=false"`
-	DisableAutoSummarize      bool         `json:"disable_auto_summarize,omitempty" jsonschema:"description=Disable automatic conversation summarization,default=false"`
-	DataDirectory             string       `json:"data_directory,omitempty" jsonschema:"description=Directory for storing application data (relative to working directory),default=.smithers-tui,example=.smithers-tui"` // Relative to the cwd
-	DisabledTools             []string     `json:"disabled_tools,omitempty" jsonschema:"description=List of built-in tools to disable and hide from the agent,example=bash,example=sourcegraph"`
-	DisableProviderAutoUpdate bool         `json:"disable_provider_auto_update,omitempty" jsonschema:"description=Disable providers auto-update,default=false"`
-	DisableDefaultProviders   bool         `json:"disable_default_providers,omitempty" jsonschema:"description=Ignore all default/embedded providers. When enabled, providers must be fully specified in the config file with base_url, models, and api_key - no merging with defaults occurs,default=false"`
-	Attribution               *Attribution `json:"attribution,omitempty" jsonschema:"description=Attribution settings for generated content"`
-	DisableMetrics            bool         `json:"disable_metrics,omitempty" jsonschema:"description=Disable sending metrics,default=false"`
-	InitializeAs              string       `json:"initialize_as,omitempty" jsonschema:"description=Name of the context file to create/update during project initialization,default=AGENTS.md,example=AGENTS.md,example=SMITHERS-TUI.md,example=CLAUDE.md,example=docs/LLMs.md"`
-	AutoLSP                   *bool        `json:"auto_lsp,omitempty" jsonschema:"description=Automatically setup LSPs based on root markers,default=true"`
-	Progress                  *bool        `json:"progress,omitempty" jsonschema:"description=Show indeterminate progress updates during long operations,default=true"`
-	DisableNotifications      bool         `json:"disable_notifications,omitempty" jsonschema:"description=Disable desktop notifications,default=false"`
-	DisabledSkills            []string     `json:"disabled_skills,omitempty" jsonschema:"description=List of skill names to disable and hide from the agent,example=crush-config"`
+	ContextPaths              []string              `json:"context_paths,omitempty" jsonschema:"description=Paths to files containing context information for the AI,example=.cursorrules,example=SMITHERS-TUI.md"`
+	SkillsPaths               []string              `json:"skills_paths,omitempty" jsonschema:"description=Paths to directories containing Agent Skills (folders with SKILL.md files),example=~/.config/smithers-tui/skills,example=./skills"`
+	TUI                       *TUIOptions           `json:"tui,omitempty" jsonschema:"description=Terminal user interface options"`
+	Debug                     bool                  `json:"debug,omitempty" jsonschema:"description=Enable debug logging,default=false"`
+	DebugLSP                  bool                  `json:"debug_lsp,omitempty" jsonschema:"description=Enable debug logging for LSP servers,default=false"`
+	DisableAutoSummarize      bool                  `json:"disable_auto_summarize,omitempty" jsonschema:"description=Disable automatic conversation summarization,default=false"`
+	DataDirectory             string                `json:"data_directory,omitempty" jsonschema:"description=Directory for storing application data (relative to working directory),default=.smithers-tui,example=.smithers-tui"` // Relative to the cwd
+	DisabledTools             []string              `json:"disabled_tools,omitempty" jsonschema:"description=List of built-in tools to disable and hide from the agent,example=bash,example=sourcegraph"`
+	DisableProviderAutoUpdate bool                  `json:"disable_provider_auto_update,omitempty" jsonschema:"description=Disable providers auto-update,default=false"`
+	DisableDefaultProviders   bool                  `json:"disable_default_providers,omitempty" jsonschema:"description=Ignore all default/embedded providers. When enabled, providers must be fully specified in the config file with base_url, models, and api_key - no merging with defaults occurs,default=false"`
+	Attribution               *Attribution          `json:"attribution,omitempty" jsonschema:"description=Attribution settings for generated content"`
+	DisableMetrics            bool                  `json:"disable_metrics,omitempty" jsonschema:"description=Disable sending metrics,default=false"`
+	InitializeAs              string                `json:"initialize_as,omitempty" jsonschema:"description=Name of the context file to create/update during project initialization,default=AGENTS.md,example=AGENTS.md,example=SMITHERS-TUI.md,example=CLAUDE.md,example=docs/LLMs.md"`
+	AutoLSP                   *bool                 `json:"auto_lsp,omitempty" jsonschema:"description=Automatically setup LSPs based on root markers,default=true"`
+	Progress                  *bool                 `json:"progress,omitempty" jsonschema:"description=Show indeterminate progress updates during long operations,default=true"`
+	DisableNotifications      bool                  `json:"disable_notifications,omitempty" jsonschema:"description=Disable desktop notifications,default=false"`
+	DisabledSkills            []string              `json:"disabled_skills,omitempty" jsonschema:"description=List of skill names to disable and hide from the agent,example=crush-config"`
+	Observability             *ObservabilityOptions `json:"observability,omitempty" jsonschema:"description=Observability settings for tracing, metrics, and debug endpoints"`
 }
 
 type MCPs map[string]MCPConfig
@@ -632,7 +656,7 @@ func (c *ProviderConfig) TestConnection(resolver VariableResolver) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	client := &http.Client{}
+	client := crushlog.NewHTTPClientWithComponent("provider_validation")
 	req, err := http.NewRequestWithContext(ctx, "GET", testURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request for provider %s: %w", c.ID, err)

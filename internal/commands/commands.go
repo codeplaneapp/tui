@@ -97,7 +97,15 @@ func buildCommandSources(cfg *config.Config) []commandSource {
 			prefix: userCommandPrefix,
 		},
 		{
+			path:   filepath.Join(home.Config(), "crush", "commands"),
+			prefix: userCommandPrefix,
+		},
+		{
 			path:   filepath.Join(home.Dir(), ".smithers-tui", "commands"),
+			prefix: userCommandPrefix,
+		},
+		{
+			path:   filepath.Join(home.Dir(), ".crush", "commands"),
 			prefix: userCommandPrefix,
 		},
 		{

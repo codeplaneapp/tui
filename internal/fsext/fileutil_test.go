@@ -235,6 +235,22 @@ func TestGlobWithDoubleStar(t *testing.T) {
 		require.Equal(t, []string{goodFile}, matches)
 	})
 
+	t.Run("respects legacy crush ignore patterns", func(t *testing.T) {
+		testDir := t.TempDir()
+
+		rootIgnore := filepath.Join(testDir, ".crushignore")
+		require.NoError(t, os.WriteFile(rootIgnore, []byte("legacy/\n"), 0o644))
+
+		require.NoError(t, os.WriteFile(filepath.Join(testDir, "good.txt"), []byte("content"), 0o644))
+		require.NoError(t, os.MkdirAll(filepath.Join(testDir, "legacy"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(testDir, "legacy", "old.txt"), []byte("old content"), 0o644))
+
+		matches, truncated, err := GlobGitignoreAware("legacy", testDir, 0)
+		require.NoError(t, err)
+		require.False(t, truncated)
+		require.Empty(t, matches, "Expected no matches for 'legacy' pattern (should be ignored)")
+	})
+
 	t.Run("handles mixed file and directory matching with sorting", func(t *testing.T) {
 		testDir := t.TempDir()
 

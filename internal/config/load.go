@@ -44,7 +44,7 @@ func Load(workingDir, dataDir string, debug bool) (*ConfigStore, error) {
 		config:         cfg,
 		workingDir:     workingDir,
 		globalDataPath: GlobalConfigData(),
-		workspacePath:  filepath.Join(cfg.Options.DataDirectory, fmt.Sprintf("%s.json", appName)),
+		workspacePath:  workspaceConfigPath(cfg.Options.DataDirectory),
 	}
 
 	if debug {
@@ -372,6 +372,8 @@ func (c *Config) setDefaults(workingDir, dataDir string) {
 	} else if c.Options.DataDirectory == "" {
 		if path, ok := fsext.LookupClosest(workingDir, defaultDataDirectory); ok {
 			c.Options.DataDirectory = path
+		} else if path, ok := fsext.LookupClosest(workingDir, legacyDataDirectory); ok {
+			c.Options.DataDirectory = path
 		} else {
 			c.Options.DataDirectory = filepath.Join(workingDir, defaultDataDirectory)
 		}
@@ -468,7 +470,70 @@ func (c *Config) setDefaults(workingDir, dataDir string) {
 			c.Options.Attribution.TrailerStyle = TrailerStyleAssistedBy
 		}
 	}
+
+	if c.Options.Observability == nil {
+		c.Options.Observability = &ObservabilityOptions{}
+	}
+	if c.Options.Observability.TraceBufferSize <= 0 {
+		c.Options.Observability.TraceBufferSize = 512
+	}
+	assignIfNil(&c.Options.Observability.TraceSampleRatio, 1.0)
+	assignIfNil(&c.Options.Observability.OTLPInsecure, false)
+
+	if str := envWithFallback("SMITHERS_TUI_OBSERVABILITY_ADDR", "CRUSH_OBSERVABILITY_ADDR"); str != "" {
+		c.Options.Observability.Address = str
+	}
+	if str := envWithFallback("SMITHERS_TUI_TRACE_BUFFER_SIZE", "CRUSH_TRACE_BUFFER_SIZE"); str != "" {
+		if size, err := strconv.Atoi(str); err == nil && size > 0 {
+			c.Options.Observability.TraceBufferSize = size
+		}
+	}
+	if str := envWithFallback("SMITHERS_TUI_TRACE_SAMPLE_RATIO", "CRUSH_TRACE_SAMPLE_RATIO"); str != "" {
+		if ratio, err := strconv.ParseFloat(str, 64); err == nil {
+			ratio = max(0, min(1, ratio))
+			c.Options.Observability.TraceSampleRatio = &ratio
+		}
+	}
+	if str := envWithFallback("SMITHERS_TUI_OTLP_ENDPOINT", "CRUSH_OTLP_ENDPOINT"); str != "" {
+		c.Options.Observability.OTLPEndpoint = str
+	}
+	if str := envWithFallback("SMITHERS_TUI_OTLP_INSECURE", "CRUSH_OTLP_INSECURE"); str != "" {
+		if insecure, err := strconv.ParseBool(str); err == nil {
+			c.Options.Observability.OTLPInsecure = &insecure
+		}
+	}
+	if str := envWithFallback("SMITHERS_TUI_OTLP_HEADERS", "CRUSH_OTLP_HEADERS"); str != "" {
+		headers := parseKeyValueEnv(str)
+		if len(headers) > 0 {
+			if c.Options.Observability.OTLPHeaders == nil {
+				c.Options.Observability.OTLPHeaders = map[string]string{}
+			}
+			maps.Copy(c.Options.Observability.OTLPHeaders, headers)
+		}
+	}
+
 	c.Options.InitializeAs = cmp.Or(c.Options.InitializeAs, defaultInitializeAs)
+}
+
+func parseKeyValueEnv(raw string) map[string]string {
+	headers := make(map[string]string)
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		key, value, ok := strings.Cut(part, "=")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if key == "" {
+			continue
+		}
+		headers[key] = value
+	}
+	return headers
 }
 
 // applyLSPDefaults applies default values from powernap to LSP configurations
@@ -689,6 +754,7 @@ func lookupConfigs(cwd string) []string {
 	}
 
 	configNames := []string{appName + ".json", "." + appName + ".json"}
+	configNames = append(configNames, legacyAppName+".json", "."+legacyAppName+".json")
 
 	foundConfigs, err := fsext.Lookup(cwd, configNames...)
 	if err != nil {
@@ -769,10 +835,19 @@ func hasAWSCredentials(env env.Env) bool {
 
 // GlobalConfig returns the global configuration file path for the application.
 func GlobalConfig() string {
-	if globalConfig := envWithFallback("SMITHERS_TUI_GLOBAL_CONFIG", "CRUSH_GLOBAL_CONFIG"); globalConfig != "" {
+	if globalConfig := os.Getenv("SMITHERS_TUI_GLOBAL_CONFIG"); globalConfig != "" {
 		return filepath.Join(globalConfig, fmt.Sprintf("%s.json", appName))
 	}
-	return filepath.Join(home.Config(), appName, fmt.Sprintf("%s.json", appName))
+	if legacyConfig := os.Getenv("CRUSH_GLOBAL_CONFIG"); legacyConfig != "" {
+		slog.Warn("Using legacy environment variable; please migrate to the new name",
+			"legacy", "CRUSH_GLOBAL_CONFIG", "replacement", "SMITHERS_TUI_GLOBAL_CONFIG")
+		return filepath.Join(legacyConfig, fmt.Sprintf("%s.json", legacyAppName))
+	}
+
+	return preferExistingPath(
+		filepath.Join(home.Config(), appName, fmt.Sprintf("%s.json", appName)),
+		filepath.Join(home.Config(), legacyAppName, fmt.Sprintf("%s.json", legacyAppName)),
+	)
 }
 
 // GlobalCacheDir returns the path to the global cache directory for the
@@ -797,11 +872,19 @@ func GlobalCacheDir() string {
 // GlobalConfigData returns the path to the main data directory for the application.
 // this config is used when the app overrides configurations instead of updating the global config.
 func GlobalConfigData() string {
-	if globalData := envWithFallback("SMITHERS_TUI_GLOBAL_DATA", "CRUSH_GLOBAL_DATA"); globalData != "" {
+	if globalData := os.Getenv("SMITHERS_TUI_GLOBAL_DATA"); globalData != "" {
 		return filepath.Join(globalData, fmt.Sprintf("%s.json", appName))
 	}
+	if legacyData := os.Getenv("CRUSH_GLOBAL_DATA"); legacyData != "" {
+		slog.Warn("Using legacy environment variable; please migrate to the new name",
+			"legacy", "CRUSH_GLOBAL_DATA", "replacement", "SMITHERS_TUI_GLOBAL_DATA")
+		return filepath.Join(legacyData, fmt.Sprintf("%s.json", legacyAppName))
+	}
 	if xdgDataHome := os.Getenv("XDG_DATA_HOME"); xdgDataHome != "" {
-		return filepath.Join(xdgDataHome, appName, fmt.Sprintf("%s.json", appName))
+		return preferExistingPath(
+			filepath.Join(xdgDataHome, appName, fmt.Sprintf("%s.json", appName)),
+			filepath.Join(xdgDataHome, legacyAppName, fmt.Sprintf("%s.json", legacyAppName)),
+		)
 	}
 
 	// return the path to the main data directory
@@ -812,10 +895,16 @@ func GlobalConfigData() string {
 			os.Getenv("LOCALAPPDATA"),
 			filepath.Join(os.Getenv("USERPROFILE"), "AppData", "Local"),
 		)
-		return filepath.Join(localAppData, appName, fmt.Sprintf("%s.json", appName))
+		return preferExistingPath(
+			filepath.Join(localAppData, appName, fmt.Sprintf("%s.json", appName)),
+			filepath.Join(localAppData, legacyAppName, fmt.Sprintf("%s.json", legacyAppName)),
+		)
 	}
 
-	return filepath.Join(home.Dir(), ".local", "share", appName, fmt.Sprintf("%s.json", appName))
+	return preferExistingPath(
+		filepath.Join(home.Dir(), ".local", "share", appName, fmt.Sprintf("%s.json", appName)),
+		filepath.Join(home.Dir(), ".local", "share", legacyAppName, fmt.Sprintf("%s.json", legacyAppName)),
+	)
 }
 
 // GlobalWorkspaceDir returns the path to the global server workspace
@@ -852,6 +941,7 @@ func GlobalSkillsDirs() []string {
 
 	paths := []string{
 		filepath.Join(home.Config(), appName, "skills"),
+		filepath.Join(home.Config(), legacyAppName, "skills"),
 		filepath.Join(home.Config(), "agents", "skills"),
 	}
 
@@ -865,6 +955,7 @@ func GlobalSkillsDirs() []string {
 		paths = append(
 			paths,
 			filepath.Join(appData, appName, "skills"),
+			filepath.Join(appData, legacyAppName, "skills"),
 			filepath.Join(appData, "agents", "skills"),
 		)
 	}
@@ -878,6 +969,7 @@ func ProjectSkillsDir(workingDir string) []string {
 	return []string{
 		filepath.Join(workingDir, ".agents/skills"),
 		filepath.Join(workingDir, ".smithers-tui/skills"),
+		filepath.Join(workingDir, ".crush/skills"),
 		filepath.Join(workingDir, ".claude/skills"),
 		filepath.Join(workingDir, ".cursor/skills"),
 	}
@@ -899,4 +991,21 @@ func envWithFallback(primary, legacy string) string {
 		return v
 	}
 	return ""
+}
+
+func preferExistingPath(primary, legacy string) string {
+	if _, err := os.Stat(primary); err == nil {
+		return primary
+	}
+	if _, err := os.Stat(legacy); err == nil {
+		return legacy
+	}
+	return primary
+}
+
+func workspaceConfigPath(dataDir string) string {
+	return preferExistingPath(
+		filepath.Join(dataDir, fmt.Sprintf("%s.json", appName)),
+		filepath.Join(dataDir, fmt.Sprintf("%s.json", legacyAppName)),
+	)
 }

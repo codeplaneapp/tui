@@ -26,6 +26,20 @@ func TestSmithersIgnore(t *testing.T) {
 	require.True(t, dl.shouldIgnore("test3.tmp", nil, false), ".tmp files should be ignored by common patterns")
 }
 
+func TestCrushIgnore(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+
+	require.NoError(t, os.WriteFile("test1.txt", []byte("test"), 0o644))
+	require.NoError(t, os.WriteFile("test2.log", []byte("test"), 0o644))
+
+	require.NoError(t, os.WriteFile(".crushignore", []byte("*.log\n"), 0o644))
+
+	dl := NewDirectoryLister(tempDir)
+	require.True(t, dl.shouldIgnore("test2.log", nil, false), ".log files should be ignored")
+	require.False(t, dl.shouldIgnore("test1.txt", nil, false), ".txt files should not be ignored")
+}
+
 func TestShouldExcludeFile(t *testing.T) {
 	t.Parallel()
 
@@ -93,6 +107,17 @@ func TestShouldExcludeFileHierarchical(t *testing.T) {
 	// Test hierarchical ignore behavior - this should work because the .smithersignore is in the parent directory
 	require.True(t, ShouldExcludeFile(tempDir, nestedNormal), "Expected normal_nested to be ignored by subdir .smithersignore")
 	require.False(t, ShouldExcludeFile(tempDir, subDir), "Expected subdir itself to not be ignored")
+}
+
+func TestShouldExcludeFileLegacyCrushIgnore(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	legacyIgnored := filepath.Join(tempDir, "legacy_ignored")
+	require.NoError(t, os.MkdirAll(legacyIgnored, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(tempDir, ".crushignore"), []byte("legacy_ignored/\n"), 0o644))
+
+	require.True(t, ShouldExcludeFile(tempDir, legacyIgnored), "Expected legacy_ignored to be ignored by .crushignore")
 }
 
 func TestShouldExcludeFileCommonPatterns(t *testing.T) {

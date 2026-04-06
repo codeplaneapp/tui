@@ -121,6 +121,36 @@ func TestGrepWithIgnoreFiles(t *testing.T) {
 	}
 }
 
+func TestGrepWithLegacyCrushIgnore(t *testing.T) {
+	t.Parallel()
+	tempDir := t.TempDir()
+
+	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "visible.txt"), []byte("hello world"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(tempDir, "legacy"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "legacy", "hidden.txt"), []byte("hello world"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(tempDir, ".crushignore"), []byte("legacy/\n"), 0o644))
+
+	for name, fn := range map[string]func(pattern, path, include string) ([]grepMatch, error){
+		"regex": searchFilesWithRegex,
+		"rg": func(pattern, path, include string) ([]grepMatch, error) {
+			return searchWithRipgrep(t.Context(), pattern, path, include)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			if name == "rg" && getRg() == "" {
+				t.Skip("rg is not in $PATH")
+			}
+
+			matches, err := fn("hello world", tempDir, "")
+			require.NoError(t, err)
+			require.Len(t, matches, 1)
+			require.Equal(t, filepath.Join(tempDir, "visible.txt"), matches[0].path)
+		})
+	}
+}
+
 func TestSearchImplementations(t *testing.T) {
 	t.Parallel()
 	tempDir := t.TempDir()
@@ -418,4 +448,49 @@ func TestColumnMatch(t *testing.T) {
 			require.Equal(t, "testdata/grep.txt", filepath.ToSlash(filepath.Clean(match.path)))
 		})
 	}
+}
+
+func TestGrepTool_InvalidRegex(t *testing.T) {
+	t.Parallel()
+	tempDir := t.TempDir()
+
+	// Create a file so the directory is not empty
+	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "file.txt"), []byte("some content"), 0o644))
+
+	// An unclosed group is an invalid regex pattern
+	_, err := searchFilesWithRegex("(unclosed", tempDir, "")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid regex pattern")
+}
+
+func TestGrepTool_RegexCacheHit(t *testing.T) {
+	t.Parallel()
+	tempDir := t.TempDir()
+
+	// Create a file with content that matches our pattern
+	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "data.txt"), []byte("foo123bar"), 0o644))
+
+	pattern := "foo[0-9]+bar"
+
+	// First call compiles and caches the regex
+	matches1, err := searchFilesWithRegex(pattern, tempDir, "")
+	require.NoError(t, err)
+	require.Len(t, matches1, 1)
+
+	// Second call with the same pattern should use the cached regex
+	// and produce identical results
+	matches2, err := searchFilesWithRegex(pattern, tempDir, "")
+	require.NoError(t, err)
+	require.Len(t, matches2, 1)
+
+	require.Equal(t, matches1[0].path, matches2[0].path)
+	require.Equal(t, matches1[0].lineNum, matches2[0].lineNum)
+	require.Equal(t, matches1[0].lineText, matches2[0].lineText)
+
+	// Verify through the cache directly that the same pointer is returned
+	cached1, err := searchRegexCache.get(pattern)
+	require.NoError(t, err)
+	cached2, err := searchRegexCache.get(pattern)
+	require.NoError(t, err)
+	require.Same(t, cached1, cached2, "cache should return the same *regexp.Regexp pointer")
 }

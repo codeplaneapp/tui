@@ -1,9 +1,12 @@
 package projects
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestRegisterAndList(t *testing.T) {
@@ -123,6 +126,19 @@ func TestProjectsFilePath(t *testing.T) {
 	if actual != expected {
 		t.Errorf("Expected %s, got %s", expected, actual)
 	}
+}
+
+func TestProjectsFilePathFallsBackToLegacyFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", tmpDir)
+	t.Setenv("SMITHERS_TUI_GLOBAL_DATA", "")
+	t.Setenv("CRUSH_GLOBAL_DATA", "")
+
+	legacyPath := filepath.Join(tmpDir, "crush", "projects.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(legacyPath), 0o755))
+	require.NoError(t, os.WriteFile(legacyPath, []byte(`{"projects":[]}`), 0o644))
+
+	require.Equal(t, legacyPath, projectsFilePath())
 }
 
 func TestRegisterWithParentDataDir(t *testing.T) {
