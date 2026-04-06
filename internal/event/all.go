@@ -37,6 +37,34 @@ func FilePickerOpened() {
 	send("filepicker opened")
 }
 
+func ChatTargetPickerOpened(props ...any) {
+	send(
+		"chat target picker opened",
+		props...,
+	)
+}
+
+func ChatTargetSelected(props ...any) {
+	send(
+		"chat target selected",
+		props...,
+	)
+}
+
+func ChatTargetHandoffCompleted(props ...any) {
+	send(
+		"chat target handoff completed",
+		props...,
+	)
+}
+
+func ChatTargetHandoffFailed(props ...any) {
+	send(
+		"chat target handoff failed",
+		props...,
+	)
+}
+
 func PromptSent(props ...any) {
 	send(
 		"prompt sent",

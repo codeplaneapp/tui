@@ -28,6 +28,7 @@ import (
 	"github.com/charmbracelet/crush/internal/db"
 	"github.com/charmbracelet/crush/internal/event"
 	crushlog "github.com/charmbracelet/crush/internal/log"
+	"github.com/charmbracelet/crush/internal/observability"
 	"github.com/charmbracelet/crush/internal/projects"
 	"github.com/charmbracelet/crush/internal/proto"
 	"github.com/charmbracelet/crush/internal/server"
@@ -47,9 +48,9 @@ var clientHost string
 
 func init() {
 	rootCmd.PersistentFlags().StringP("cwd", "c", "", "Current working directory")
-	rootCmd.PersistentFlags().StringP("data-dir", "D", "", "Custom smithers-tui data directory")
+	rootCmd.PersistentFlags().StringP("data-dir", "D", "", "Custom Codeplane data directory")
 	rootCmd.PersistentFlags().BoolP("debug", "d", false, "Debug")
-	rootCmd.PersistentFlags().StringVarP(&clientHost, "host", "H", server.DefaultHost(), "Connect to a specific crush server host (for advanced users)")
+	rootCmd.PersistentFlags().StringVarP(&clientHost, "host", "H", server.DefaultHost(), "Connect to a specific Codeplane server host (for advanced users)")
 	rootCmd.Flags().BoolP("help", "h", false, "Help")
 	rootCmd.Flags().BoolP("yolo", "y", false, "Automatically accept all permissions (dangerous mode)")
 	rootCmd.Flags().StringP("session", "s", "", "Continue a previous session by ID")
@@ -57,8 +58,10 @@ func init() {
 	rootCmd.MarkFlagsMutuallyExclusive("session", "continue")
 
 	rootCmd.AddCommand(
+		tuiCmd,
 		runCmd,
 		dirsCmd,
+		workspaceCmd,
 		projectsCmd,
 		updateProvidersCmd,
 		logsCmd,
@@ -70,73 +73,41 @@ func init() {
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "smithers-tui",
+	Use:   "codeplane",
 	Short: "A terminal-first AI assistant for software development",
 	Long:  "A glamorous, terminal-first AI assistant for software development and adjacent tasks",
 	Example: `
 # Run in interactive mode
-smithers-tui
+codeplane
 
 # Run non-interactively
-smithers-tui run "Guess my 5 favorite Pokémon"
+codeplane run "Guess my 5 favorite Pokémon"
 
 # Run a non-interactively with pipes and redirection
-cat README.md | smithers-tui run "make this more glamorous" > GLAMOROUS_README.md
+cat README.md | codeplane run "make this more glamorous" > GLAMOROUS_README.md
 
 # Run with debug logging in a specific directory
-smithers-tui --debug --cwd /path/to/project
+codeplane --debug --cwd /path/to/project
 
 # Run in yolo mode (auto-accept all permissions; use with care)
-smithers-tui --yolo
+codeplane --yolo
 
 # Run with custom data directory
-smithers-tui --data-dir /path/to/custom/.smithers-tui
+codeplane --data-dir /path/to/custom/.codeplane
 
 # Continue a previous session
-smithers-tui --session {session-id}
+codeplane --session {session-id}
 
 # Continue the most recent session
-smithers-tui --continue
+codeplane --continue
   `,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		sessionID, _ := cmd.Flags().GetString("session")
-		continueLast, _ := cmd.Flags().GetBool("continue")
+	RunE: runInteractive,
+}
 
-		ws, cleanup, err := setupWorkspaceWithProgressBar(cmd)
-		if err != nil {
-			return err
-		}
-		defer cleanup()
-
-		if sessionID != "" {
-			sess, err := resolveWorkspaceSessionID(cmd.Context(), ws, sessionID)
-			if err != nil {
-				return err
-			}
-			sessionID = sess.ID
-		}
-
-		event.AppInitialized()
-
-		com := common.DefaultCommon(ws)
-		model := ui.New(com, sessionID, continueLast)
-
-		var env uv.Environ = os.Environ()
-		program := tea.NewProgram(
-			model,
-			tea.WithEnvironment(env),
-			tea.WithContext(cmd.Context()),
-			tea.WithFilter(ui.MouseEventFilter),
-		)
-		go ws.Subscribe(program)
-
-		if _, err := program.Run(); err != nil {
-			event.Error(err)
-			slog.Error("TUI run error", "error", err)
-			return errors.New("Crush crashed. If metrics are enabled, we were notified about it. If you'd like to report it, please copy the stacktrace above and open an issue at https://github.com/charmbracelet/crush/issues/new?template=bug.yml") //nolint:staticcheck
-		}
-		return nil
-	},
+var tuiCmd = &cobra.Command{
+	Use:   "tui",
+	Short: "Open the Codeplane terminal UI",
+	RunE:  runInteractive,
 }
 
 var heartbit = lipgloss.NewStyle().Foreground(charmtone.Dolly).SetString(`
@@ -158,14 +129,7 @@ const defaultVersionTemplate = `{{with .DisplayName}}{{printf "%s " .}}{{end}}{{
 `
 
 func Execute() {
-	// FIXME: config.Load uses slog internally during provider resolution,
-	// but the file-based logger isn't set up until after config is loaded
-	// (because the log path depends on the data directory from config).
-	// This creates a window where slog calls in config.Load leak to
-	// stderr. We discard early logs here as a workaround. The proper
-	// fix is to remove slog calls from config.Load and have it return
-	// warnings/diagnostics instead of logging them as a side effect.
-	slog.SetDefault(slog.New(slog.DiscardHandler))
+	crushlog.Setup("", initialDebugLoggingEnabled(), os.Stderr)
 
 	// NOTE: very hacky: we create a colorprofile writer with STDOUT, then make
 	// it forward to a bytes.Buffer, write the colored heartbit to it, and then
@@ -191,6 +155,55 @@ func Execute() {
 	}
 }
 
+func runInteractive(cmd *cobra.Command, _ []string) error {
+	sessionID, _ := cmd.Flags().GetString("session")
+	continueLast, _ := cmd.Flags().GetBool("continue")
+
+	ws, cleanup, err := setupWorkspaceWithProgressBar(cmd)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	if sessionID != "" {
+		sess, err := resolveWorkspaceSessionID(cmd.Context(), ws, sessionID)
+		if err != nil {
+			return err
+		}
+		sessionID = sess.ID
+	}
+
+	event.AppInitialized()
+
+	com := common.DefaultCommon(ws)
+	model := ui.New(com, sessionID, continueLast)
+
+	var env uv.Environ = os.Environ()
+	program := tea.NewProgram(
+		model,
+		tea.WithEnvironment(env),
+		tea.WithContext(cmd.Context()),
+		tea.WithFilter(ui.MouseEventFilter),
+	)
+	go ws.Subscribe(program)
+
+	if _, err := program.Run(); err != nil {
+		event.Error(err)
+		slog.Error("TUI run error", "error", err)
+		return errors.New("Codeplane crashed. If metrics are enabled, we were notified about it. If you'd like to report it, please copy the stacktrace above and open an issue at https://github.com/charmbracelet/crush/issues/new?template=bug.yml") //nolint:staticcheck
+	}
+	return nil
+}
+
+func initialDebugLoggingEnabled() bool {
+	for _, arg := range os.Args[1:] {
+		if arg == "-d" || arg == "--debug" {
+			return true
+		}
+	}
+	return false
+}
+
 // supportsProgressBar tries to determine whether the current terminal supports
 // progress bars by looking into environment variables.
 func supportsProgressBar() bool {
@@ -204,9 +217,9 @@ func supportsProgressBar() bool {
 }
 
 // useClientServer returns true when the client/server architecture is
-// enabled via the CRUSH_CLIENT_SERVER environment variable.
+// enabled via the CODEPLANE_CLIENT_SERVER environment variable.
 func useClientServer() bool {
-	v, _ := strconv.ParseBool(os.Getenv("CRUSH_CLIENT_SERVER"))
+	v, _ := strconv.ParseBool(envWithFallback("CODEPLANE_CLIENT_SERVER", "SMITHERS_TUI_CLIENT_SERVER", "CRUSH_CLIENT_SERVER"))
 	return v
 }
 
@@ -228,9 +241,9 @@ func setupWorkspaceWithProgressBar(cmd *cobra.Command) (workspace.Workspace, fun
 }
 
 // setupWorkspace returns a Workspace and cleanup function. When
-// CRUSH_CLIENT_SERVER=1, it connects to a server process and returns a
-// ClientWorkspace. Otherwise it creates an in-process app.App and
-// returns an AppWorkspace.
+// CODEPLANE_CLIENT_SERVER=1, it connects to a server process and returns a
+// ClientWorkspace. Otherwise it creates an in-process app.App and returns an
+// AppWorkspace.
 func setupWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error) {
 	if useClientServer() {
 		return setupClientServerWorkspace(cmd)
@@ -276,8 +289,11 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 		return nil, nil, err
 	}
 
-	logFile := filepath.Join(cfg.Options.DataDirectory, "logs", "crush.log")
+	logFile := filepath.Join(cfg.Options.DataDirectory, "logs", "codeplane.log")
 	crushlog.Setup(logFile, debug)
+	if err := configureObservability(ctx, cfg, observability.ModeLocal, true); err != nil {
+		return nil, nil, err
+	}
 
 	appInstance, err := app.New(ctx, conn, store)
 	if err != nil {
@@ -291,7 +307,10 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 	}
 
 	ws := workspace.NewAppWorkspace(appInstance, store)
-	cleanup := func() { appInstance.Shutdown() }
+	cleanup := func() {
+		appInstance.Shutdown()
+		shutdownObservability()
+	}
 	return ws, cleanup, nil
 }
 
@@ -375,11 +394,17 @@ func connectToServer(cmd *cobra.Command) (*client.Client, *proto.Workspace, func
 	}
 
 	if ws.Config != nil {
-		logFile := filepath.Join(ws.Config.Options.DataDirectory, "logs", "crush.log")
+		logFile := filepath.Join(ws.Config.Options.DataDirectory, "logs", "codeplane.log")
 		crushlog.Setup(logFile, debug)
+		if err := configureObservability(ctx, ws.Config, observability.ModeClient, false); err != nil {
+			return nil, nil, nil, err
+		}
 	}
 
-	cleanup := func() { _ = c.DeleteWorkspace(context.Background(), ws.ID) }
+	cleanup := func() {
+		_ = c.DeleteWorkspace(context.Background(), ws.ID)
+		shutdownObservability()
+	}
 	return c, ws, cleanup, nil
 }
 
@@ -515,16 +540,55 @@ func startDetachedServer(cmd *cobra.Command) error {
 // the legacy CRUSH_* name if unset. A warning is logged when the legacy name
 // is used so operators can migrate.
 // TODO(smithers-tui): remove CRUSH_* fallback after v1.0
-func envWithFallback(primary, legacy string) string {
+func envWithFallback(primary string, legacy ...string) string {
 	if v := os.Getenv(primary); v != "" {
 		return v
 	}
-	if v := os.Getenv(legacy); v != "" {
-		slog.Warn("Using legacy environment variable; please migrate to the new name",
-			"legacy", legacy, "replacement", primary)
-		return v
+	for _, name := range legacy {
+		if v := os.Getenv(name); v != "" {
+			slog.Warn("Using legacy environment variable; please migrate to the new name",
+				"legacy", name, "replacement", primary)
+			return v
+		}
 	}
 	return ""
+}
+
+func configureObservability(ctx context.Context, cfg *config.Config, mode observability.Mode, enableHTTPServer bool) error {
+	if cfg == nil || cfg.Options == nil || cfg.Options.Observability == nil {
+		return nil
+	}
+
+	obs := cfg.Options.Observability
+	sampleRatio := 1.0
+	if obs.TraceSampleRatio != nil {
+		sampleRatio = *obs.TraceSampleRatio
+	}
+	insecure := false
+	if obs.OTLPInsecure != nil {
+		insecure = *obs.OTLPInsecure
+	}
+
+	return observability.Configure(ctx, observability.Config{
+		ServiceName:      "crush",
+		ServiceVersion:   version.Version,
+		Mode:             mode,
+		DebugServerAddr:  obs.Address,
+		EnableHTTPServer: enableHTTPServer,
+		TraceBufferSize:  obs.TraceBufferSize,
+		TraceSampleRatio: sampleRatio,
+		OTLPEndpoint:     obs.OTLPEndpoint,
+		OTLPHeaders:      obs.OTLPHeaders,
+		OTLPInsecure:     insecure,
+	})
+}
+
+func shutdownObservability() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := observability.Shutdown(ctx); err != nil {
+		slog.Error("Failed to shutdown observability", "error", err)
+	}
 }
 
 func shouldEnableMetrics(cfg *config.Config) bool {

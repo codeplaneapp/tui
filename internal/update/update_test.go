@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -35,6 +36,53 @@ func TestCheckForUpdate_Beta(t *testing.T) {
 		require.NotNil(t, info)
 		require.True(t, info.Available())
 	})
+}
+
+func TestInfo_IsDevelopment_Devel(t *testing.T) {
+	info := Info{Current: "devel"}
+	assert.True(t, info.IsDevelopment())
+}
+
+func TestInfo_IsDevelopment_Unknown(t *testing.T) {
+	info := Info{Current: "unknown"}
+	assert.True(t, info.IsDevelopment())
+}
+
+func TestInfo_IsDevelopment_Dirty(t *testing.T) {
+	info := Info{Current: "0.10.0-dirty"}
+	assert.True(t, info.IsDevelopment())
+}
+
+func TestInfo_IsDevelopment_GoInstall(t *testing.T) {
+	info := Info{Current: "v0.0.0-0.20251231235959-06c807842604"}
+	assert.True(t, info.IsDevelopment())
+}
+
+func TestInfo_IsDevelopment_StableVersion(t *testing.T) {
+	info := Info{Current: "0.10.0"}
+	assert.False(t, info.IsDevelopment())
+}
+
+func TestInfo_Available_SameVersion(t *testing.T) {
+	info := Info{Current: "0.10.0", Latest: "0.10.0"}
+	assert.False(t, info.Available())
+}
+
+func TestInfo_Available_DifferentStable(t *testing.T) {
+	info := Info{Current: "0.10.0", Latest: "0.11.0"}
+	assert.True(t, info.Available())
+}
+
+func TestCheck_TrimsVPrefix(t *testing.T) {
+	info, err := Check(t.Context(), "v0.10.0", testClient{"v0.11.0"})
+	require.NoError(t, err)
+	assert.Equal(t, "0.10.0", info.Current)
+}
+
+func TestCheck_PropagatesURL(t *testing.T) {
+	info, err := Check(t.Context(), "v0.10.0", testClient{"v0.11.0"})
+	require.NoError(t, err)
+	assert.Equal(t, "https://example.org", info.URL)
 }
 
 type testClient struct{ tag string }

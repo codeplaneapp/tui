@@ -384,6 +384,138 @@ func TestUpdateParentSessionCost(t *testing.T) {
 	})
 }
 
+func TestIsExactoSupported(t *testing.T) {
+	t.Parallel()
+
+	t.Run("supported models return true", func(t *testing.T) {
+		t.Parallel()
+		supportedModels := []string{
+			"moonshotai/kimi-k2-0905",
+			"deepseek/deepseek-v3.1-terminus",
+			"z-ai/glm-4.6",
+			"openai/gpt-oss-120b",
+			"qwen/qwen3-coder",
+		}
+		for _, modelID := range supportedModels {
+			assert.True(t, isExactoSupported(modelID), "expected %q to be exacto-supported", modelID)
+		}
+	})
+
+	t.Run("unsupported models return false", func(t *testing.T) {
+		t.Parallel()
+		unsupportedModels := []string{
+			"anthropic/claude-opus-4",
+			"openai/gpt-4o",
+			"google/gemini-2.5-pro",
+			"",
+			"moonshotai/kimi-k2-0905:exacto", // already has suffix
+		}
+		for _, modelID := range unsupportedModels {
+			assert.False(t, isExactoSupported(modelID), "expected %q to not be exacto-supported", modelID)
+		}
+	})
+}
+
+func TestMergeCallOptions(t *testing.T) {
+	t.Parallel()
+
+	floatPtr := func(v float64) *float64 { return &v }
+	int64Ptr := func(v int64) *int64 { return &v }
+
+	t.Run("ModelCfg values take precedence over CatwalkCfg", func(t *testing.T) {
+		t.Parallel()
+		model := Model{
+			ModelCfg: config.SelectedModel{
+				Temperature:      floatPtr(0.8),
+				TopP:             floatPtr(0.9),
+				TopK:             int64Ptr(50),
+				FrequencyPenalty: floatPtr(0.1),
+				PresencePenalty:  floatPtr(0.2),
+			},
+			CatwalkCfg: catwalk.Model{
+				Options: catwalk.ModelOptions{
+					Temperature:      floatPtr(0.3),
+					TopP:             floatPtr(0.4),
+					TopK:             int64Ptr(10),
+					FrequencyPenalty: floatPtr(0.5),
+					PresencePenalty:  floatPtr(0.6),
+				},
+			},
+		}
+		_, temp, topP, topK, freqPenalty, presPenalty := mergeCallOptions(model, config.ProviderConfig{})
+		assert.Equal(t, floatPtr(0.8), temp)
+		assert.Equal(t, floatPtr(0.9), topP)
+		assert.Equal(t, int64Ptr(50), topK)
+		assert.Equal(t, floatPtr(0.1), freqPenalty)
+		assert.Equal(t, floatPtr(0.2), presPenalty)
+	})
+
+	t.Run("falls back to CatwalkCfg when ModelCfg is nil", func(t *testing.T) {
+		t.Parallel()
+		model := Model{
+			ModelCfg: config.SelectedModel{},
+			CatwalkCfg: catwalk.Model{
+				Options: catwalk.ModelOptions{
+					Temperature:      floatPtr(0.3),
+					TopP:             floatPtr(0.4),
+					TopK:             int64Ptr(10),
+					FrequencyPenalty: floatPtr(0.5),
+					PresencePenalty:  floatPtr(0.6),
+				},
+			},
+		}
+		_, temp, topP, topK, freqPenalty, presPenalty := mergeCallOptions(model, config.ProviderConfig{})
+		assert.Equal(t, floatPtr(0.3), temp)
+		assert.Equal(t, floatPtr(0.4), topP)
+		assert.Equal(t, int64Ptr(10), topK)
+		assert.Equal(t, floatPtr(0.5), freqPenalty)
+		assert.Equal(t, floatPtr(0.6), presPenalty)
+	})
+
+	t.Run("returns nil pointers when both sources are nil", func(t *testing.T) {
+		t.Parallel()
+		model := Model{
+			ModelCfg:   config.SelectedModel{},
+			CatwalkCfg: catwalk.Model{},
+		}
+		_, temp, topP, topK, freqPenalty, presPenalty := mergeCallOptions(model, config.ProviderConfig{})
+		assert.Nil(t, temp)
+		assert.Nil(t, topP)
+		assert.Nil(t, topK)
+		assert.Nil(t, freqPenalty)
+		assert.Nil(t, presPenalty)
+	})
+}
+
+func TestIsUnauthorized(t *testing.T) {
+	t.Parallel()
+
+	coord := &coordinator{}
+
+	t.Run("returns true for 401 ProviderError", func(t *testing.T) {
+		t.Parallel()
+		err := &fantasy.ProviderError{StatusCode: 401, Message: "unauthorized"}
+		assert.True(t, coord.isUnauthorized(err))
+	})
+
+	t.Run("returns false for 403 ProviderError", func(t *testing.T) {
+		t.Parallel()
+		err := &fantasy.ProviderError{StatusCode: 403, Message: "forbidden"}
+		assert.False(t, coord.isUnauthorized(err))
+	})
+
+	t.Run("returns false for non-ProviderError", func(t *testing.T) {
+		t.Parallel()
+		err := errors.New("some other error")
+		assert.False(t, coord.isUnauthorized(err))
+	})
+
+	t.Run("returns false for nil error", func(t *testing.T) {
+		t.Parallel()
+		assert.False(t, coord.isUnauthorized(nil))
+	})
+}
+
 func TestCoordinatorResolveAgent(t *testing.T) {
 	t.Run("prefers smithers agent when configured", func(t *testing.T) {
 		cfg, err := config.Init(t.TempDir(), "", false)

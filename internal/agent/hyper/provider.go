@@ -25,6 +25,7 @@ import (
 	"charm.land/fantasy"
 	"charm.land/fantasy/object"
 	"github.com/charmbracelet/crush/internal/event"
+	crushlog "github.com/charmbracelet/crush/internal/log"
 )
 
 //go:generate wget -O provider.json https://hyper.charm.land/api/v1/provider
@@ -90,8 +91,9 @@ func New(opts ...Option) (fantasy.Provider, error) {
 		headers: map[string]string{
 			"x-crush-id": event.GetID(),
 		},
-		client: &http.Client{Timeout: 0}, // stream-safe
+		client: crushlog.NewHTTPClientWithComponent("hyper_provider"),
 	}
+	o.client.Timeout = 0 // stream-safe
 	for _, opt := range opts {
 		opt(&o)
 	}

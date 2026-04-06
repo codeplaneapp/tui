@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/crush/internal/db"
 	"github.com/charmbracelet/crush/internal/event"
+	"github.com/charmbracelet/crush/internal/observability"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/google/uuid"
 	"github.com/zeebo/xxh3"
@@ -86,6 +88,11 @@ type service struct {
 }
 
 func (s *service) Create(ctx context.Context, title string) (Session, error) {
+	start := time.Now()
+	var err error
+	defer func() {
+		observability.RecordSessionOperation("create", time.Since(start), err)
+	}()
 	dbSession, err := s.q.CreateSession(ctx, db.CreateSessionParams{
 		ID:    uuid.New().String(),
 		Title: title,
@@ -100,6 +107,11 @@ func (s *service) Create(ctx context.Context, title string) (Session, error) {
 }
 
 func (s *service) CreateTaskSession(ctx context.Context, toolCallID, parentSessionID, title string) (Session, error) {
+	start := time.Now()
+	var err error
+	defer func() {
+		observability.RecordSessionOperation("create_task", time.Since(start), err)
+	}()
 	dbSession, err := s.q.CreateSession(ctx, db.CreateSessionParams{
 		ID:              toolCallID,
 		ParentSessionID: sql.NullString{String: parentSessionID, Valid: true},
@@ -114,6 +126,11 @@ func (s *service) CreateTaskSession(ctx context.Context, toolCallID, parentSessi
 }
 
 func (s *service) CreateTitleSession(ctx context.Context, parentSessionID string) (Session, error) {
+	start := time.Now()
+	var err error
+	defer func() {
+		observability.RecordSessionOperation("create_title", time.Since(start), err)
+	}()
 	dbSession, err := s.q.CreateSession(ctx, db.CreateSessionParams{
 		ID:              "title-" + parentSessionID,
 		ParentSessionID: sql.NullString{String: parentSessionID, Valid: true},
@@ -128,6 +145,11 @@ func (s *service) CreateTitleSession(ctx context.Context, parentSessionID string
 }
 
 func (s *service) Delete(ctx context.Context, id string) error {
+	start := time.Now()
+	var err error
+	defer func() {
+		observability.RecordSessionOperation("delete", time.Since(start), err)
+	}()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
@@ -160,6 +182,11 @@ func (s *service) Delete(ctx context.Context, id string) error {
 }
 
 func (s *service) Get(ctx context.Context, id string) (Session, error) {
+	start := time.Now()
+	var err error
+	defer func() {
+		observability.RecordSessionOperation("get", time.Since(start), err)
+	}()
 	dbSession, err := s.q.GetSessionByID(ctx, id)
 	if err != nil {
 		return Session{}, err
@@ -168,6 +195,11 @@ func (s *service) Get(ctx context.Context, id string) (Session, error) {
 }
 
 func (s *service) GetLast(ctx context.Context) (Session, error) {
+	start := time.Now()
+	var err error
+	defer func() {
+		observability.RecordSessionOperation("get_last", time.Since(start), err)
+	}()
 	dbSession, err := s.q.GetLastSession(ctx)
 	if err != nil {
 		return Session{}, err
@@ -176,6 +208,11 @@ func (s *service) GetLast(ctx context.Context) (Session, error) {
 }
 
 func (s *service) Save(ctx context.Context, session Session) (Session, error) {
+	start := time.Now()
+	var err error
+	defer func() {
+		observability.RecordSessionOperation("save", time.Since(start), err)
+	}()
 	todosJSON, err := marshalTodos(session.Todos)
 	if err != nil {
 		return Session{}, err
@@ -207,25 +244,36 @@ func (s *service) Save(ctx context.Context, session Session) (Session, error) {
 // UpdateTitleAndUsage updates only the title and usage fields atomically.
 // This is safer than fetching, modifying, and saving the entire session.
 func (s *service) UpdateTitleAndUsage(ctx context.Context, sessionID, title string, promptTokens, completionTokens int64, cost float64) error {
-	return s.q.UpdateSessionTitleAndUsage(ctx, db.UpdateSessionTitleAndUsageParams{
+	start := time.Now()
+	err := s.q.UpdateSessionTitleAndUsage(ctx, db.UpdateSessionTitleAndUsageParams{
 		ID:               sessionID,
 		Title:            title,
 		PromptTokens:     promptTokens,
 		CompletionTokens: completionTokens,
 		Cost:             cost,
 	})
+	observability.RecordSessionOperation("update_title_usage", time.Since(start), err)
+	return err
 }
 
 // Rename updates only the title of a session without touching updated_at or
 // usage fields.
 func (s *service) Rename(ctx context.Context, id string, title string) error {
-	return s.q.RenameSession(ctx, db.RenameSessionParams{
+	start := time.Now()
+	err := s.q.RenameSession(ctx, db.RenameSessionParams{
 		ID:    id,
 		Title: title,
 	})
+	observability.RecordSessionOperation("rename", time.Since(start), err)
+	return err
 }
 
 func (s *service) List(ctx context.Context) ([]Session, error) {
+	start := time.Now()
+	var err error
+	defer func() {
+		observability.RecordSessionOperation("list", time.Since(start), err)
+	}()
 	dbSessions, err := s.q.ListSessions(ctx)
 	if err != nil {
 		return nil, err
@@ -280,7 +328,7 @@ func unmarshalTodos(data string) ([]Todo, error) {
 }
 
 func NewService(q *db.Queries, conn *sql.DB) Service {
-	broker := pubsub.NewBroker[Session]()
+	broker := pubsub.NewNamedBroker[Session]("sessions")
 	return &service{
 		Broker: broker,
 		db:     conn,

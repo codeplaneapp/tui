@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/crush/internal/db"
+	"github.com/charmbracelet/crush/internal/observability"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/google/uuid"
 )
@@ -39,12 +40,17 @@ type service struct {
 
 func NewService(q db.Querier) Service {
 	return &service{
-		Broker: pubsub.NewBroker[Message](),
+		Broker: pubsub.NewNamedBroker[Message]("messages"),
 		q:      q,
 	}
 }
 
 func (s *service) Delete(ctx context.Context, id string) error {
+	start := time.Now()
+	var err error
+	defer func() {
+		observability.RecordMessageOperation("delete", "", time.Since(start), err)
+	}()
 	message, err := s.Get(ctx, id)
 	if err != nil {
 		return err
@@ -60,6 +66,11 @@ func (s *service) Delete(ctx context.Context, id string) error {
 }
 
 func (s *service) Create(ctx context.Context, sessionID string, params CreateMessageParams) (Message, error) {
+	start := time.Now()
+	var err error
+	defer func() {
+		observability.RecordMessageOperation("create", string(params.Role), time.Since(start), err)
+	}()
 	if params.Role != Assistant {
 		params.Parts = append(params.Parts, Finish{
 			Reason: "stop",
@@ -112,6 +123,11 @@ func (s *service) DeleteSessionMessages(ctx context.Context, sessionID string) e
 }
 
 func (s *service) Update(ctx context.Context, message Message) error {
+	start := time.Now()
+	var err error
+	defer func() {
+		observability.RecordMessageOperation("update", string(message.Role), time.Since(start), err)
+	}()
 	parts, err := marshalParts(message.Parts)
 	if err != nil {
 		return err
@@ -137,6 +153,11 @@ func (s *service) Update(ctx context.Context, message Message) error {
 }
 
 func (s *service) Get(ctx context.Context, id string) (Message, error) {
+	start := time.Now()
+	var err error
+	defer func() {
+		observability.RecordMessageOperation("get", "", time.Since(start), err)
+	}()
 	dbMessage, err := s.q.GetMessage(ctx, id)
 	if err != nil {
 		return Message{}, err
@@ -145,6 +166,11 @@ func (s *service) Get(ctx context.Context, id string) (Message, error) {
 }
 
 func (s *service) List(ctx context.Context, sessionID string) ([]Message, error) {
+	start := time.Now()
+	var err error
+	defer func() {
+		observability.RecordMessageOperation("list", "", time.Since(start), err)
+	}()
 	dbMessages, err := s.q.ListMessagesBySession(ctx, sessionID)
 	if err != nil {
 		return nil, err
@@ -160,6 +186,11 @@ func (s *service) List(ctx context.Context, sessionID string) ([]Message, error)
 }
 
 func (s *service) ListUserMessages(ctx context.Context, sessionID string) ([]Message, error) {
+	start := time.Now()
+	var err error
+	defer func() {
+		observability.RecordMessageOperation("list_user", string(User), time.Since(start), err)
+	}()
 	dbMessages, err := s.q.ListUserMessagesBySession(ctx, sessionID)
 	if err != nil {
 		return nil, err
@@ -175,6 +206,11 @@ func (s *service) ListUserMessages(ctx context.Context, sessionID string) ([]Mes
 }
 
 func (s *service) ListAllUserMessages(ctx context.Context) ([]Message, error) {
+	start := time.Now()
+	var err error
+	defer func() {
+		observability.RecordMessageOperation("list_all_user", string(User), time.Since(start), err)
+	}()
 	dbMessages, err := s.q.ListAllUserMessages(ctx)
 	if err != nil {
 		return nil, err

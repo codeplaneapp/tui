@@ -547,7 +547,7 @@ func TestListAgents_NoOptions(t *testing.T) {
 	c := NewClient() // no options — backward compat
 	agents, err := c.ListAgents(context.Background())
 	require.NoError(t, err)
-	assert.Len(t, agents, 6)
+	assert.Len(t, agents, 7)
 	assert.Equal(t, "claude-code", agents[0].ID)
 }
 
@@ -663,7 +663,7 @@ func TestListAgents_BinaryFound_WithAuthDir(t *testing.T) {
 
 	agents, err := c.ListAgents(context.Background())
 	require.NoError(t, err)
-	require.Len(t, agents, 6)
+	require.Len(t, agents, 7)
 
 	var claude Agent
 	for _, a := range agents {
@@ -752,7 +752,7 @@ func TestListAgents_BinaryNotFound(t *testing.T) {
 
 	agents, err := c.ListAgents(context.Background())
 	require.NoError(t, err)
-	require.Len(t, agents, 6)
+	require.Len(t, agents, 7)
 
 	for _, a := range agents {
 		assert.Equal(t, "unavailable", a.Status, "agent %s should be unavailable", a.ID)
@@ -761,7 +761,7 @@ func TestListAgents_BinaryNotFound(t *testing.T) {
 	}
 }
 
-func TestListAgents_AllSix_Returned(t *testing.T) {
+func TestListAgents_AllKnownAgentsReturned(t *testing.T) {
 	c := newDetectionClient(
 		func(file string) (string, error) {
 			return "", os.ErrNotExist
@@ -773,7 +773,7 @@ func TestListAgents_AllSix_Returned(t *testing.T) {
 
 	agents, err := c.ListAgents(context.Background())
 	require.NoError(t, err)
-	assert.Len(t, agents, 6)
+	assert.Len(t, agents, 7)
 
 	ids := make([]string, len(agents))
 	for i, a := range agents {
@@ -781,6 +781,7 @@ func TestListAgents_AllSix_Returned(t *testing.T) {
 	}
 	assert.Contains(t, ids, "claude-code")
 	assert.Contains(t, ids, "codex")
+	assert.Contains(t, ids, "opencode")
 	assert.Contains(t, ids, "gemini")
 	assert.Contains(t, ids, "kimi")
 	assert.Contains(t, ids, "amp")
@@ -803,7 +804,7 @@ func TestListAgents_ContextCancelled_DoesNotPanic(t *testing.T) {
 	// Detection is synchronous; cancelled context should not cause panic or error.
 	agents, err := c.ListAgents(ctx)
 	require.NoError(t, err)
-	assert.Len(t, agents, 6)
+	assert.Len(t, agents, 7)
 }
 
 func TestListAgents_RolesPopulated(t *testing.T) {
@@ -991,8 +992,8 @@ func TestAggregateAllScores_SQLite(t *testing.T) {
 	// Two scorers, two runs.
 	rows := []struct {
 		id, runID, scorerID, scorerName, source string
-		score                                    float64
-		ts                                       int64
+		score                                   float64
+		ts                                      int64
 	}{
 		{"s1", "run-a", "relevancy", "Relevancy", "live", 0.90, 100},
 		{"s2", "run-a", "faithfulness", "Faithfulness", "live", 0.80, 200},

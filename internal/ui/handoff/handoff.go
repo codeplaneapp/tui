@@ -111,11 +111,14 @@ func Handoff(opts Options) tea.Cmd {
 			}
 		}
 
+		start := time.Now()
+
 		// tea.ExecProcess suspends the TUI, hands the terminal to cmd, and
 		// calls back when cmd exits (or fails).
 		return tea.ExecProcess(cmd, func(procErr error) tea.Msg {
 			result := HandoffResult{
-				Err: procErr,
+				Err:      procErr,
+				Duration: time.Since(start),
 			}
 			if procErr != nil {
 				result.ExitCode = exitCodeFromError(procErr)

@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"os"
 	"runtime/debug"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -16,12 +15,22 @@ import (
 )
 
 var (
-	initOnce    sync.Once
 	initialized atomic.Bool
 )
 
 func Setup(logFile string, debug bool, ws ...io.Writer) {
-	initOnce.Do(func() {
+	level := slog.LevelInfo
+	if debug {
+		level = slog.LevelDebug
+	}
+
+	opts := &slog.HandlerOptions{
+		Level:     level,
+		AddSource: true,
+	}
+
+	var handlers []slog.Handler
+	if logFile != "" {
 		logRotator := &lumberjack.Logger{
 			Filename:   logFile,
 			MaxSize:    10,    // Max size in MB
@@ -29,34 +38,26 @@ func Setup(logFile string, debug bool, ws ...io.Writer) {
 			MaxAge:     30,    // Days
 			Compress:   false, // Enable compression
 		}
-
-		level := slog.LevelInfo
-		if debug {
-			level = slog.LevelDebug
-		}
-
-		opts := &slog.HandlerOptions{
-			Level:     level,
-			AddSource: true,
-		}
-
-		var handlers []slog.Handler
 		handlers = append(handlers, slog.NewJSONHandler(logRotator, opts))
+	}
 
-		for _, w := range ws {
-			if w == nil {
-				continue
-			}
-			if f, ok := w.(term.File); ok && term.IsTerminal(f.Fd()) {
-				handlers = append(handlers, slog.NewTextHandler(w, opts))
-			} else {
-				handlers = append(handlers, slog.NewJSONHandler(w, opts))
-			}
+	for _, w := range ws {
+		if w == nil {
+			continue
 		}
+		if f, ok := w.(term.File); ok && term.IsTerminal(f.Fd()) {
+			handlers = append(handlers, slog.NewTextHandler(w, opts))
+		} else {
+			handlers = append(handlers, slog.NewJSONHandler(w, opts))
+		}
+	}
 
-		slog.SetDefault(slog.New(slog.NewMultiHandler(handlers...)))
-		initialized.Store(true)
-	})
+	if len(handlers) == 0 {
+		handlers = append(handlers, slog.NewTextHandler(io.Discard, opts))
+	}
+
+	slog.SetDefault(slog.New(slog.NewMultiHandler(handlers...)))
+	initialized.Store(true)
 }
 
 func Initialized() bool {

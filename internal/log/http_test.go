@@ -1,6 +1,7 @@
 package log
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -69,5 +70,21 @@ func TestFormatHeaders(t *testing.T) {
 	}
 	if formatted["User-Agent"][0] != "test-agent" {
 		t.Error("User-Agent header should be preserved")
+	}
+}
+
+func TestBodyToStringRedactsSensitiveJSON(t *testing.T) {
+	body := io.NopCloser(strings.NewReader(`{"api_key":"secret","nested":{"token":"hidden"},"session_id":"sess-123"}`))
+
+	rendered := bodyToString(body, "application/json")
+
+	if strings.Contains(rendered, "secret") || strings.Contains(rendered, "hidden") {
+		t.Fatalf("rendered body leaked a secret: %s", rendered)
+	}
+	if !strings.Contains(rendered, "[REDACTED]") {
+		t.Fatalf("rendered body should contain redaction marker: %s", rendered)
+	}
+	if !strings.Contains(rendered, "sess-123") {
+		t.Fatalf("rendered body should preserve session identifiers for debugging: %s", rendered)
 	}
 }

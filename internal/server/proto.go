@@ -5,10 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/charmbracelet/crush/internal/backend"
+	"github.com/charmbracelet/crush/internal/observability"
 	"github.com/charmbracelet/crush/internal/proto"
 	"github.com/charmbracelet/crush/internal/session"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 type controllerV1 struct {
@@ -199,8 +202,25 @@ func (c *controllerV1) handleGetWorkspaceProviders(w http.ResponseWriter, r *htt
 func (c *controllerV1) handleGetWorkspaceEvents(w http.ResponseWriter, r *http.Request) {
 	flusher := http.NewResponseController(w)
 	id := r.PathValue("id")
+	ctx := observability.WithWorkspaceID(r.Context(), id)
+	ctx = observability.WithComponent(ctx, "workspace_events")
+	ctx, span := observability.StartSpan(ctx, "server.workspace_events",
+		attribute.String("crush.workspace_id", id),
+	)
+	r = r.WithContext(ctx)
+	streamStart := time.Now()
+	result := "ok"
+	observability.RecordSSEConnection("workspace_events", 1)
+	defer func() {
+		observability.RecordSSEConnection("workspace_events", -1)
+		observability.RecordSSEStreamDuration("workspace_events", result, time.Since(streamStart))
+		span.End()
+	}()
+
 	events, err := c.backend.SubscribeEvents(id)
 	if err != nil {
+		observability.RecordError(span, err)
+		result = "subscribe_error"
 		c.handleError(w, r, err)
 		return
 	}
@@ -208,29 +228,46 @@ func (c *controllerV1) handleGetWorkspaceEvents(w http.ResponseWriter, r *http.R
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Request-ID", observability.RequestIDFromContext(ctx))
 
 	for {
 		select {
-		case <-r.Context().Done():
+		case <-ctx.Done():
 			c.server.logDebug(r, "Stopping event stream")
+			result = "client_disconnect"
+			observability.RecordSSEEvent("workspace_events", "client_disconnect")
 			return
 		case ev, ok := <-events:
 			if !ok {
+				observability.RecordSSEEvent("workspace_events", "upstream_closed")
 				return
 			}
-			c.server.logDebug(r, "Sending event", "event", fmt.Sprintf("%T %+v", ev, ev))
+			c.server.logDebug(r, "Sending event", "event_type", fmt.Sprintf("%T", ev))
 			wrapped := wrapEvent(ev)
 			if wrapped == nil {
+				observability.RecordSSEEvent("workspace_events", "skipped")
 				continue
 			}
 			data, err := json.Marshal(wrapped)
 			if err != nil {
+				observability.RecordSSEEvent("workspace_events", "marshal_error")
 				c.server.logError(r, "Failed to marshal event", "error", err)
 				continue
 			}
 
-			fmt.Fprintf(w, "data: %s\n\n", data)
-			flusher.Flush()
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
+				result = "write_error"
+				observability.RecordSSEEvent("workspace_events", "write_error")
+				c.server.logError(r, "Failed to write event stream payload", "error", err)
+				return
+			}
+			if err := flusher.Flush(); err != nil {
+				result = "flush_error"
+				observability.RecordSSEEvent("workspace_events", "flush_error")
+				c.server.logError(r, "Failed to flush event stream payload", "error", err)
+				return
+			}
+			observability.RecordSSEEvent("workspace_events", "sent")
 		}
 	}
 }

@@ -11,6 +11,7 @@ import (
 
 	"charm.land/fantasy"
 
+	crushlog "github.com/charmbracelet/crush/internal/log"
 	"github.com/charmbracelet/crush/internal/agent/prompt"
 	"github.com/charmbracelet/crush/internal/agent/tools"
 	"github.com/charmbracelet/crush/internal/permission"
@@ -57,10 +58,7 @@ func (c *coordinator) agenticFetchTool(_ context.Context, client *http.Client) (
 		transport.MaxIdleConnsPerHost = 10
 		transport.IdleConnTimeout = 90 * time.Second
 
-		client = &http.Client{
-			Timeout:   30 * time.Second,
-			Transport: transport,
-		}
+		client = crushlog.NewHTTPClientWithTransport("agentic_fetch_tool", transport, 30*time.Second)
 	}
 
 	return fantasy.NewParallelAgentTool(

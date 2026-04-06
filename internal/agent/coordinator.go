@@ -14,6 +14,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	"charm.land/catwalk/pkg/catwalk"
 	"charm.land/fantasy"
@@ -28,6 +29,7 @@ import (
 	"github.com/charmbracelet/crush/internal/lsp"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/oauth/copilot"
+	"github.com/charmbracelet/crush/internal/observability"
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/charmbracelet/crush/internal/session"
@@ -44,6 +46,7 @@ import (
 	"charm.land/fantasy/providers/vercel"
 	openaisdk "github.com/charmbracelet/openai-go/option"
 	"github.com/qjebbs/go-jsons"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // Coordinator errors.
@@ -193,16 +196,46 @@ func (c *coordinator) resolveAgent(cfg *config.ConfigStore) (string, config.Agen
 
 // Run implements Coordinator.
 func (c *coordinator) Run(ctx context.Context, sessionID string, prompt string, attachments ...message.Attachment) (*fantasy.AgentResult, error) {
+	ctx = observability.WithSessionID(ctx, sessionID)
+	ctx = observability.WithAgent(ctx, c.currentAgentName)
+	ctx, span := observability.StartSpan(ctx, "agent.coordinator.run")
+	span.SetAttributes(
+		attribute.String("agent.name", c.currentAgentName),
+		attribute.String("crush.session_id", sessionID),
+		attribute.Int("agent.prompt_length", len(prompt)),
+		attribute.Int("agent.attachments", len(attachments)),
+	)
+	start := time.Now()
+	observability.RecordAgentRunStart()
+	var (
+		errResult  error
+		providerID string
+		modelID    string
+	)
+	defer func() {
+		observability.RecordError(span, errResult)
+		span.End()
+		observability.RecordAgentRunFinish(c.currentAgentName, providerID, modelID, time.Since(start), errResult)
+	}()
+
 	if err := c.readyWg.Wait(); err != nil {
+		errResult = err
 		return nil, err
 	}
 
 	// refresh models before each run
 	if err := c.UpdateModels(ctx); err != nil {
-		return nil, fmt.Errorf("failed to update models: %w", err)
+		errResult = fmt.Errorf("failed to update models: %w", err)
+		return nil, errResult
 	}
 
 	model := c.currentAgent.Model()
+	providerID = model.ModelCfg.Provider
+	modelID = model.ModelCfg.Model
+	span.SetAttributes(
+		attribute.String("agent.provider", providerID),
+		attribute.String("agent.model", modelID),
+	)
 	maxTokens := model.CatwalkCfg.DefaultMaxTokens
 	if model.ModelCfg.MaxTokens != 0 {
 		maxTokens = model.ModelCfg.MaxTokens
@@ -221,6 +254,7 @@ func (c *coordinator) Run(ctx context.Context, sessionID string, prompt string, 
 
 	providerCfg, ok := c.cfg.Config().Providers.Get(model.ModelCfg.Provider)
 	if !ok {
+		errResult = errModelProviderNotConfigured
 		return nil, errModelProviderNotConfigured
 	}
 
@@ -248,6 +282,7 @@ func (c *coordinator) Run(ctx context.Context, sessionID string, prompt string, 
 		})
 	}
 	result, originalErr := run()
+	errResult = originalErr
 
 	if c.isUnauthorized(originalErr) {
 		switch {
@@ -257,14 +292,16 @@ func (c *coordinator) Run(ctx context.Context, sessionID string, prompt string, 
 				return nil, originalErr
 			}
 			slog.Debug("Retrying request with refreshed OAuth token", "provider", providerCfg.ID)
-			return run()
+			result, errResult = run()
+			return result, errResult
 		case strings.Contains(providerCfg.APIKeyTemplate, "$"):
 			slog.Debug("Received 401. Refreshing API Key template and retrying", "provider", providerCfg.ID)
 			if err := c.refreshApiKeyTemplate(ctx, providerCfg); err != nil {
 				return nil, originalErr
 			}
 			slog.Debug("Retrying request with refreshed API key", "provider", providerCfg.ID)
-			return run()
+			result, errResult = run()
+			return result, errResult
 		}
 	}
 

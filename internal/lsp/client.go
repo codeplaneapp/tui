@@ -16,9 +16,11 @@ import (
 	"github.com/charmbracelet/crush/internal/csync"
 	"github.com/charmbracelet/crush/internal/fsext"
 	"github.com/charmbracelet/crush/internal/home"
+	"github.com/charmbracelet/crush/internal/observability"
 	powernap "github.com/charmbracelet/x/powernap/pkg/lsp"
 	"github.com/charmbracelet/x/powernap/pkg/lsp/protocol"
 	"github.com/charmbracelet/x/powernap/pkg/transport"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // DiagnosticCounts holds the count of diagnostics by severity.
@@ -134,6 +136,17 @@ func (c *Client) Kill() { c.client.Kill() }
 // Close closes all open files in the client, then shuts down gracefully.
 // If shutdown takes longer than closeTimeout, it falls back to Kill().
 func (c *Client) Close(ctx context.Context) error {
+	ctx = observability.WithLSP(ctx, c.name)
+	ctx, span := observability.StartSpan(ctx, "lsp.close")
+	span.SetAttributes(attribute.String("lsp.name", c.name))
+	start := time.Now()
+	var errResult error
+	defer func() {
+		observability.RecordError(span, errResult)
+		span.End()
+		observability.RecordLSPOperation(c.name, "close", time.Since(start), errResult)
+	}()
+
 	c.CloseAllFiles(ctx)
 
 	// Use a timeout to prevent hanging on unresponsive LSP servers.
@@ -152,9 +165,11 @@ func (c *Client) Close(ctx context.Context) error {
 
 	select {
 	case err := <-done:
+		errResult = err
 		return err
 	case <-closeCtx.Done():
 		c.client.Kill()
+		errResult = closeCtx.Err()
 		return closeCtx.Err()
 	}
 }
@@ -209,6 +224,17 @@ func (c *Client) registerHandlers() {
 
 // Restart closes the current LSP client and creates a new one with the same configuration.
 func (c *Client) Restart() error {
+	ctx := observability.WithLSP(c.ctx, c.name)
+	ctx, span := observability.StartSpan(ctx, "lsp.restart")
+	span.SetAttributes(attribute.String("lsp.name", c.name))
+	start := time.Now()
+	var errResult error
+	defer func() {
+		observability.RecordError(span, errResult)
+		span.End()
+		observability.RecordLSPOperation(c.name, "restart", time.Since(start), errResult)
+	}()
+
 	var openFiles []string
 	for uri := range c.openFiles.Seq2() {
 		openFiles = append(openFiles, string(uri))
@@ -218,6 +244,7 @@ func (c *Client) Restart() error {
 	defer cancel()
 
 	if err := c.Close(closeCtx); err != nil {
+		errResult = err
 		slog.Warn("Error closing client during restart", "name", c.name, "error", err)
 	}
 
@@ -227,6 +254,7 @@ func (c *Client) Restart() error {
 	c.diagCountsVersion = 0
 
 	if err := c.createPowernapClient(); err != nil {
+		errResult = err
 		return err
 	}
 
@@ -237,6 +265,7 @@ func (c *Client) Restart() error {
 
 	if err := c.client.Initialize(initCtx, false); err != nil {
 		c.SetServerState(StateError)
+		errResult = err
 		return fmt.Errorf("failed to initialize lsp client: %w", err)
 	}
 
@@ -245,6 +274,7 @@ func (c *Client) Restart() error {
 	if err := c.WaitForServerReady(initCtx); err != nil {
 		slog.Error("Server failed to become ready after restart", "name", c.name, "error", err)
 		c.SetServerState(StateError)
+		errResult = err
 		return err
 	}
 

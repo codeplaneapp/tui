@@ -30,6 +30,7 @@ import (
 	"github.com/charmbracelet/crush/internal/log"
 	"github.com/charmbracelet/crush/internal/lsp"
 	"github.com/charmbracelet/crush/internal/message"
+	"github.com/charmbracelet/crush/internal/observability"
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/charmbracelet/crush/internal/session"
@@ -42,6 +43,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/exp/charmtone"
 	"github.com/charmbracelet/x/term"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // UpdateAvailableMsg is sent when a new version is available.
@@ -103,7 +105,7 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore) (*App, er
 		events:             make(chan tea.Msg, 100),
 		serviceEventsWG:    &sync.WaitGroup{},
 		tuiWG:              &sync.WaitGroup{},
-		agentNotifications: pubsub.NewBroker[notify.Notification](),
+		agentNotifications: pubsub.NewNamedBroker[notify.Notification]("agent_notifications"),
 	}
 
 	app.setupEvents()
@@ -164,6 +166,7 @@ func (app *App) SendEvent(msg tea.Msg) {
 	select {
 	case app.events <- msg:
 	default:
+		observability.RecordDroppedEvent("app_events")
 	}
 }
 
@@ -525,6 +528,7 @@ func setupSubscriber[T any](
 				case outputCh <- msg:
 				case <-sendTimer.C:
 					slog.Debug("Message dropped due to slow consumer", "name", name)
+					observability.RecordDroppedEvent(name)
 				case <-ctx.Done():
 					slog.Debug("Subscription cancelled", "name", name)
 					return
@@ -610,8 +614,42 @@ func (app *App) Subscribe(program *tea.Program) {
 
 // Shutdown performs a graceful shutdown of the application.
 func (app *App) Shutdown() {
+	ctx := observability.WithComponent(context.WithoutCancel(app.globalCtx), "app_shutdown")
+	ctx, span := observability.StartSpan(ctx, "app.shutdown")
 	start := time.Now()
-	defer func() { slog.Debug("Shutdown took " + time.Since(start).String()) }()
+	result := "ok"
+	var (
+		errs   []error
+		errsMu sync.Mutex
+	)
+	recordErr := func(step string, err error) {
+		if err == nil {
+			return
+		}
+		errsMu.Lock()
+		errs = append(errs, fmt.Errorf("%s: %w", step, err))
+		errsMu.Unlock()
+		observability.LogAttrs(ctx, slog.LevelError, "Shutdown step failed",
+			slog.String("step", step),
+			slog.Any("error", err),
+		)
+	}
+	defer func() {
+		if len(errs) > 0 {
+			result = "partial_failure"
+			joined := errors.Join(errs...)
+			observability.RecordError(span, joined)
+			span.SetAttributes(attribute.Int("app.shutdown.errors", len(errs)))
+		}
+		span.SetAttributes(attribute.String("app.shutdown.result", result))
+		span.End()
+		observability.RecordAppShutdown(result)
+		observability.LogAttrs(ctx, slog.LevelInfo, "App shutdown finished",
+			slog.String("result", result),
+			slog.Int("errors", len(errs)),
+			slog.Duration("duration", time.Since(start)),
+		)
+	}()
 
 	// First, cancel all agents and wait for them to finish. This must complete
 	// before closing the DB so agents can finish writing their state.
@@ -644,10 +682,9 @@ func (app *App) Shutdown() {
 	// Call all cleanup functions.
 	for _, cleanup := range app.cleanupFuncs {
 		if cleanup != nil {
+			cleanup := cleanup
 			wg.Go(func() {
-				if err := cleanup(shutdownCtx); err != nil {
-					slog.Error("Failed to cleanup app properly on shutdown", "error", err)
-				}
+				recordErr("cleanup", cleanup(shutdownCtx))
 			})
 		}
 	}

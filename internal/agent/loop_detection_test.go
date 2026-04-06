@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"charm.land/fantasy"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // makeStep creates a StepResult with the given tool calls and results in its Content.
@@ -202,4 +204,62 @@ func TestGetToolInteractionSignature(t *testing.T) {
 			t.Error("expected different signatures for different inputs")
 		}
 	})
+}
+
+// TestLoopDetection_ExactRepeatThreshold verifies the boundary condition:
+// exactly maxRepeats identical tool calls is NOT a loop, but maxRepeats+1 IS.
+// Uses a window that is entirely filled with identical steps to isolate the boundary.
+func TestLoopDetection_ExactRepeatThreshold(t *testing.T) {
+	identical := func(n int) []fantasy.StepResult {
+		steps := make([]fantasy.StepResult, n)
+		for i := range steps {
+			steps[i] = makeToolStep("grep", `{"pattern":"TODO"}`, "line 42: TODO fix")
+		}
+		return steps
+	}
+
+	t.Run("exactly maxRepeats is not a loop", func(t *testing.T) {
+		maxRepeats := 3
+		windowSize := maxRepeats // window filled with identical calls, count == maxRepeats
+		steps := identical(windowSize)
+		result := hasRepeatedToolCalls(steps, windowSize, maxRepeats)
+		assert.False(t, result, "count == maxRepeats should not trigger loop (threshold is >)")
+	})
+
+	t.Run("maxRepeats plus one is a loop", func(t *testing.T) {
+		maxRepeats := 3
+		windowSize := maxRepeats + 1 // one more identical call pushes count above threshold
+		steps := identical(windowSize)
+		result := hasRepeatedToolCalls(steps, windowSize, maxRepeats)
+		assert.True(t, result, "count == maxRepeats+1 should trigger loop detection")
+	})
+}
+
+// TestGetToolInteractionSignature_Deterministic verifies that the signature
+// function is a pure function: same content always produces the same hash,
+// and different content produces a different hash.
+func TestGetToolInteractionSignature_Deterministic(t *testing.T) {
+	contentA := fantasy.ResponseContent{
+		fantasy.ToolCallContent{ToolCallID: "x", ToolName: "bash", Input: `{"cmd":"ls"}`},
+		fantasy.ToolResultContent{ToolCallID: "x", ToolName: "bash", Result: fantasy.ToolResultOutputContentText{Text: "file.go"}},
+	}
+	contentB := fantasy.ResponseContent{
+		fantasy.ToolCallContent{ToolCallID: "y", ToolName: "bash", Input: `{"cmd":"pwd"}`},
+		fantasy.ToolResultContent{ToolCallID: "y", ToolName: "bash", Result: fantasy.ToolResultOutputContentText{Text: "/home"}},
+	}
+
+	sig1 := getToolInteractionSignature(contentA)
+	sig2 := getToolInteractionSignature(contentA) // same input again
+	sig3 := getToolInteractionSignature(contentB)
+
+	require.NotEmpty(t, sig1)
+	assert.Equal(t, sig1, sig2, "same content must always produce the same hash")
+	assert.NotEqual(t, sig1, sig3, "different content must produce different hashes")
+}
+
+// TestToolResultOutputString_NilResult verifies that a nil ToolResultOutputContent
+// produces an empty string rather than panicking.
+func TestToolResultOutputString_NilResult(t *testing.T) {
+	result := toolResultOutputString(nil)
+	assert.Equal(t, "", result, "nil result should return empty string")
 }

@@ -12,6 +12,7 @@ import (
 
 	"github.com/charmbracelet/crush/internal/config"
 	crushlog "github.com/charmbracelet/crush/internal/log"
+	"github.com/charmbracelet/crush/internal/observability"
 	"github.com/charmbracelet/crush/internal/server"
 	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
@@ -48,6 +49,9 @@ var serverCmd = &cobra.Command{
 			crushlog.Setup(logFile, debug, os.Stderr)
 		} else {
 			crushlog.Setup(logFile, debug)
+		}
+		if err := configureObservability(cmd.Context(), cfg.Config(), observability.ModeServer, true); err != nil {
+			return err
 		}
 
 		hostURL, err := server.ParseHostURL(serverHost)
@@ -93,6 +97,8 @@ var serverCmd = &cobra.Command{
 			slog.Error("Failed to shutdown server", "error", err)
 			return fmt.Errorf("failed to shutdown server: %v", err)
 		}
+
+		shutdownObservability()
 
 		return nil
 	},

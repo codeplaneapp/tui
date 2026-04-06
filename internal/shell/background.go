@@ -3,6 +3,7 @@ package shell
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"sync"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/crush/internal/csync"
+	"github.com/charmbracelet/crush/internal/observability"
 )
 
 const (
@@ -56,6 +58,7 @@ type BackgroundShell struct {
 	stderr      *syncBuffer
 	done        chan struct{}
 	exitErr     error
+	startedAt   time.Time
 	completedAt atomic.Int64 // Unix timestamp when job completed (0 if still running)
 }
 
@@ -89,6 +92,7 @@ func GetBackgroundShellManager() *BackgroundShellManager {
 func (m *BackgroundShellManager) Start(ctx context.Context, workingDir string, blockFuncs []BlockFunc, command string, description string) (*BackgroundShell, error) {
 	// Check job limit
 	if m.shells.Len() >= MaxBackgroundJobs {
+		observability.RecordBackgroundJobLifecycle("rejected_limit")
 		return nil, fmt.Errorf("maximum number of background jobs (%d) reached. Please terminate or wait for some jobs to complete", MaxBackgroundJobs)
 	}
 
@@ -112,17 +116,30 @@ func (m *BackgroundShellManager) Start(ctx context.Context, workingDir string, b
 		stdout:      &syncBuffer{},
 		stderr:      &syncBuffer{},
 		done:        make(chan struct{}),
+		startedAt:   time.Now(),
 	}
 
 	m.shells.Set(id, bgShell)
+	observability.RecordBackgroundJob(1)
+	observability.RecordBackgroundJobLifecycle("started")
+	observability.SetBackgroundTrackedJobs(m.shells.Len())
 
 	go func() {
 		defer close(bgShell.done)
+		defer observability.RecordBackgroundJob(-1)
 
 		err := shell.ExecStream(shellCtx, command, bgShell.stdout, bgShell.stderr)
 
 		bgShell.exitErr = err
 		bgShell.completedAt.Store(time.Now().Unix())
+		result := "completed"
+		if errors.Is(err, context.Canceled) {
+			result = "canceled"
+		} else if err != nil {
+			result = "failed"
+		}
+		observability.RecordBackgroundJobLifecycle(result)
+		observability.RecordBackgroundJobDuration(result, time.Since(bgShell.startedAt))
 	}()
 
 	return bgShell, nil
@@ -140,6 +157,8 @@ func (m *BackgroundShellManager) Remove(id string) error {
 	if !ok {
 		return fmt.Errorf("background shell not found: %s", id)
 	}
+	observability.RecordBackgroundJobLifecycle("removed")
+	observability.SetBackgroundTrackedJobs(m.shells.Len())
 	return nil
 }
 
@@ -149,6 +168,8 @@ func (m *BackgroundShellManager) Kill(id string) error {
 	if !ok {
 		return fmt.Errorf("background shell not found: %s", id)
 	}
+	observability.RecordBackgroundJobLifecycle("kill_requested")
+	observability.SetBackgroundTrackedJobs(m.shells.Len())
 
 	shell.cancel()
 	<-shell.done
@@ -188,6 +209,11 @@ func (m *BackgroundShellManager) Cleanup() int {
 		m.Remove(id)
 	}
 
+	if len(toRemove) > 0 {
+		observability.RecordBackgroundJobLifecycle("cleaned")
+		observability.SetBackgroundTrackedJobs(m.shells.Len())
+	}
+
 	return len(toRemove)
 }
 
@@ -196,6 +222,7 @@ func (m *BackgroundShellManager) Cleanup() int {
 func (m *BackgroundShellManager) KillAll(ctx context.Context) {
 	shells := slices.Collect(m.shells.Seq())
 	m.shells.Reset(map[string]*BackgroundShell{})
+	observability.SetBackgroundTrackedJobs(0)
 
 	var wg sync.WaitGroup
 	for _, shell := range shells {

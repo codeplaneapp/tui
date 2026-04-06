@@ -199,6 +199,45 @@ func TestGetSupportsImagesFromContext(t *testing.T) {
 	}
 }
 
+func TestContextValuesComposeCorrectly(t *testing.T) {
+	// Verify that multiple context values can be set and retrieved independently.
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, SessionIDContextKey, "sess-1")
+	ctx = context.WithValue(ctx, MessageIDContextKey, "msg-2")
+	ctx = context.WithValue(ctx, SupportsImagesContextKey, true)
+	ctx = context.WithValue(ctx, ModelNameContextKey, "claude-opus-4")
+
+	if got := GetSessionFromContext(ctx); got != "sess-1" {
+		t.Errorf("GetSessionFromContext() = %v, want %v", got, "sess-1")
+	}
+	if got := GetMessageFromContext(ctx); got != "msg-2" {
+		t.Errorf("GetMessageFromContext() = %v, want %v", got, "msg-2")
+	}
+	if got := GetSupportsImagesFromContext(ctx); got != true {
+		t.Errorf("GetSupportsImagesFromContext() = %v, want %v", got, true)
+	}
+	if got := GetModelNameFromContext(ctx); got != "claude-opus-4" {
+		t.Errorf("GetModelNameFromContext() = %v, want %v", got, "claude-opus-4")
+	}
+}
+
+func TestGetContextValueWithZeroValues(t *testing.T) {
+	// Test that zero values (empty string, false) are distinguishable from "not set".
+	// When a key is explicitly set to the zero value, it should return the zero value,
+	// not the default.
+	ctx := context.WithValue(context.Background(), SessionIDContextKey, "")
+	got := GetSessionFromContext(ctx)
+	if got != "" {
+		t.Errorf("expected empty string for explicitly-set zero value, got %q", got)
+	}
+
+	ctx2 := context.WithValue(context.Background(), SupportsImagesContextKey, false)
+	got2 := GetSupportsImagesFromContext(ctx2)
+	if got2 != false {
+		t.Errorf("expected false for explicitly-set false value, got %v", got2)
+	}
+}
+
 func TestGetModelNameFromContext(t *testing.T) {
 	tests := []struct {
 		name string

@@ -13,6 +13,7 @@ import (
 	"charm.land/fantasy"
 	md "github.com/JohannesKaufmann/html-to-markdown"
 	"github.com/PuerkitoBio/goquery"
+	crushlog "github.com/charmbracelet/crush/internal/log"
 	"github.com/charmbracelet/crush/internal/permission"
 )
 
@@ -31,10 +32,7 @@ func NewFetchTool(permissions permission.Service, workingDir string, client *htt
 		transport.MaxIdleConnsPerHost = 10
 		transport.IdleConnTimeout = 90 * time.Second
 
-		client = &http.Client{
-			Timeout:   30 * time.Second,
-			Transport: transport,
-		}
+		client = crushlog.NewHTTPClientWithTransport("fetch_tool", transport, 30*time.Second)
 	}
 
 	return fantasy.NewParallelAgentTool(

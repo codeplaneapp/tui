@@ -16,9 +16,11 @@ import (
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/csync"
 	"github.com/charmbracelet/crush/internal/fsext"
+	"github.com/charmbracelet/crush/internal/observability"
 	powernapconfig "github.com/charmbracelet/x/powernap/pkg/config"
 	powernap "github.com/charmbracelet/x/powernap/pkg/lsp"
 	"github.com/sourcegraph/jsonrpc2"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 var unavailable = csync.NewMap[string, struct{}]()
@@ -141,6 +143,7 @@ var skipAutoStartCommands = map[string]bool{
 }
 
 func (s *Manager) startServer(ctx context.Context, name, filepath string, server *powernapconfig.ServerConfig) {
+	ctx = observability.WithLSP(ctx, name)
 	var (
 		isUserConfigured = s.isUserConfigured(name)
 		autoLSP          = s.cfg.Config().Options.AutoLSP
@@ -186,6 +189,21 @@ func (s *Manager) startServer(ctx context.Context, name, filepath string, server
 		return
 	}
 
+	start := time.Now()
+	ctx, span := observability.StartSpan(ctx, "lsp.start")
+	span.SetAttributes(
+		attribute.String("lsp.name", name),
+		attribute.String("lsp.command", server.Command),
+		attribute.String("lsp.filepath", filepath),
+		attribute.Bool("lsp.user_configured", isUserConfigured),
+	)
+	var opErr error
+	defer func() {
+		observability.RecordError(span, opErr)
+		span.End()
+		observability.RecordLSPOperation(name, "start", time.Since(start), opErr)
+	}()
+
 	// Check again in case another goroutine started it in the meantime.
 	if client, ok := s.clients.Get(name); ok {
 		switch client.GetServerState() {
@@ -204,6 +222,7 @@ func (s *Manager) startServer(ctx context.Context, name, filepath string, server
 		s.cfg.Config().Options.DebugLSP,
 	)
 	if err != nil {
+		opErr = err
 		slog.Error("Failed to create LSP client", "name", name, "error", err)
 		return
 	}
@@ -234,6 +253,7 @@ func (s *Manager) startServer(ctx context.Context, name, filepath string, server
 	defer cancel()
 
 	if _, err := client.Initialize(initCtx, s.cfg.WorkingDir()); err != nil {
+		opErr = err
 		slog.Error("LSP client initialization failed", "name", name, "error", err)
 		_ = client.Close(ctx)
 		s.clients.Del(name)
@@ -241,6 +261,7 @@ func (s *Manager) startServer(ctx context.Context, name, filepath string, server
 	}
 
 	if err := client.WaitForServerReady(initCtx); err != nil {
+		opErr = err
 		slog.Warn("LSP server not fully ready, continuing anyway", "name", name, "error", err)
 		client.SetServerState(StateError)
 	} else {

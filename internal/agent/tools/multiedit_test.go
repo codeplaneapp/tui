@@ -5,10 +5,14 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"charm.land/fantasy"
+	"github.com/charmbracelet/crush/internal/filetracker"
 	"github.com/charmbracelet/crush/internal/history"
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/pubsub"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -209,4 +213,88 @@ func TestMultiEditAllEditsFail(t *testing.T) {
 
 	require.Len(t, failedEdits, 2)
 	require.Equal(t, content, currentContent, "Content should be unchanged")
+}
+
+// mockFiletrackerService is a test double for filetracker.Service.
+type mockFiletrackerService struct {
+	reads map[string]time.Time
+}
+
+var _ filetracker.Service = (*mockFiletrackerService)(nil)
+
+func newMockFiletrackerService() *mockFiletrackerService {
+	return &mockFiletrackerService{reads: make(map[string]time.Time)}
+}
+
+func (m *mockFiletrackerService) RecordRead(_ context.Context, sessionID, path string) {
+	m.reads[sessionID+":"+path] = time.Now()
+}
+
+func (m *mockFiletrackerService) LastReadTime(_ context.Context, sessionID, path string) time.Time {
+	return m.reads[sessionID+":"+path]
+}
+
+func (m *mockFiletrackerService) ListReadFiles(_ context.Context, _ string) ([]string, error) {
+	return nil, nil
+}
+
+func TestMultiEditTool_EmptyEdits(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	tool := NewMultiEditTool(nil, &mockPermissionService{}, &mockHistoryService{}, newMockFiletrackerService(), tmpDir)
+
+	// Invoke the tool with an empty edits array via the Run method.
+	resp, err := tool.Run(t.Context(), fantasy.ToolCall{
+		ID:    "call-1",
+		Name:  MultiEditToolName,
+		Input: `{"file_path": "/some/file.txt", "edits": []}`,
+	})
+
+	require.NoError(t, err)
+	assert.True(t, resp.IsError, "expected an error response when edits are empty")
+	assert.Contains(t, resp.Content, "at least one edit operation is required")
+}
+
+func TestMultiEditTool_AllEditsSucceed(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "target.txt")
+
+	originalContent := "alpha\nbeta\ngamma\n"
+	require.NoError(t, os.WriteFile(testFile, []byte(originalContent), 0o644))
+
+	ft := newMockFiletrackerService()
+	ctx := context.WithValue(t.Context(), SessionIDContextKey, "test-session")
+
+	// Record a read so the filetracker check passes.
+	ft.RecordRead(ctx, "test-session", testFile)
+
+	tool := NewMultiEditTool(nil, &mockPermissionService{}, &mockHistoryService{}, ft, tmpDir)
+
+	// Apply three edits that should all succeed.
+	input := `{
+		"file_path": "` + testFile + `",
+		"edits": [
+			{"old_string": "alpha", "new_string": "ALPHA"},
+			{"old_string": "beta",  "new_string": "BETA"},
+			{"old_string": "gamma", "new_string": "GAMMA"}
+		]
+	}`
+
+	resp, err := tool.Run(ctx, fantasy.ToolCall{
+		ID:    "call-2",
+		Name:  MultiEditToolName,
+		Input: input,
+	})
+
+	require.NoError(t, err)
+	assert.False(t, resp.IsError, "expected a success response, got: %s", resp.Content)
+	assert.Contains(t, resp.Content, "Applied 3 edits")
+
+	// Verify the file was actually written with all edits applied.
+	got, err := os.ReadFile(testFile)
+	require.NoError(t, err)
+	assert.Equal(t, "ALPHA\nBETA\nGAMMA\n", string(got))
 }

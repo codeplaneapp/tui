@@ -9,15 +9,18 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime"
+	"time"
 
 	"github.com/charmbracelet/crush/internal/app"
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/csync"
 	"github.com/charmbracelet/crush/internal/db"
+	"github.com/charmbracelet/crush/internal/observability"
 	"github.com/charmbracelet/crush/internal/proto"
 	"github.com/charmbracelet/crush/internal/ui/util"
 	"github.com/charmbracelet/crush/internal/version"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // Common errors returned by backend operations.
@@ -85,29 +88,48 @@ func (b *Backend) ListWorkspaces() []proto.Workspace {
 // parameters. It creates the config, database connection, and
 // [app.App] instance.
 func (b *Backend) CreateWorkspace(args proto.Workspace) (*Workspace, proto.Workspace, error) {
+	ctx, span := observability.StartSpan(b.ctx, "backend.create_workspace")
+	span.SetAttributes(
+		attribute.String("workspace.path", args.Path),
+		attribute.Bool("workspace.debug", args.Debug),
+		attribute.Bool("workspace.yolo", args.YOLO),
+	)
+	var errResult error
+	start := time.Now()
+	defer func() {
+		observability.RecordError(span, errResult)
+		span.End()
+		observability.RecordWorkspaceLifecycle("create", resultFromError(errResult), time.Since(start))
+	}()
+
 	if args.Path == "" {
+		errResult = ErrPathRequired
 		return nil, proto.Workspace{}, ErrPathRequired
 	}
 
 	id := uuid.New().String()
 	cfg, err := config.Init(args.Path, args.DataDir, args.Debug)
 	if err != nil {
+		errResult = fmt.Errorf("failed to initialize config: %w", err)
 		return nil, proto.Workspace{}, fmt.Errorf("failed to initialize config: %w", err)
 	}
 
 	cfg.Overrides().SkipPermissionRequests = args.YOLO
 
 	if err := createDotCrushDir(cfg.Config().Options.DataDirectory); err != nil {
+		errResult = fmt.Errorf("failed to create data directory: %w", err)
 		return nil, proto.Workspace{}, fmt.Errorf("failed to create data directory: %w", err)
 	}
 
-	conn, err := db.Connect(b.ctx, cfg.Config().Options.DataDirectory)
+	conn, err := db.Connect(ctx, cfg.Config().Options.DataDirectory)
 	if err != nil {
+		errResult = fmt.Errorf("failed to connect to database: %w", err)
 		return nil, proto.Workspace{}, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	appWorkspace, err := app.New(b.ctx, conn, cfg)
+	appWorkspace, err := app.New(ctx, conn, cfg)
 	if err != nil {
+		errResult = fmt.Errorf("failed to create app workspace: %w", err)
 		return nil, proto.Workspace{}, fmt.Errorf("failed to create app workspace: %w", err)
 	}
 
@@ -120,6 +142,8 @@ func (b *Backend) CreateWorkspace(args proto.Workspace) (*Workspace, proto.Works
 	}
 
 	b.workspaces.Set(id, ws)
+	observability.SetActiveWorkspaces(b.workspaces.Len())
+	span.SetAttributes(attribute.String("crush.workspace_id", id))
 
 	if args.Version != "" && args.Version != version.Version {
 		slog.Warn("Client/server version mismatch",
@@ -148,11 +172,23 @@ func (b *Backend) CreateWorkspace(args proto.Workspace) (*Workspace, proto.Works
 // DeleteWorkspace shuts down and removes a workspace. If it was the
 // last workspace, the shutdown callback is invoked.
 func (b *Backend) DeleteWorkspace(id string) {
+	ctx := observability.WithWorkspaceID(b.ctx, id)
+	ctx, span := observability.StartSpan(ctx, "backend.delete_workspace")
+	start := time.Now()
+	result := "ok"
+	defer func() {
+		span.End()
+		observability.RecordWorkspaceLifecycle("delete", result, time.Since(start))
+	}()
+
 	ws, ok := b.workspaces.Get(id)
-	if ok {
-		ws.Shutdown()
+	if !ok {
+		result = "not_found"
+		return
 	}
+	ws.Shutdown()
 	b.workspaces.Del(id)
+	observability.SetActiveWorkspaces(b.workspaces.Len())
 
 	if b.workspaces.Len() == 0 && b.shutdownFn != nil {
 		slog.Info("Last workspace removed, shutting down server...")
@@ -189,6 +225,13 @@ func (b *Backend) Shutdown() {
 	if b.shutdownFn != nil {
 		b.shutdownFn()
 	}
+}
+
+func resultFromError(err error) string {
+	if err == nil {
+		return "ok"
+	}
+	return "error"
 }
 
 func workspaceToProto(ws *Workspace) proto.Workspace {

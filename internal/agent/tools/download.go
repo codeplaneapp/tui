@@ -14,6 +14,7 @@ import (
 
 	"charm.land/fantasy"
 	"github.com/charmbracelet/crush/internal/filepathext"
+	crushlog "github.com/charmbracelet/crush/internal/log"
 	"github.com/charmbracelet/crush/internal/permission"
 )
 
@@ -41,10 +42,7 @@ func NewDownloadTool(permissions permission.Service, workingDir string, client *
 		transport.MaxIdleConnsPerHost = 10
 		transport.IdleConnTimeout = 90 * time.Second
 
-		client = &http.Client{
-			Timeout:   5 * time.Minute, // Default 5 minute timeout for downloads
-			Transport: transport,
-		}
+		client = crushlog.NewHTTPClientWithTransport("download_tool", transport, 5*time.Minute)
 	}
 	return fantasy.NewParallelAgentTool(
 		DownloadToolName,

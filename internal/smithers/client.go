@@ -19,6 +19,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	crushlog "github.com/charmbracelet/crush/internal/log"
 )
 
 var (
@@ -129,6 +131,11 @@ var knownAgents = []agentManifestEntry{
 		versionFlag: "--version",
 	},
 	{
+		id: "opencode", name: "OpenCode", command: "opencode",
+		roles:       []string{"coding", "chat"},
+		versionFlag: "--version",
+	},
+	{
 		id: "gemini", name: "Gemini", command: "gemini",
 		roles:       []string{"coding", "research"},
 		authDir:     ".gemini",
@@ -200,8 +207,11 @@ type runContextCacheEntry struct {
 // NewClient creates a new Smithers client.
 // With no options, it behaves as a stub client (backward compatible).
 func NewClient(opts ...ClientOption) *Client {
+	httpClient := crushlog.NewHTTPClientWithComponent("smithers")
+	httpClient.Timeout = 10 * time.Second
+
 	c := &Client{
-		httpClient: &http.Client{Timeout: 10 * time.Second},
+		httpClient: httpClient,
 		lookPath:   exec.LookPath,
 		statFunc:   os.Stat,
 		binaryPath: "smithers",
@@ -630,7 +640,7 @@ func (c *Client) GetScores(ctx context.Context, runID string, nodeID *string) ([
 		query := `SELECT id, run_id, node_id, iteration, attempt, scorer_id, scorer_name,
 			source, score, reason, meta_json, input_json, output_json,
 			latency_ms, scored_at_ms, duration_ms
-			FROM _smithers_scorers WHERE run_id = ?`	// upstream: smithers/src/scorers/schema.ts
+			FROM _smithers_scorers WHERE run_id = ?` // upstream: smithers/src/scorers/schema.ts
 		args := []any{runID}
 		if nodeID != nil {
 			query += " AND node_id = ?"
@@ -792,7 +802,7 @@ func (c *Client) ListCrons(ctx context.Context) ([]CronSchedule, error) {
 	if c.db != nil {
 		rows, err := c.queryDB(ctx,
 			`SELECT cron_id, pattern, workflow_path, enabled, created_at_ms,
-			last_run_at_ms, next_run_at_ms, error_json FROM _smithers_cron`)	// upstream: smithers/src/db/internal-schema.ts
+			last_run_at_ms, next_run_at_ms, error_json FROM _smithers_cron`) // upstream: smithers/src/db/internal-schema.ts
 		if err != nil {
 			return nil, err
 		}

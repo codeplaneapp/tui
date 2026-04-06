@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"regexp"
 	"strconv"
@@ -38,12 +39,15 @@ import (
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/csync"
 	"github.com/charmbracelet/crush/internal/message"
+	"github.com/charmbracelet/crush/internal/observability"
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/charmbracelet/crush/internal/session"
 	"github.com/charmbracelet/crush/internal/stringext"
 	"github.com/charmbracelet/crush/internal/version"
 	"github.com/charmbracelet/x/exp/charmtone"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -173,6 +177,16 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 		return nil, nil
 	}
 
+	ctx = observability.WithSessionID(ctx, call.SessionID)
+	ctx, runSpan := observability.StartSpan(ctx, "agent.session.run")
+	runSpan.SetAttributes(
+		attribute.String("crush.session_id", call.SessionID),
+		attribute.Int("agent.prompt_length", len(call.Prompt)),
+		attribute.Int("agent.attachments", len(call.Attachments)),
+		attribute.Bool("agent.non_interactive", call.NonInteractive),
+	)
+	defer runSpan.End()
+
 	// Copy mutable fields under lock to avoid races with SetTools/SetModels.
 	agentTools := a.tools.Copy()
 	largeModel := a.largeModel.Get()
@@ -246,9 +260,38 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 
 	startTime := time.Now()
 	a.eventPromptSent(call.SessionID)
+	runSpan.SetAttributes(
+		attribute.String("agent.provider", largeModel.ModelCfg.Provider),
+		attribute.String("agent.model", largeModel.ModelCfg.Model),
+		attribute.Int("agent.history_messages", len(history)),
+		attribute.Int("agent.files", len(files)),
+	)
 
 	var currentAssistant *message.Message
 	var shouldSummarize bool
+	type toolSpanState struct {
+		name    string
+		started time.Time
+		span    trace.Span
+	}
+	toolSpans := make(map[string]toolSpanState)
+	var toolSpansMu sync.Mutex
+
+	finishToolSpan := func(toolCallID string, toolErr error) {
+		toolSpansMu.Lock()
+		state, ok := toolSpans[toolCallID]
+		if ok {
+			delete(toolSpans, toolCallID)
+		}
+		toolSpansMu.Unlock()
+		if !ok {
+			return
+		}
+		observability.RecordError(state.span, toolErr)
+		state.span.End()
+		observability.RecordToolCall(state.name, time.Since(state.started), toolErr)
+	}
+
 	// Don't send MaxOutputTokens if 0 — some providers (e.g. LM Studio) reject it
 	var maxOutputTokens *int64
 	if call.MaxOutputTokens > 0 {
@@ -374,9 +417,57 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 			return a.messages.Update(ctx, *currentAssistant)
 		},
 		OnRetry: func(err *fantasy.ProviderError, delay time.Duration) {
-			// TODO: implement
+			reason := "retryable"
+			statusCode := 0
+			switch {
+			case err == nil:
+			case err.ContextTooLargeErr:
+				reason = "context_too_large"
+			case err.StatusCode == http.StatusTooManyRequests:
+				reason = "rate_limited"
+			case err.StatusCode == http.StatusUnauthorized:
+				reason = "unauthorized"
+			case err.StatusCode >= http.StatusInternalServerError:
+				reason = "server_error"
+			case err.StatusCode > 0:
+				reason = fmt.Sprintf("http_%d", err.StatusCode)
+			}
+			if err != nil {
+				statusCode = err.StatusCode
+			}
+			observability.RecordRetry("agent_provider", largeModel.ModelCfg.Provider, reason, delay)
+			runSpan.AddEvent("agent.retry",
+				trace.WithAttributes(
+					attribute.String("agent.provider", largeModel.ModelCfg.Provider),
+					attribute.String("agent.model", largeModel.ModelCfg.Model),
+					attribute.String("retry.reason", reason),
+					attribute.Int("http.status_code", statusCode),
+					attribute.Float64("retry.delay_seconds", delay.Seconds()),
+				),
+			)
+			observability.LogAttrs(genCtx, slog.LevelWarn, "Retrying provider request",
+				slog.String("provider", largeModel.ModelCfg.Provider),
+				slog.String("model", largeModel.ModelCfg.Model),
+				slog.String("reason", reason),
+				slog.Int("status_code", statusCode),
+				slog.Duration("delay", delay),
+			)
 		},
 		OnToolCall: func(tc fantasy.ToolCallContent) error {
+			toolCtx := observability.WithTool(ctx, tc.ToolName, tc.ToolCallID)
+			_, toolSpan := observability.StartSpan(toolCtx, "agent.tool")
+			toolSpan.SetAttributes(
+				attribute.String("tool.name", tc.ToolName),
+				attribute.String("tool.call_id", tc.ToolCallID),
+			)
+			toolSpansMu.Lock()
+			toolSpans[tc.ToolCallID] = toolSpanState{
+				name:    tc.ToolName,
+				started: time.Now(),
+				span:    toolSpan,
+			}
+			toolSpansMu.Unlock()
+
 			toolCall := message.ToolCall{
 				ID:               tc.ToolCallID,
 				Name:             tc.ToolName,
@@ -390,6 +481,13 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 			return a.messages.Update(ctx, *currentAssistant)
 		},
 		OnToolResult: func(result fantasy.ToolResultContent) error {
+			var toolErr error
+			if result.Result.GetType() == fantasy.ToolResultContentTypeError {
+				if r, ok := fantasy.AsToolResultOutputType[fantasy.ToolResultOutputContentError](result.Result); ok {
+					toolErr = r.Error
+				}
+			}
+			finishToolSpan(result.ToolCallID, toolErr)
 			toolResult := a.convertToToolResult(result)
 			// Use parent ctx instead of genCtx to ensure the message is created
 			// even if the request is canceled mid-stream
@@ -456,6 +554,9 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 	})
 
 	a.eventPromptResponded(call.SessionID, time.Since(startTime).Truncate(time.Second))
+	if err != nil {
+		observability.RecordError(runSpan, err)
+	}
 
 	if err != nil {
 		isCancelErr := errors.Is(err, context.Canceled)
@@ -520,6 +621,18 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy
 			if createErr != nil {
 				return nil, createErr
 			}
+		}
+		toolSpansMu.Lock()
+		pendingToolSpans := make(map[string]toolSpanState, len(toolSpans))
+		for id, state := range toolSpans {
+			pendingToolSpans[id] = state
+		}
+		toolSpans = map[string]toolSpanState{}
+		toolSpansMu.Unlock()
+		for _, state := range pendingToolSpans {
+			observability.RecordError(state.span, err)
+			state.span.End()
+			observability.RecordToolCall(state.name, time.Since(state.started), err)
 		}
 		var fantasyErr *fantasy.Error
 		var providerErr *fantasy.ProviderError

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/crush/internal/config"
+	crushlog "github.com/charmbracelet/crush/internal/log"
 	"github.com/charmbracelet/crush/internal/proto"
 	"github.com/charmbracelet/crush/internal/server"
 )
@@ -54,8 +55,11 @@ func NewClient(path, network, address string) (*Client, error) {
 		tr.DisableCompression = true
 	}
 	c.h = &http.Client{
-		Transport: tr,
-		Timeout:   0,
+		Transport: &crushlog.HTTPRoundTripLogger{
+			Transport: tr,
+			Component: "crush_client",
+		},
+		Timeout: 0,
 	}
 	return c, nil
 }

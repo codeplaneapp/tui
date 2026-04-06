@@ -2,11 +2,16 @@ package shell
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // Benchmark to measure CPU efficiency
@@ -117,4 +122,121 @@ func TestCrossPlatformExecution(t *testing.T) {
 	if !strings.Contains(strings.ToLower(stdout), "hello") {
 		t.Errorf("Echo output should contain 'hello', got: %q", stdout)
 	}
+}
+
+func TestShell_SetGetWorkingDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	s := NewShell(&Options{WorkingDir: t.TempDir()})
+
+	require.NoError(t, s.SetWorkingDir(tmpDir))
+	assert.Equal(t, tmpDir, s.GetWorkingDir())
+}
+
+func TestShell_SetWorkingDir_NonExistent(t *testing.T) {
+	s := NewShell(&Options{WorkingDir: t.TempDir()})
+
+	err := s.SetWorkingDir("/nonexistent/path/that/does/not/exist")
+	require.Error(t, err, "SetWorkingDir should fail for a non-existent directory")
+	assert.Contains(t, err.Error(), "directory does not exist")
+}
+
+func TestShell_SetGetEnv(t *testing.T) {
+	s := NewShell(&Options{
+		WorkingDir: t.TempDir(),
+		Env:        []string{"EXISTING=value"},
+	})
+
+	s.SetEnv("MY_VAR", "hello")
+	s.SetEnv("OTHER_VAR", "world")
+
+	env := s.GetEnv()
+
+	// Check that the new vars are present.
+	assert.Contains(t, env, "MY_VAR=hello")
+	assert.Contains(t, env, "OTHER_VAR=world")
+
+	// Check that SetEnv updates (not duplicates) existing keys.
+	s.SetEnv("MY_VAR", "updated")
+	env = s.GetEnv()
+	assert.Contains(t, env, "MY_VAR=updated")
+
+	// Ensure there is exactly one MY_VAR entry.
+	count := 0
+	for _, e := range env {
+		if strings.HasPrefix(e, "MY_VAR=") {
+			count++
+		}
+	}
+	assert.Equal(t, 1, count, "MY_VAR should appear exactly once after update")
+}
+
+func TestShell_GetEnv_ReturnsCopy(t *testing.T) {
+	s := NewShell(&Options{
+		WorkingDir: t.TempDir(),
+		Env:        []string{"A=1"},
+	})
+
+	env1 := s.GetEnv()
+	env1[0] = "MUTATED=yes"
+
+	env2 := s.GetEnv()
+	// Mutating the returned slice should not affect the shell's internal state.
+	assert.NotEqual(t, "MUTATED=yes", env2[0], "GetEnv should return a defensive copy")
+}
+
+func TestShell_Exec_SimpleCommand(t *testing.T) {
+	s := NewShell(&Options{WorkingDir: t.TempDir()})
+
+	stdout, stderr, err := s.Exec(t.Context(), "echo hello")
+	require.NoError(t, err)
+	assert.Contains(t, stdout, "hello")
+	assert.Empty(t, stderr)
+}
+
+func TestShell_ExitCode(t *testing.T) {
+	t.Run("nil error returns 0", func(t *testing.T) {
+		assert.Equal(t, 0, ExitCode(nil))
+	})
+
+	t.Run("generic error returns 1", func(t *testing.T) {
+		assert.Equal(t, 1, ExitCode(fmt.Errorf("something failed")))
+	})
+
+	t.Run("command with non-zero exit", func(t *testing.T) {
+		s := NewShell(&Options{WorkingDir: t.TempDir()})
+		_, _, err := s.Exec(t.Context(), "exit 42")
+		require.Error(t, err)
+		assert.Equal(t, 42, ExitCode(err))
+	})
+
+	t.Run("command with exit 0", func(t *testing.T) {
+		s := NewShell(&Options{WorkingDir: t.TempDir()})
+		_, _, err := s.Exec(t.Context(), "exit 0")
+		// exit 0 should not produce an error
+		assert.NoError(t, err)
+		assert.Equal(t, 0, ExitCode(err))
+	})
+}
+
+func TestShell_IsInterrupt(t *testing.T) {
+	t.Run("context.Canceled", func(t *testing.T) {
+		assert.True(t, IsInterrupt(context.Canceled))
+	})
+
+	t.Run("context.DeadlineExceeded", func(t *testing.T) {
+		assert.True(t, IsInterrupt(context.DeadlineExceeded))
+	})
+
+	t.Run("wrapped canceled error", func(t *testing.T) {
+		wrapped := fmt.Errorf("operation failed: %w", context.Canceled)
+		assert.True(t, IsInterrupt(wrapped))
+	})
+
+	t.Run("generic error is not interrupt", func(t *testing.T) {
+		assert.False(t, IsInterrupt(errors.New("some error")))
+	})
+
+	t.Run("nil is not interrupt", func(t *testing.T) {
+		assert.False(t, IsInterrupt(nil))
+	})
 }

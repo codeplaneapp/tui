@@ -15,6 +15,8 @@ import (
 
 	"github.com/charmbracelet/crush/internal/agent/hyper"
 	"github.com/charmbracelet/crush/internal/event"
+	crushlog "github.com/charmbracelet/crush/internal/log"
+	"github.com/charmbracelet/crush/internal/observability"
 	"github.com/charmbracelet/crush/internal/oauth"
 )
 
@@ -51,7 +53,8 @@ func InitiateDeviceAuth(ctx context.Context) (*DeviceAuthResponse, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "smithers-tui")
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := crushlog.NewHTTPClientWithComponent("hyper_oauth")
+	client.Timeout = 30 * time.Second
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("execute request: %w", err)
@@ -64,7 +67,7 @@ func InitiateDeviceAuth(ctx context.Context) (*DeviceAuthResponse, error) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("device auth failed: status %d, body %q", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("device auth failed: status %d, body %q", resp.StatusCode, observability.RedactPayload("application/json", body))
 	}
 
 	var authResp DeviceAuthResponse
@@ -126,7 +129,8 @@ func pollOnce(ctx context.Context, deviceCode string) (TokenResponse, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "crush")
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := crushlog.NewHTTPClientWithComponent("hyper_oauth")
+	client.Timeout = 30 * time.Second
 	resp, err := client.Do(req)
 	if err != nil {
 		return result, fmt.Errorf("execute request: %w", err)
@@ -143,7 +147,7 @@ func pollOnce(ctx context.Context, deviceCode string) (TokenResponse, error) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return result, fmt.Errorf("token request failed: status %d body %q", resp.StatusCode, string(body))
+		return result, fmt.Errorf("token request failed: status %d body %q", resp.StatusCode, observability.RedactPayload("application/json", body))
 	}
 
 	return result, nil
@@ -169,7 +173,8 @@ func ExchangeToken(ctx context.Context, refreshToken string) (*oauth.Token, erro
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "crush")
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := crushlog.NewHTTPClientWithComponent("hyper_oauth")
+	client.Timeout = 30 * time.Second
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("execute request: %w", err)
@@ -182,7 +187,7 @@ func ExchangeToken(ctx context.Context, refreshToken string) (*oauth.Token, erro
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("token exchange failed: status %d body %q", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("token exchange failed: status %d body %q", resp.StatusCode, observability.RedactPayload("application/json", body))
 	}
 
 	var token oauth.Token
@@ -226,7 +231,8 @@ func IntrospectToken(ctx context.Context, accessToken string) (*IntrospectTokenR
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "crush")
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := crushlog.NewHTTPClientWithComponent("hyper_oauth")
+	client.Timeout = 30 * time.Second
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("execute request: %w", err)
@@ -239,7 +245,7 @@ func IntrospectToken(ctx context.Context, accessToken string) (*IntrospectTokenR
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("token introspection failed: status %d body %q", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("token introspection failed: status %d body %q", resp.StatusCode, observability.RedactPayload("application/json", body))
 	}
 
 	var result IntrospectTokenResponse

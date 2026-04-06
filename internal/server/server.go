@@ -13,6 +13,7 @@ import (
 
 	"github.com/charmbracelet/crush/internal/backend"
 	"github.com/charmbracelet/crush/internal/config"
+	"github.com/charmbracelet/crush/internal/observability"
 	_ "github.com/charmbracelet/crush/internal/swagger"
 	httpswagger "github.com/swaggo/http-swagger/v2"
 )
@@ -215,20 +216,35 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 func (s *Server) logDebug(r *http.Request, msg string, args ...any) {
 	if s.logger != nil {
-		s.logger.With(
+		all := []any{
 			slog.String("method", r.Method),
-			slog.String("url", r.URL.String()),
+			slog.String("url", observability.RedactURLString(r.URL.String())),
 			slog.String("remote_addr", r.RemoteAddr),
-		).Debug(msg, args...)
+		}
+		all = append(all, contextArgs(r.Context())...)
+		all = append(all, args...)
+		s.logger.Debug(msg, all...)
 	}
 }
 
 func (s *Server) logError(r *http.Request, msg string, args ...any) {
 	if s.logger != nil {
-		s.logger.With(
+		all := []any{
 			slog.String("method", r.Method),
-			slog.String("url", r.URL.String()),
+			slog.String("url", observability.RedactURLString(r.URL.String())),
 			slog.String("remote_addr", r.RemoteAddr),
-		).Error(msg, args...)
+		}
+		all = append(all, contextArgs(r.Context())...)
+		all = append(all, args...)
+		s.logger.Error(msg, all...)
 	}
+}
+
+func contextArgs(ctx context.Context) []any {
+	attrs := observability.ContextAttrs(ctx)
+	out := make([]any, 0, len(attrs))
+	for _, attr := range attrs {
+		out = append(out, attr)
+	}
+	return out
 }

@@ -1,8 +1,10 @@
 package permission
 
 import (
+	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -250,4 +252,114 @@ func TestPermissionService_SequentialProperties(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, result, "Repeated request should be auto-approved due to persistent permission")
 	})
+}
+
+func TestPermission_RequestContextCancel(t *testing.T) {
+	service := NewPermissionService("/tmp", false, []string{})
+
+	ctx, cancel := context.WithCancel(t.Context())
+
+	// Subscribe so we can observe the request being published.
+	events := service.Subscribe(t.Context())
+
+	var (
+		granted bool
+		reqErr  error
+		wg      sync.WaitGroup
+	)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		granted, reqErr = service.Request(ctx, CreatePermissionRequest{
+			SessionID:  "cancel-session",
+			ToolName:   "bash",
+			Action:     "execute",
+			Path:       "/tmp",
+			ToolCallID: "tc-cancel-1",
+		})
+	}()
+
+	// Wait for the permission request to be published.
+	select {
+	case <-events:
+		// Request is now blocking in select.
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for permission request event")
+	}
+
+	// Cancel the context before anyone grants/denies.
+	cancel()
+
+	wg.Wait()
+	assert.False(t, granted, "should not be granted when context is canceled")
+	assert.Error(t, reqErr, "should return an error on context cancellation")
+	assert.ErrorIs(t, reqErr, context.Canceled)
+}
+
+func TestPermission_SessionAutoApprove(t *testing.T) {
+	service := NewPermissionService("/tmp", false, []string{})
+
+	sessionID := "auto-approve-session"
+
+	// Enable auto-approve for this session.
+	service.AutoApproveSession(sessionID)
+
+	// Subsequent requests for this session should be auto-approved immediately.
+	granted, err := service.Request(t.Context(), CreatePermissionRequest{
+		SessionID:  sessionID,
+		ToolName:   "bash",
+		Action:     "execute",
+		Path:       "/tmp",
+		ToolCallID: "tc-auto-1",
+	})
+	require.NoError(t, err)
+	assert.True(t, granted, "request should be auto-approved for the session")
+
+	// A different session should NOT be auto-approved (it would block).
+	// Verify by starting a request and denying it.
+	events := service.Subscribe(t.Context())
+	var (
+		otherGranted bool
+		wg           sync.WaitGroup
+	)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		otherGranted, _ = service.Request(t.Context(), CreatePermissionRequest{
+			SessionID:  "other-session",
+			ToolName:   "bash",
+			Action:     "execute",
+			Path:       "/tmp",
+			ToolCallID: "tc-auto-2",
+		})
+	}()
+
+	event := <-events
+	service.Deny(event.Payload)
+	wg.Wait()
+	assert.False(t, otherGranted, "other session should not be auto-approved")
+}
+
+func TestPermission_SkipRequests(t *testing.T) {
+	// Start with skip=false so requests would normally block.
+	service := NewPermissionService("/tmp", false, []string{})
+
+	// Enable skip at runtime.
+	service.SetSkipRequests(true)
+	assert.True(t, service.SkipRequests(), "SkipRequests should return true after SetSkipRequests(true)")
+
+	// Request should return immediately without blocking.
+	granted, err := service.Request(t.Context(), CreatePermissionRequest{
+		SessionID:  "skip-session",
+		ToolName:   "bash",
+		Action:     "execute",
+		Path:       "/tmp",
+		ToolCallID: "tc-skip-1",
+	})
+	require.NoError(t, err)
+	assert.True(t, granted, "request should be granted when skip is enabled")
+
+	// Disable skip and verify the flag is toggled back.
+	service.SetSkipRequests(false)
+	assert.False(t, service.SkipRequests(), "SkipRequests should return false after SetSkipRequests(false)")
 }

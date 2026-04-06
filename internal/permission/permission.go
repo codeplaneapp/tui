@@ -7,8 +7,10 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/charmbracelet/crush/internal/csync"
+	"github.com/charmbracelet/crush/internal/observability"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/google/uuid"
 )
@@ -130,13 +132,20 @@ func (s *permissionService) Deny(permission PermissionRequest) {
 }
 
 func (s *permissionService) Request(ctx context.Context, opts CreatePermissionRequest) (bool, error) {
+	start := time.Now()
+	record := func(result string) {
+		observability.RecordPermissionRequest(opts.ToolName, opts.Action, result, time.Since(start))
+	}
+
 	if s.skip {
+		record("skip")
 		return true, nil
 	}
 
 	// Check if the tool/action combination is in the allowlist
 	commandKey := opts.ToolName + ":" + opts.Action
 	if slices.Contains(s.allowedTools, commandKey) || slices.Contains(s.allowedTools, opts.ToolName) {
+		record("allowlist")
 		return true, nil
 	}
 
@@ -144,8 +153,6 @@ func (s *permissionService) Request(ctx context.Context, opts CreatePermissionRe
 	s.notificationBroker.Publish(pubsub.CreatedEvent, PermissionNotification{
 		ToolCallID: opts.ToolCallID,
 	})
-	s.requestMu.Lock()
-	defer s.requestMu.Unlock()
 
 	s.autoApproveSessionsMu.RLock()
 	autoApprove := s.autoApproveSessions[opts.SessionID]
@@ -156,6 +163,7 @@ func (s *permissionService) Request(ctx context.Context, opts CreatePermissionRe
 			ToolCallID: opts.ToolCallID,
 			Granted:    true,
 		})
+		record("auto_approve")
 		return true, nil
 	}
 
@@ -191,6 +199,7 @@ func (s *permissionService) Request(ctx context.Context, opts CreatePermissionRe
 				ToolCallID: opts.ToolCallID,
 				Granted:    true,
 			})
+			record("cached_grant")
 			return true, nil
 		}
 	}
@@ -202,15 +211,37 @@ func (s *permissionService) Request(ctx context.Context, opts CreatePermissionRe
 
 	respCh := make(chan bool, 1)
 	s.pendingRequests.Set(permission.ID, respCh)
-	defer s.pendingRequests.Del(permission.ID)
+	observability.SetPermissionBacklog(s.pendingRequests.Len())
+	defer func() {
+		s.pendingRequests.Del(permission.ID)
+		observability.SetPermissionBacklog(s.pendingRequests.Len())
+	}()
+
+	queuedAt := time.Now()
+	s.requestMu.Lock()
+	defer s.requestMu.Unlock()
+	observability.RecordPermissionQueueDelay(opts.ToolName, opts.Action, time.Since(queuedAt))
+	observability.SetPermissionActive(true)
+	defer observability.SetPermissionActive(false)
 
 	// Publish the request
 	s.Publish(pubsub.CreatedEvent, permission)
 
 	select {
 	case <-ctx.Done():
+		s.activeRequestMu.Lock()
+		if s.activeRequest != nil && s.activeRequest.ID == permission.ID {
+			s.activeRequest = nil
+		}
+		s.activeRequestMu.Unlock()
+		record("canceled")
 		return false, ctx.Err()
 	case granted := <-respCh:
+		if granted {
+			record("granted")
+		} else {
+			record("denied")
+		}
 		return granted, nil
 	}
 }
@@ -235,8 +266,8 @@ func (s *permissionService) SkipRequests() bool {
 
 func NewPermissionService(workingDir string, skip bool, allowedTools []string) Service {
 	return &permissionService{
-		Broker:              pubsub.NewBroker[PermissionRequest](),
-		notificationBroker:  pubsub.NewBroker[PermissionNotification](),
+		Broker:              pubsub.NewNamedBroker[PermissionRequest]("permission_requests"),
+		notificationBroker:  pubsub.NewNamedBroker[PermissionNotification]("permission_notifications"),
 		workingDir:          workingDir,
 		sessionPermissions:  make([]PermissionRequest, 0),
 		autoApproveSessions: make(map[string]bool),

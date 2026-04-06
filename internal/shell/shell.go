@@ -15,12 +15,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/charmbracelet/crush/internal/observability"
 	"github.com/charmbracelet/x/exp/slice"
+	"go.opentelemetry.io/otel/attribute"
 	"mvdan.cc/sh/moreinterp/coreutils"
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/interp"
@@ -268,6 +272,14 @@ func (s *Shell) updateShellFromRunner(runner *interp.Runner) {
 
 // execCommon is the shared implementation for executing commands
 func (s *Shell) execCommon(ctx context.Context, command string, stdout, stderr io.Writer) (err error) {
+	ctx = observability.WithComponent(ctx, "shell")
+	ctx, span := observability.StartSpan(ctx, "shell.exec")
+	span.SetAttributes(
+		attribute.String("shell.cwd", s.cwd),
+		attribute.Int("shell.command_length", len(command)),
+	)
+	start := time.Now()
+
 	var runner *interp.Runner
 	defer func() {
 		if r := recover(); r != nil {
@@ -276,6 +288,17 @@ func (s *Shell) execCommon(ctx context.Context, command string, stdout, stderr i
 		if runner != nil {
 			s.updateShellFromRunner(runner)
 		}
+		observability.RecordError(span, err)
+		span.SetAttributes(attribute.Int("shell.exit_code", ExitCode(err)))
+		span.End()
+		observability.RecordShellCommand(time.Since(start), err)
+		observability.LogAttrs(ctx, slog.LevelDebug, "Shell command finished",
+			slog.String("command", command),
+			slog.String("cwd", s.cwd),
+			slog.Int("exit_code", ExitCode(err)),
+			slog.Duration("duration", time.Since(start)),
+			slog.Any("error", err),
+		)
 		s.logger.InfoPersist("command finished", "command", command, "err", err)
 	}()
 

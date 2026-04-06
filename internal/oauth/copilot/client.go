@@ -10,6 +10,7 @@ import (
 	"regexp"
 
 	"github.com/charmbracelet/crush/internal/log"
+	"github.com/charmbracelet/crush/internal/observability"
 )
 
 var assistantRolePattern = regexp.MustCompile(`"role"\s*:\s*"assistant"`)
@@ -73,7 +74,10 @@ func (t *initiatorTransport) RoundTrip(req *http.Request) (*http.Response, error
 
 func (t *initiatorTransport) roundTrip(req *http.Request) (*http.Response, error) {
 	if t.debug {
-		return log.NewHTTPClient().Transport.RoundTrip(req)
+		return log.NewHTTPClientWithComponent("copilot").Transport.RoundTrip(req)
 	}
-	return http.DefaultTransport.RoundTrip(req)
+	return (&observability.InstrumentedRoundTripper{
+		Transport: http.DefaultTransport,
+		Component: "copilot",
+	}).RoundTrip(req)
 }

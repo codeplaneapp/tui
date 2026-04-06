@@ -2,6 +2,7 @@ package shell
 
 import (
 	"context"
+	"fmt"
 	"runtime"
 	"strings"
 	"testing"
@@ -331,4 +332,82 @@ func TestBackgroundShell_WaitContext_Canceled(t *testing.T) {
 	cancel()
 
 	require.False(t, bgShell.WaitContext(ctx))
+}
+
+func TestBackgroundShell_MaxJobsLimit(t *testing.T) {
+	t.Parallel()
+
+	manager := newBackgroundShellManager()
+	workingDir := t.TempDir()
+
+	// Fill the manager up to MaxBackgroundJobs by inserting dummy shells directly.
+	for i := 0; i < MaxBackgroundJobs; i++ {
+		id := fmt.Sprintf("dummy-%d", i)
+		done := make(chan struct{})
+		close(done) // mark as already completed so cleanup is safe
+		manager.shells.Set(id, &BackgroundShell{
+			ID:   id,
+			done: done,
+		})
+	}
+
+	require.Equal(t, MaxBackgroundJobs, manager.shells.Len())
+
+	// The next Start call should be rejected.
+	_, err := manager.Start(t.Context(), workingDir, nil, "echo should-not-run", "")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), fmt.Sprintf("maximum number of background jobs (%d) reached", MaxBackgroundJobs))
+
+	// Remove one and verify we can start again.
+	manager.Remove("dummy-0")
+	bgShell, err := manager.Start(t.Context(), workingDir, nil, "echo ok", "")
+	require.NoError(t, err)
+	require.NotNil(t, bgShell)
+
+	bgShell.Wait()
+
+	// Clean up: remove dummy shells (no cancel func), then kill the real one.
+	for i := 1; i < MaxBackgroundJobs; i++ {
+		manager.Remove(fmt.Sprintf("dummy-%d", i))
+	}
+	manager.Kill(bgShell.ID)
+}
+
+func TestBackgroundShell_CleanupOldJobs(t *testing.T) {
+	t.Parallel()
+
+	manager := newBackgroundShellManager()
+
+	// Create three jobs: one still running, one recently completed, one old completed.
+	running := &BackgroundShell{ID: "running", done: make(chan struct{})}
+	// completedAt stays at 0 (zero value) => still running
+
+	recent := &BackgroundShell{ID: "recent", done: make(chan struct{})}
+	close(recent.done)
+	recent.completedAt.Store(time.Now().Unix()) // completed just now
+
+	old := &BackgroundShell{ID: "old", done: make(chan struct{})}
+	close(old.done)
+	// completed well beyond the retention window
+	old.completedAt.Store(time.Now().Add(-(time.Duration(CompletedJobRetentionMinutes)*time.Minute + time.Hour)).Unix())
+
+	manager.shells.Set("running", running)
+	manager.shells.Set("recent", recent)
+	manager.shells.Set("old", old)
+
+	require.Equal(t, 3, manager.shells.Len())
+
+	cleaned := manager.Cleanup()
+	require.Equal(t, 1, cleaned, "only the old completed job should be cleaned")
+
+	// The old job must be gone.
+	_, ok := manager.Get("old")
+	require.False(t, ok, "old job should have been removed")
+
+	// The running and recently completed jobs must still be present.
+	_, ok = manager.Get("running")
+	require.True(t, ok, "running job should still exist")
+
+	_, ok = manager.Get("recent")
+	require.True(t, ok, "recently completed job should still exist")
 }

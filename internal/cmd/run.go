@@ -73,28 +73,6 @@ smithers-tui run --continue "Follow up on your last response"
 		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 		defer cancel()
 
-		app, err := setupApp(cmd)
-		if err != nil {
-			return err
-		}
-		defer app.Shutdown()
-
-		if sessionID != "" {
-			sess, err := resolveSessionID(ctx, app.Sessions, sessionID)
-			if err != nil {
-				return err
-			}
-			sessionID = sess.ID
-		}
-
-		if !app.Config().IsConfigured() {
-			return fmt.Errorf("no providers configured - please run 'smithers-tui' to set up a provider interactively")
-		}
-
-		if verbose {
-			slog.SetDefault(slog.New(log.New(os.Stderr)))
-		}
-
 		prompt := strings.Join(args, " ")
 
 		prompt, err := MaybePrependStdin(prompt)

@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	crushlog "github.com/charmbracelet/crush/internal/log"
 )
 
 const (
@@ -87,9 +89,8 @@ type github struct{}
 
 // Latest implements [Client].
 func (c *github) Latest(ctx context.Context) (*Release, error) {
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
+	client := crushlog.NewHTTPClientWithComponent("update_check")
+	client.Timeout = 30 * time.Second
 
 	req, err := http.NewRequestWithContext(ctx, "GET", githubApiUrl, nil)
 	if err != nil {

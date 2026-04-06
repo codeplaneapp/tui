@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	crushlog "github.com/charmbracelet/crush/internal/log"
+	"github.com/charmbracelet/crush/internal/observability"
 	"github.com/charmbracelet/crush/internal/oauth"
 )
 
@@ -46,7 +48,8 @@ func RequestDeviceCode(ctx context.Context) (*DeviceCode, error) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("User-Agent", userAgent)
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := crushlog.NewHTTPClientWithComponent("copilot_oauth")
+	client.Timeout = 30 * time.Second
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -55,7 +58,7 @@ func RequestDeviceCode(ctx context.Context) (*DeviceCode, error) {
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("device code request failed: %s - %s", resp.Status, string(body))
+		return nil, fmt.Errorf("device code request failed: %s - %s", resp.Status, observability.RedactPayload("application/json", body))
 	}
 
 	var dc DeviceCode
@@ -116,7 +119,8 @@ func tryGetToken(ctx context.Context, deviceCode string) (*oauth.Token, error) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("User-Agent", userAgent)
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := crushlog.NewHTTPClientWithComponent("copilot_oauth")
+	client.Timeout = 30 * time.Second
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -157,7 +161,8 @@ func getCopilotToken(ctx context.Context, githubToken string) (*oauth.Token, err
 		req.Header.Set(k, v)
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := crushlog.NewHTTPClientWithComponent("copilot_oauth")
+	client.Timeout = 30 * time.Second
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -173,7 +178,7 @@ func getCopilotToken(ctx context.Context, githubToken string) (*oauth.Token, err
 		return nil, ErrNotAvailable
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("copilot token request failed: %s - %s", resp.Status, string(body))
+		return nil, fmt.Errorf("copilot token request failed: %s - %s", resp.Status, observability.RedactPayload("application/json", body))
 	}
 
 	var result struct {

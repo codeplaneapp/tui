@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"charm.land/fantasy"
+	crushlog "github.com/charmbracelet/crush/internal/log"
 )
 
 type SourcegraphParams struct {
@@ -38,10 +39,7 @@ func NewSourcegraphTool(client *http.Client) fantasy.AgentTool {
 		transport.MaxIdleConnsPerHost = 10
 		transport.IdleConnTimeout = 90 * time.Second
 
-		client = &http.Client{
-			Timeout:   30 * time.Second,
-			Transport: transport,
-		}
+		client = crushlog.NewHTTPClientWithTransport("sourcegraph_tool", transport, 30*time.Second)
 	}
 	return fantasy.NewParallelAgentTool(
 		SourcegraphToolName,

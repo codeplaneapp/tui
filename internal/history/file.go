@@ -49,7 +49,7 @@ type service struct {
 
 func NewService(q *db.Queries, db *sql.DB) Service {
 	return &service{
-		Broker: pubsub.NewBroker[File](),
+		Broker: pubsub.NewNamedBroker[File]("history_files"),
 		q:      q,
 		db:     db,
 	}

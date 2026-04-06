@@ -19,6 +19,7 @@ import (
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/csync"
 	"github.com/charmbracelet/crush/internal/home"
+	"github.com/charmbracelet/crush/internal/observability"
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/charmbracelet/crush/internal/version"
@@ -55,7 +56,7 @@ func (s *ClientSession) Close() error {
 var (
 	sessions = csync.NewMap[string, *ClientSession]()
 	states   = csync.NewMap[string, ClientInfo]()
-	broker   = pubsub.NewBroker[Event]()
+	broker   = pubsub.NewNamedBroker[Event]("mcp_events")
 	initOnce sync.Once
 	initDone = make(chan struct{})
 )
@@ -458,7 +459,8 @@ func createTransport(ctx context.Context, m config.MCPConfig, resolver config.Va
 		}
 		client := &http.Client{
 			Transport: &headerRoundTripper{
-				headers: m.ResolvedHeaders(),
+				headers:   m.ResolvedHeaders(),
+				component: "mcp_http",
 			},
 		}
 		return &mcp.StreamableClientTransport{
@@ -471,7 +473,8 @@ func createTransport(ctx context.Context, m config.MCPConfig, resolver config.Va
 		}
 		client := &http.Client{
 			Transport: &headerRoundTripper{
-				headers: m.ResolvedHeaders(),
+				headers:   m.ResolvedHeaders(),
+				component: "mcp_sse",
 			},
 		}
 		return &mcp.SSEClientTransport{
@@ -484,14 +487,18 @@ func createTransport(ctx context.Context, m config.MCPConfig, resolver config.Va
 }
 
 type headerRoundTripper struct {
-	headers map[string]string
+	headers   map[string]string
+	component string
 }
 
 func (rt headerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	for k, v := range rt.headers {
 		req.Header.Set(k, v)
 	}
-	return http.DefaultTransport.RoundTrip(req)
+	return (&observability.InstrumentedRoundTripper{
+		Transport: http.DefaultTransport,
+		Component: rt.component,
+	}).RoundTrip(req)
 }
 
 func mcpTimeout(m config.MCPConfig) time.Duration {
