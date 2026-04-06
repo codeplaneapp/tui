@@ -192,6 +192,14 @@ type Styles struct {
 	Red           color.Color
 	RedDark       color.Color
 	Yellow        color.Color
+	Purple        color.Color
+	Gray          color.Color
+
+	// SplitPane
+	SplitPane struct {
+		Focused lipgloss.Style
+		Blurred lipgloss.Style
+	}
 
 	// Section Title
 	Section struct {
@@ -570,6 +578,9 @@ func DefaultStyles() Styles {
 		redDark = charmtone.Sriracha
 		// redLight = charmtone.Salmon
 		// cherry   = charmtone.Cherry
+
+		purple = lipgloss.Color("63")
+		gray   = lipgloss.Color("240")
 	)
 
 	normalBorder := lipgloss.NormalBorder()
@@ -607,6 +618,17 @@ func DefaultStyles() Styles {
 	s.Red = red
 	s.RedDark = redDark
 	s.Yellow = yellow
+	s.Purple = purple
+	s.Gray = gray
+
+	// SplitPane
+	s.SplitPane.Focused = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(purple)
+	s.SplitPane.Blurred = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(gray).
+		Faint(true)
 
 	s.TextInput = textinput.Styles{
 		Focused: textinput.StyleState{
@@ -1248,11 +1270,11 @@ func DefaultStyles() Styles {
 	s.BorderFocus = lipgloss.NewStyle().BorderForeground(borderFocus).Border(lipgloss.RoundedBorder()).Padding(1, 2)
 
 	// Editor
-	s.EditorPromptNormalFocused = lipgloss.NewStyle().Foreground(greenDark).SetString("::: ")
+	s.EditorPromptNormalFocused = lipgloss.NewStyle().Foreground(greenDark).SetString("│   ")
 	s.EditorPromptNormalBlurred = s.EditorPromptNormalFocused.Foreground(fgMuted)
 	s.EditorPromptYoloIconFocused = lipgloss.NewStyle().MarginRight(1).Foreground(charmtone.Oyster).Background(charmtone.Citron).Bold(true).SetString(" ! ")
 	s.EditorPromptYoloIconBlurred = s.EditorPromptYoloIconFocused.Foreground(charmtone.Pepper).Background(charmtone.Squid)
-	s.EditorPromptYoloDotsFocused = lipgloss.NewStyle().MarginRight(1).Foreground(charmtone.Zest).SetString(":::")
+	s.EditorPromptYoloDotsFocused = lipgloss.NewStyle().MarginRight(1).Foreground(charmtone.Zest).SetString("│  ")
 	s.EditorPromptYoloDotsBlurred = s.EditorPromptYoloDotsFocused.Foreground(charmtone.Squid)
 
 	s.RadioOn = s.HalfMuted.SetString(RadioOn)

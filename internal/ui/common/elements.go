@@ -185,16 +185,23 @@ func Section(t *styles.Styles, text string, width int, info ...string) string {
 	return text
 }
 
-// DialogTitle renders a dialog title with a decorative line filling the
-// remaining width.
+// DialogTitle renders a dialog title.
 func DialogTitle(t *styles.Styles, title string, width int, fromColor, toColor color.Color) string {
-	char := "╱"
-	length := lipgloss.Width(title) + 1
-	remainingWidth := width - length
-	if remainingWidth > 0 {
-		lines := strings.Repeat(char, remainingWidth)
-		lines = styles.ApplyForegroundGrad(t, lines, fromColor, toColor)
-		title = title + " " + lines
-	}
 	return title
+}
+
+// Pill renders text with rounded ends ( and ) using the given background color.
+// The foreground color is set to black ("0") for contrast.
+func Pill(text string, color string) string {
+	fg := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
+	bg := lipgloss.NewStyle().Background(lipgloss.Color(color)).Foreground(lipgloss.Color("0")).Bold(true).Padding(0, 1)
+	return fg.Render("") + bg.Render(text) + fg.Render("")
+}
+
+// PillStyle renders text with rounded ends using full foreground/background custom styles.
+func PillStyle(text string, bgStyle, fgStyle lipgloss.Style) string {
+	bgHex := bgStyle.GetBackground()
+	fg := lipgloss.NewStyle().Foreground(bgHex)
+	bg := bgStyle.Inherit(fgStyle).Padding(0, 1)
+	return fg.Render("") + bg.Render(text) + fg.Render("")
 }

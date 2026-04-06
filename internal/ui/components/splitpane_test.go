@@ -60,12 +60,13 @@ func TestSplitPane_SetSize_Normal(t *testing.T) {
 	sp, left, right := newTestSplitPane()
 	sp.SetSize(120, 30)
 
-	// left gets 30 - 1 (border accent when focused) = 29
-	// right gets 120 - 30 - 1 = 89
-	assert.Equal(t, 29, left.sizeW, "left pane width when focused should be LeftWidth-1")
-	assert.Equal(t, 89, right.sizeW, "right pane width should be total - leftWidth - divider")
-	assert.Equal(t, 30, left.sizeH)
-	assert.Equal(t, 30, right.sizeH)
+	// both panes get -2 for rounded border
+	// left gets 30 - 2 = 28
+	// right gets 120 - 30 - 1 = 89, -2 = 87
+	assert.Equal(t, 28, left.sizeW, "left pane width should be LeftWidth-2")
+	assert.Equal(t, 87, right.sizeW, "right pane width should be total - leftWidth - divider - 2")
+	assert.Equal(t, 28, left.sizeH)
+	assert.Equal(t, 28, right.sizeH)
 }
 
 func TestSplitPane_SetSize_Compact(t *testing.T) {
@@ -73,9 +74,9 @@ func TestSplitPane_SetSize_Compact(t *testing.T) {
 	sp.SetSize(70, 20) // 70 < 80 (compact breakpoint)
 
 	assert.True(t, sp.IsCompact(), "should be in compact mode at width 70")
-	// Only focused pane (left) gets size
-	assert.Equal(t, 70, left.sizeW)
-	assert.Equal(t, 20, left.sizeH)
+	// Only focused pane (left) gets size, -2 for border
+	assert.Equal(t, 68, left.sizeW)
+	assert.Equal(t, 18, left.sizeH)
 	// Right pane should NOT have been called
 	assert.Equal(t, 0, right.sizeW)
 	assert.Equal(t, 0, right.sizeH)
@@ -89,8 +90,8 @@ func TestSplitPane_LeftWidthClamped(t *testing.T) {
 	sp2, left2, _ := newTestSplitPane()
 	sp2.SetSize(82, 20)
 	// leftWidth = min(30, 82/2) = min(30, 41) = 30 (no clamping needed)
-	// When focused (FocusLeft): left gets 30-1=29
-	assert.Equal(t, 29, left2.sizeW, "left pane should get 29 (30-1 for border)")
+	// left gets 30-2=28
+	assert.Equal(t, 28, left2.sizeW, "left pane should get 28 (30-2 for border)")
 
 	sp3, left3, _ := newTestSplitPane()
 	sp3.SetSize(50, 20) // compact mode, no test needed here
@@ -101,8 +102,8 @@ func TestSplitPane_LeftWidthClamped(t *testing.T) {
 	sp4 := NewSplitPane(left4Pane, right4Pane, SplitPaneOpts{LeftWidth: 40, CompactBreakpoint: 80})
 	sp4.SetSize(82, 20)
 	// clamp: min(40, 82/2=41) = 40 (not clamped since 40 <= 41)
-	// focused left: 40-1=39
-	assert.Equal(t, 39, left4Pane.sizeW, "left pane with LeftWidth=40 on width=82 should get 39")
+	// left: 40-2=38
+	assert.Equal(t, 38, left4Pane.sizeW, "left pane with LeftWidth=40 on width=82 should get 38")
 
 	sp5Left := &mockPane{viewContent: "L"}
 	sp5Right := &mockPane{viewContent: "R"}
@@ -174,9 +175,9 @@ func TestSplitPane_WindowResize(t *testing.T) {
 	sp.Update(tea.WindowSizeMsg{Width: 150, Height: 40})
 
 	// After resize, both panes should have new sizes
-	// focused (left): 30-1=29, right: 150-30-1=119
-	assert.Equal(t, 29, left.sizeW, "left pane should be resized on WindowSizeMsg")
-	assert.Equal(t, 119, right.sizeW, "right pane should be resized on WindowSizeMsg")
+	// left: 30-2=28, right: 150-30-1=119, -2=117
+	assert.Equal(t, 28, left.sizeW, "left pane should be resized on WindowSizeMsg")
+	assert.Equal(t, 117, right.sizeW, "right pane should be resized on WindowSizeMsg")
 }
 
 func TestSplitPane_ViewOutput_Normal(t *testing.T) {
@@ -217,23 +218,21 @@ func TestSplitPane_SetFocus_Programmatic(t *testing.T) {
 	sp.SetFocus(FocusRight)
 	assert.Equal(t, FocusRight, sp.Focus())
 
-	// After SetFocus, right pane gets border space (right gets rightWidth-1)
-	// left gets full leftWidth (no border when unfocused)
-	assert.Equal(t, 30, left.sizeW, "unfocused left pane should get full leftWidth")
-	// right: 120 - 30 - 1 = 89, minus 1 for border = 88
-	assert.Equal(t, 88, right.sizeW, "focused right pane should get rightWidth-1")
+	// both get -2
+	assert.Equal(t, 28, left.sizeW)
+	assert.Equal(t, 87, right.sizeW)
 }
 
 func TestSplitPane_CompactToggle_SizePropagation(t *testing.T) {
 	sp, left, right := newTestSplitPane()
 	sp.SetSize(70, 20) // compact, left focused
 
-	assert.Equal(t, 70, left.sizeW)
+	assert.Equal(t, 68, left.sizeW)
 
 	// Toggle focus in compact mode: right should now get the full width
 	sp.ToggleFocus()
 	assert.Equal(t, FocusRight, sp.Focus())
-	assert.Equal(t, 70, right.sizeW, "right pane should get full width after toggle in compact mode")
+	assert.Equal(t, 68, right.sizeW, "right pane should get full width after toggle in compact mode")
 }
 
 func TestSplitPane_NarrowSafety(t *testing.T) {

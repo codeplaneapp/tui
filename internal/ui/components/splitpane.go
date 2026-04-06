@@ -41,6 +41,10 @@ type SplitPaneOpts struct {
 	// DividerColor is the foreground color of the divider character.
 	// Default: "240" (dim gray).
 	DividerColor string
+	// FocusedStyle is applied to the content of the focused pane.
+	FocusedStyle lipgloss.Style
+	// BlurredStyle is applied to the content of the inactive pane.
+	BlurredStyle lipgloss.Style
 }
 
 // SplitPane renders two Pane children side-by-side with a configurable
@@ -69,11 +73,27 @@ func NewSplitPane(left, right Pane, opts SplitPaneOpts) *SplitPane {
 		opts.CompactBreakpoint = 80
 	}
 	if opts.FocusedBorderColor == "" {
-		opts.FocusedBorderColor = "99"
+		opts.FocusedBorderColor = "63" // Modern purple
 	}
 	if opts.DividerColor == "" {
 		opts.DividerColor = "240"
 	}
+
+	// Initialize default styles if not provided.
+	b, _, _, _, _ := opts.FocusedStyle.GetBorder()
+	if b.Top == "" {
+		opts.FocusedStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color(opts.FocusedBorderColor))
+	}
+	b, _, _, _, _ = opts.BlurredStyle.GetBorder()
+	if b.Top == "" {
+		opts.BlurredStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("240")).
+			Faint(true)
+	}
+
 	return &SplitPane{
 		left:  left,
 		right: right,
@@ -95,11 +115,12 @@ func (sp *SplitPane) SetSize(width, height int) {
 
 	if sp.compact {
 		// Single-pane mode: give all space to the focused pane only.
+		// Subtract 2 from width and height for the rounded border.
 		switch sp.focus {
 		case FocusLeft:
-			sp.left.SetSize(width, height)
+			sp.left.SetSize(max(0, width-2), max(0, height-2))
 		case FocusRight:
-			sp.right.SetSize(width, height)
+			sp.right.SetSize(max(0, width-2), max(0, height-2))
 		}
 		return
 	}
@@ -109,17 +130,10 @@ func (sp *SplitPane) SetSize(width, height int) {
 	if rightWidth < 0 {
 		rightWidth = 0
 	}
-	// Left pane: subtract 1 column for the focus-border accent on the active pane.
-	if sp.focus == FocusLeft {
-		sp.left.SetSize(leftWidth-1, height)
-	} else {
-		sp.left.SetSize(leftWidth, height)
-	}
-	if sp.focus == FocusRight {
-		sp.right.SetSize(rightWidth-1, height)
-	} else {
-		sp.right.SetSize(rightWidth, height)
-	}
+
+	// Subtract 2 from width and height for the rounded borders.
+	sp.left.SetSize(max(0, leftWidth-2), max(0, height-2))
+	sp.right.SetSize(max(0, rightWidth-2), max(0, height-2))
 }
 
 // clampLeftWidth ensures the left pane never exceeds half the available width.
@@ -170,25 +184,28 @@ func (sp *SplitPane) ToggleFocus() {
 	} else {
 		sp.focus = FocusLeft
 	}
-	if sp.compact {
-		// Swap which pane gets the full width in compact mode.
-		sp.SetSize(sp.width, sp.height)
-	} else {
-		// Re-propagate sizes so the border accent moves to the new focused pane.
-		sp.SetSize(sp.width, sp.height)
-	}
+	// Re-propagate sizes so the border styling updates.
+	sp.SetSize(sp.width, sp.height)
 }
 
 // View renders the split pane using lipgloss.JoinHorizontal.
 // In compact mode, only the focused pane is rendered (no divider).
 func (sp *SplitPane) View() string {
 	if sp.compact {
+		var style lipgloss.Style
+		var content string
 		switch sp.focus {
 		case FocusLeft:
-			return sp.left.View()
+			style = sp.opts.FocusedStyle
+			content = sp.left.View()
 		default:
-			return sp.right.View()
+			style = sp.opts.FocusedStyle // Always focused if visible in compact
+			content = sp.right.View()
 		}
+		return style.
+			Width(sp.width - 2).
+			Height(sp.height - 2).
+			Render(content)
 	}
 
 	leftWidth := sp.clampLeftWidth(sp.width)
@@ -197,55 +214,45 @@ func (sp *SplitPane) View() string {
 		rightWidth = 0
 	}
 
-	accentColor := lipgloss.Color(sp.opts.FocusedBorderColor)
-
-	var leftStyled string
+	var leftStyle, rightStyle lipgloss.Style
 	if sp.focus == FocusLeft {
-		// Focused: left thick-border accent (1 col) + content (leftWidth-1 cols).
-		accent := lipgloss.NewStyle().
-			Foreground(accentColor).
-			Height(sp.height).
-			Render(strings.Repeat("┃\n", max(0, sp.height-1)) + "┃")
-		content := lipgloss.NewStyle().
-			Width(leftWidth - 1).MaxWidth(leftWidth - 1).Height(sp.height).
-			Render(sp.left.View())
-		leftStyled = lipgloss.JoinHorizontal(lipgloss.Top, accent, content)
+		leftStyle = sp.opts.FocusedStyle
+		rightStyle = sp.opts.BlurredStyle
 	} else {
-		leftStyled = lipgloss.NewStyle().
-			Width(leftWidth).MaxWidth(leftWidth).Height(sp.height).
-			Render(sp.left.View())
+		leftStyle = sp.opts.BlurredStyle
+		rightStyle = sp.opts.FocusedStyle
 	}
 
-	divider := sp.renderDivider()
+	leftStyled := leftStyle.
+		Width(leftWidth - 2).
+		MaxWidth(leftWidth - 2).
+		Height(sp.height - 2).
+		MaxHeight(sp.height - 2).
+		Render(sp.left.View())
 
-	var rightStyled string
-	if sp.focus == FocusRight {
-		// Focused: left thick-border accent (1 col) + content (rightWidth-1 cols).
-		accent := lipgloss.NewStyle().
-			Foreground(accentColor).
-			Height(sp.height).
-			Render(strings.Repeat("┃\n", max(0, sp.height-1)) + "┃")
-		content := lipgloss.NewStyle().
-			Width(rightWidth - 1).MaxWidth(rightWidth - 1).Height(sp.height).
-			Render(sp.right.View())
-		rightStyled = lipgloss.JoinHorizontal(lipgloss.Top, accent, content)
-	} else {
-		rightStyled = lipgloss.NewStyle().
-			Width(rightWidth).MaxWidth(rightWidth).Height(sp.height).
-			Render(sp.right.View())
+	divider := ""
+	if sp.opts.DividerWidth > 0 {
+		divider = sp.renderDivider()
 	}
+
+	rightStyled := rightStyle.
+		Width(rightWidth - 2).
+		MaxWidth(rightWidth - 2).
+		Height(sp.height - 2).
+		MaxHeight(sp.height - 2).
+		Render(sp.right.View())
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, leftStyled, divider, rightStyled)
 }
 
 // renderDivider renders the vertical divider column.
 func (sp *SplitPane) renderDivider() string {
-	divChar := strings.Repeat("│\n", max(0, sp.height-1)) + "│"
+	// If panes have borders, the divider can just be a space or empty.
+	// But let's keep it as a spacer for now.
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(sp.opts.DividerColor)).
 		Width(sp.opts.DividerWidth).
 		Height(sp.height).
-		Render(divChar)
+		Render(strings.Repeat(" \n", max(0, sp.height-1)) + " ")
 }
 
 // --- Public accessors ---

@@ -72,9 +72,9 @@ func TestRunTable_View_RenderRunData(t *testing.T) {
 	assert.Contains(t, out, "test-suite")
 
 	// Status values.
-	assert.Contains(t, out, "running")
-	assert.Contains(t, out, "waiting-approval")
-	assert.Contains(t, out, "failed")
+	assert.Contains(t, out, "RUNNING")
+	assert.Contains(t, out, "WAITING-APPROVAL")
+	assert.Contains(t, out, "FAILED")
 }
 
 func TestRunTable_View_CursorOnFirstRow(t *testing.T) {
@@ -89,13 +89,13 @@ func TestRunTable_View_CursorOnFirstRow(t *testing.T) {
 	}
 	out := table.View()
 
-	// The cursor indicator "▸ " should appear before the first run.
+	// The cursor indicator "│ " should appear before the first run.
 	lines := strings.Split(out, "\n")
 	// First line is header, second is first run row.
 	found := false
 	for _, line := range lines {
 		if strings.Contains(line, "run-aaa") {
-			assert.Contains(t, line, "▸", "cursor row should have ▸ indicator")
+			assert.Contains(t, line, "│", "cursor row should have │ indicator")
 			found = true
 			break
 		}
@@ -118,7 +118,7 @@ func TestRunTable_View_CursorOnSecondRow(t *testing.T) {
 	lines := strings.Split(out, "\n")
 	for _, line := range lines {
 		if strings.Contains(line, "run-bbb") {
-			assert.Contains(t, line, "▸", "cursor should be on second row")
+			assert.Contains(t, line, "│", "cursor should be on second row")
 			return
 		}
 	}
@@ -140,7 +140,7 @@ func TestRunTable_View_NoCursorOnNonSelectedRows(t *testing.T) {
 	lines := strings.Split(out, "\n")
 	for _, line := range lines {
 		if strings.Contains(line, "run-bbb") {
-			assert.NotContains(t, line, "▸", "non-selected row should not have ▸")
+			assert.NotContains(t, line, "│", "non-selected row should not have │")
 			return
 		}
 	}
@@ -311,12 +311,12 @@ func TestRunTable_CursorCrossesSection(t *testing.T) {
 	}
 	// cursor=1 should land on run2 (the second navigable row)
 	out := RunTable{Runs: runs, Cursor: 1, Width: 120}.View()
-	if !strings.Contains(out, "▸") {
+	if !strings.Contains(out, "│") {
 		t.Fatalf("no cursor indicator found in output")
 	}
 	// cursor line must contain "run2", not "run1"
 	for _, line := range strings.Split(out, "\n") {
-		if strings.Contains(line, "▸") {
+		if strings.Contains(line, "│") {
 			if !strings.Contains(line, "run2") {
 				t.Errorf("cursor on wrong row; got: %q", line)
 			}

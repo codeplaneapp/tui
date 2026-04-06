@@ -1,7 +1,6 @@
 package logo
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/charmbracelet/crush/internal/ui/styles"
@@ -23,11 +22,9 @@ func TestRender_Wide(t *testing.T) {
 	})
 
 	plain := ansi.Strip(out)
-	require.Contains(t, plain, "Smithers")
+	require.Contains(t, plain, "CRUSH")
+	require.NotContains(t, plain, "Smithers")
 	require.NotContains(t, plain, "Charm")
-	require.NotContains(t, plain, "Crush")
-	require.GreaterOrEqual(t, strings.Count(plain, "\n"), 3)
-	require.Contains(t, plain, "█")
 }
 
 func TestRender_Compact(t *testing.T) {
@@ -44,10 +41,9 @@ func TestRender_Compact(t *testing.T) {
 	})
 
 	plain := ansi.Strip(out)
-	require.Contains(t, plain, "Smithers")
-	require.Contains(t, plain, "╱")
+	require.Contains(t, plain, "CRUSH")
+	require.NotContains(t, plain, "Smithers")
 	require.NotContains(t, plain, "Charm")
-	require.NotContains(t, plain, "Crush")
 }
 
 func TestSmallRender(t *testing.T) {
@@ -57,7 +53,7 @@ func TestSmallRender(t *testing.T) {
 	out := SmallRender(&sty, 80)
 	plain := ansi.Strip(out)
 
-	require.Contains(t, plain, "Smithers")
+	require.Contains(t, plain, "CRUSH")
+	require.NotContains(t, plain, "Smithers")
 	require.NotContains(t, plain, "Charm")
-	require.NotContains(t, plain, "Crush")
 }

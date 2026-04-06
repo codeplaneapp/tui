@@ -7,6 +7,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/crush/internal/smithers"
+	"github.com/charmbracelet/crush/internal/ui/common"
 )
 
 // runRowKind distinguishes header rows from selectable run rows in the
@@ -82,9 +83,9 @@ func partitionRuns(runs []smithers.RunSummary) []runVirtualRow {
 type RunTable struct {
 	Runs        []smithers.RunSummary
 	Cursor      int
-	Width       int // available terminal columns
-	Expanded    map[string]bool                     // runID → detail row visible
-	Inspections map[string]*smithers.RunInspection  // runID → fetched tasks
+	Width       int                                // available terminal columns
+	Expanded    map[string]bool                    // runID → detail row visible
+	Inspections map[string]*smithers.RunInspection // runID → fetched tasks
 }
 
 // RunAtCursor returns the RunSummary at the given navigable cursor index and
@@ -129,8 +130,7 @@ func fmtDetailLine(run smithers.RunSummary, insp *smithers.RunInspection, _ int)
 		return indent + faint.Render("└─ Running…")
 
 	case smithers.RunStatusWaitingApproval:
-		approvalStyle := statusStyle(smithers.RunStatusWaitingApproval)
-		prefix := approvalStyle.Render("⏸ APPROVAL PENDING")
+		prefix := common.Pill("⏸ APPROVAL PENDING", "3")
 		reason := run.ErrorReason()
 		var detail string
 		if reason != "" {
@@ -162,24 +162,27 @@ func fmtDetailLine(run smithers.RunSummary, insp *smithers.RunInspection, _ int)
 	}
 }
 
-// statusStyle returns the lipgloss style for a run status.
-func statusStyle(status smithers.RunStatus) lipgloss.Style {
+// statusPill returns the styled pill string for a run status.
+func statusPill(status smithers.RunStatus) string {
+	text := strings.ToUpper(string(status))
+	var color string
 	switch status {
 	case smithers.RunStatusRunning:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("2")) // green
+		color = "2" // green
 	case smithers.RunStatusWaitingApproval:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Bold(true) // yellow bold
+		color = "3" // yellow
 	case smithers.RunStatusWaitingEvent:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("4")) // blue
+		color = "4" // blue
 	case smithers.RunStatusFinished:
-		return lipgloss.NewStyle().Faint(true)
+		color = "240" // dark gray
 	case smithers.RunStatusFailed:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("1")) // red
+		color = "1" // red
 	case smithers.RunStatusCancelled:
-		return lipgloss.NewStyle().Faint(true).Strikethrough(true)
+		color = "240" // dark gray
 	default:
-		return lipgloss.NewStyle()
+		color = "240"
 	}
+	return common.Pill(text, color)
 }
 
 // fmtElapsed formats a run's elapsed time as a human-readable string.
@@ -252,12 +255,24 @@ func progressBar(run smithers.RunSummary, barWidth int) string {
 	}
 
 	ratio := float64(completed) / float64(total)
-	filled := int(ratio * float64(barWidth))
-	if filled > barWidth {
-		filled = barWidth
+	exactFilled := ratio * float64(barWidth)
+	filled := int(exactFilled)
+	fraction := exactFilled - float64(filled)
+
+	var bar strings.Builder
+	bar.WriteString(strings.Repeat("█", filled))
+
+	if filled < barWidth {
+		blocks := []string{"░", "▏", "▎", "▍", "▌", "▋", "▊", "▉", "█"}
+		fracIdx := int(fraction * float64(len(blocks)-1))
+		bar.WriteString(blocks[fracIdx])
+
+		emptyCount := barWidth - filled - 1
+		if emptyCount > 0 {
+			bar.WriteString(strings.Repeat("░", emptyCount))
+		}
 	}
 
-	bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
 	pct := int(ratio * 100)
 
 	var style lipgloss.Style
@@ -266,12 +281,14 @@ func progressBar(run smithers.RunSummary, barWidth int) string {
 		style = lipgloss.NewStyle().Foreground(lipgloss.Color("2")) // green
 	case smithers.RunStatusWaitingApproval, smithers.RunStatusWaitingEvent:
 		style = lipgloss.NewStyle().Foreground(lipgloss.Color("3")) // yellow
+	case smithers.RunStatusFailed:
+		style = lipgloss.NewStyle().Foreground(lipgloss.Color("1")) // red
 	default:
-		// terminal states: finished, failed, cancelled
+		// terminal states: finished, cancelled
 		style = lipgloss.NewStyle().Faint(true)
 	}
 
-	return style.Render(fmt.Sprintf("[%s] %3d%%", bar, pct))
+	return style.Render(fmt.Sprintf("[%s] %3d%%", bar.String(), pct))
 }
 
 // View renders the run table as a string suitable for embedding in a Bubble Tea view.
@@ -324,7 +341,6 @@ func (t RunTable) View() string {
 	b.WriteString("\n")
 
 	// Sectioned data rows.
-	sectionStyle := lipgloss.NewStyle().Bold(true)
 	dividerStyle := lipgloss.NewStyle().Faint(true)
 
 	rows := partitionRuns(t.Runs)
@@ -341,7 +357,8 @@ func (t RunTable) View() string {
 				}
 				b.WriteString(dividerStyle.Render(strings.Repeat("─", divWidth)) + "\n")
 			} else {
-				b.WriteString("\n" + sectionStyle.Render(row.sectionLabel) + "\n\n")
+				// use pill for section header
+				b.WriteString("\n  " + common.Pill(row.sectionLabel, "63") + "\n\n")
 			}
 
 		case runRowKindRun:
@@ -349,10 +366,12 @@ func (t RunTable) View() string {
 			run := t.Runs[row.runIdx]
 
 			cursor := "  "
+			rowStyle := lipgloss.NewStyle()
 			idStyle := lipgloss.NewStyle()
 			if navigableIdx == t.Cursor {
-				cursor = "▸ "
-				idStyle = idStyle.Bold(true)
+				cursor = "│ "
+				rowStyle = lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("252")) // gh-dash style highlight
+				idStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("63"))
 			}
 
 			// Truncate/pad run ID.
@@ -374,9 +393,13 @@ func (t RunTable) View() string {
 				}
 			}
 
-			// Status with color.
-			statusStr := string(run.Status)
-			styledStatus := statusStyle(run.Status).Render(fmt.Sprintf("%-*s", statusW, statusStr))
+			// Status with pill.
+			statusPillStr := statusPill(run.Status)
+			padLen := statusW - lipgloss.Width(statusPillStr)
+			if padLen < 0 {
+				padLen = 0
+			}
+			styledStatus := statusPillStr + strings.Repeat(" ", padLen)
 
 			line := fmt.Sprintf("%s%-*s  %-*s  %s",
 				cursor,
@@ -404,6 +427,15 @@ func (t RunTable) View() string {
 			if showTime {
 				line += fmt.Sprintf("  %-*s", timeW, fmtElapsed(run))
 			}
+
+			// Pad to full terminal width before applying style so the background highlight spans the whole row
+			visibleLineLen := lipgloss.Width(line)
+			if visibleLineLen < t.Width {
+				line += strings.Repeat(" ", t.Width-visibleLineLen)
+			}
+
+			// Apply the rowStyle (background highlight) to the entire constructed line
+			line = rowStyle.Render(line)
 
 			b.WriteString(line)
 			b.WriteString("\n")
