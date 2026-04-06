@@ -15,12 +15,12 @@ type TestView struct {
 	height int
 }
 
-func (v *TestView) Init() tea.Cmd                                { return nil }
-func (v *TestView) Update(msg tea.Msg) (views.View, tea.Cmd)    { return v, nil }
-func (v *TestView) View() string                                 { return v.name }
-func (v *TestView) Name() string                                 { return v.name }
-func (v *TestView) SetSize(w, h int)                             { v.width = w; v.height = h }
-func (v *TestView) ShortHelp() []key.Binding                     { return nil }
+func (v *TestView) Init() tea.Cmd                            { return nil }
+func (v *TestView) Update(msg tea.Msg) (views.View, tea.Cmd) { return v, nil }
+func (v *TestView) View() string                             { return v.name }
+func (v *TestView) Name() string                             { return v.name }
+func (v *TestView) SetSize(w, h int)                         { v.width = w; v.height = h }
+func (v *TestView) ShortHelp() []key.Binding                 { return nil }
 
 // FocusableView extends TestView with OnFocus/OnBlur callbacks for testing.
 type FocusableView struct {
@@ -43,10 +43,10 @@ func (v *MutatingView) Update(msg tea.Msg) (views.View, tea.Cmd) {
 	next := &MutatingView{name: v.name, count: v.count + 1}
 	return next, nil
 }
-func (v *MutatingView) View() string              { return v.name }
-func (v *MutatingView) Name() string              { return v.name }
-func (v *MutatingView) SetSize(w, h int)          {}
-func (v *MutatingView) ShortHelp() []key.Binding  { return nil }
+func (v *MutatingView) View() string             { return v.name }
+func (v *MutatingView) Name() string             { return v.name }
+func (v *MutatingView) SetSize(w, h int)         {}
+func (v *MutatingView) ShortHelp() []key.Binding { return nil }
 
 // TestRouterPush verifies that Push calls SetSize and Init before adding to stack.
 func TestRouterPush(t *testing.T) {
@@ -170,6 +170,26 @@ func TestRouterPopToRoot(t *testing.T) {
 	}
 }
 
+func TestRouterReset(t *testing.T) {
+	router := views.NewRouter()
+
+	view1 := &TestView{name: "view1"}
+	view2 := &TestView{name: "view2"}
+
+	router.Push(view1, 80, 24)
+	router.Push(view2, 80, 24)
+
+	router.Reset()
+
+	if router.Depth() != 0 {
+		t.Errorf("expected depth 0 after Reset, got %d", router.Depth())
+	}
+
+	if router.Current() != nil {
+		t.Errorf("expected Current to be nil after Reset")
+	}
+}
+
 // TestRouterRoot verifies that Root() returns the first view.
 func TestRouterRoot(t *testing.T) {
 	router := views.NewRouter()
@@ -269,5 +289,91 @@ func TestRouterHasViews(t *testing.T) {
 	router.Push(&TestView{name: "v"}, 80, 24)
 	if !router.HasViews() {
 		t.Errorf("expected HasViews=true after push")
+	}
+}
+
+// TestRouterPushView verifies the convenience PushView method uses stored dimensions.
+func TestRouterPushView(t *testing.T) {
+	router := views.NewRouter()
+
+	// Push an initial view with explicit dimensions so the router stores them.
+	root := &TestView{name: "root"}
+	router.Push(root, 120, 50)
+
+	// PushView should use the stored 120x50.
+	child := &TestView{name: "child"}
+	router.PushView(child)
+
+	if child.width != 120 || child.height != 50 {
+		t.Errorf("expected PushView to use stored dimensions (120,50), got (%d,%d)", child.width, child.height)
+	}
+	if router.Depth() != 2 {
+		t.Errorf("expected depth 2 after PushView, got %d", router.Depth())
+	}
+	if router.Current() != child {
+		t.Errorf("expected current view to be child after PushView")
+	}
+}
+
+// TestRouterPopToRoot_Lifecycle verifies blur/focus callbacks during PopToRoot
+// with Focusable views.
+func TestRouterPopToRoot_Lifecycle(t *testing.T) {
+	router := views.NewRouter()
+
+	root := &FocusableView{TestView: TestView{name: "root"}}
+	mid := &FocusableView{TestView: TestView{name: "mid"}}
+	top := &FocusableView{TestView: TestView{name: "top"}}
+
+	router.Push(root, 80, 24)
+	router.Push(mid, 80, 24)
+	router.Push(top, 80, 24)
+
+	// Reset counters after pushes to isolate PopToRoot behavior.
+	root.focused = 0
+	root.blurred = 0
+	mid.focused = 0
+	mid.blurred = 0
+	top.focused = 0
+	top.blurred = 0
+
+	router.PopToRoot()
+
+	// top was the active view; it should have been blurred.
+	if top.blurred != 1 {
+		t.Errorf("expected top.blurred=1 after PopToRoot, got %d", top.blurred)
+	}
+	// root is the newly exposed view; it should have been focused.
+	if root.focused != 1 {
+		t.Errorf("expected root.focused=1 after PopToRoot, got %d", root.focused)
+	}
+	// mid should not have received any lifecycle calls from PopToRoot.
+	if mid.blurred != 0 || mid.focused != 0 {
+		t.Errorf("expected mid to have no lifecycle calls, got blurred=%d focused=%d", mid.blurred, mid.focused)
+	}
+}
+
+// TestRouterReset_FullClear verifies Reset clears all views and nulls Current/Root.
+func TestRouterReset_FullClear(t *testing.T) {
+	router := views.NewRouter()
+
+	root := &FocusableView{TestView: TestView{name: "root"}}
+	top := &FocusableView{TestView: TestView{name: "top"}}
+
+	router.Push(root, 80, 24)
+	router.Push(top, 80, 24)
+
+	router.Reset()
+
+	if router.Depth() != 0 {
+		t.Errorf("expected depth 0 after Reset, got %d", router.Depth())
+	}
+	if router.Current() != nil {
+		t.Errorf("expected Current to be nil after Reset")
+	}
+	if router.Root() != nil {
+		t.Errorf("expected Root to be nil after Reset")
+	}
+	if router.HasViews() {
+		t.Errorf("expected HasViews=false after Reset")
 	}
 }

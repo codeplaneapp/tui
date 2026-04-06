@@ -205,6 +205,23 @@ func TestRunInspectView_ChatNoopWhenNoTasks(t *testing.T) {
 	assert.Nil(t, cmd, "c should be no-op when inspection is nil")
 }
 
+func TestRunInspectView_TKeyEmitsSnapshotsMsg(t *testing.T) {
+	v := newRunInspectView("abc12345")
+	v.width = 120
+	v.height = 40
+	updated, _ := v.Update(runInspectLoadedMsg{inspection: fixtureInspection()})
+	rv := updated.(*RunInspectView)
+
+	_, cmd := rv.Update(tea.KeyPressMsg{Code: 't'})
+	require.NotNil(t, cmd, "t key should return a command")
+	msg := cmd()
+
+	snapshotsMsg, ok := msg.(OpenSnapshotsMsg)
+	require.True(t, ok, "t key should emit OpenSnapshotsMsg, got %T", msg)
+	assert.Equal(t, "abc12345", snapshotsMsg.RunID)
+	assert.Equal(t, SnapshotsOpenSourceRunInspect, snapshotsMsg.Source)
+}
+
 func TestRunInspectView_DownMovesDown(t *testing.T) {
 	v := newRunInspectView("abc12345")
 	updated, _ := v.Update(runInspectLoadedMsg{inspection: fixtureInspection()})
@@ -369,6 +386,7 @@ func TestRunInspectView_HelpBarContainsBindings(t *testing.T) {
 	out := rv.View()
 	assert.Contains(t, out, "navigate")
 	assert.Contains(t, out, "chat")
+	assert.Contains(t, out, "snapshots")
 	assert.Contains(t, out, "refresh")
 	assert.Contains(t, out, "back")
 }
@@ -389,7 +407,7 @@ func TestRunInspectView_SetSize(t *testing.T) {
 
 func TestTaskGlyphAndStyle_AllStates(t *testing.T) {
 	states := []struct {
-		state    smithers.TaskState
+		state     smithers.TaskState
 		wantGlyph string
 	}{
 		{smithers.TaskStateRunning, "●"},
@@ -515,6 +533,16 @@ func TestRunInspectView_ShortHelp_ContainsHijack(t *testing.T) {
 		descs = append(descs, h.Desc)
 	}
 	assert.Contains(t, strings.Join(descs, " "), "hijack")
+}
+
+func TestRunInspectView_ShortHelp_ContainsSnapshots(t *testing.T) {
+	v := newRunInspectView("abc12345")
+	var descs []string
+	for _, b := range v.ShortHelp() {
+		h := b.Help()
+		descs = append(descs, h.Desc)
+	}
+	assert.Contains(t, strings.Join(descs, " "), "snapshots")
 }
 
 // TestRunInspectView_HijackRunCmd_ReturnsMsg verifies that hijackRunCmd returns

@@ -440,13 +440,13 @@ func TestRunsView_View_RunsTable(t *testing.T) {
 	// Run data.
 	assert.Contains(t, out, "abc12345")
 	assert.Contains(t, out, "code-review")
-	assert.Contains(t, out, "running")
+	assert.Contains(t, out, "RUNNING")
 	assert.Contains(t, out, "def67890")
 	assert.Contains(t, out, "deploy-staging")
-	assert.Contains(t, out, "waiting-approval")
+	assert.Contains(t, out, "WAITING-APPROVAL")
 	assert.Contains(t, out, "ghi11111")
 	assert.Contains(t, out, "test-suite")
-	assert.Contains(t, out, "failed")
+	assert.Contains(t, out, "FAILED")
 }
 
 func TestRunsView_View_CursorIndicator(t *testing.T) {
@@ -462,13 +462,13 @@ func TestRunsView_View_CursorIndicator(t *testing.T) {
 	out := v.View()
 
 	// The cursor indicator should be present.
-	assert.Contains(t, out, "▸")
+	assert.Contains(t, out, "│")
 
 	// First item line should have cursor.
 	lines := strings.Split(out, "\n")
 	for _, line := range lines {
 		if strings.Contains(line, "run-aaa") {
-			assert.Contains(t, line, "▸")
+			assert.Contains(t, line, "│")
 			return
 		}
 	}
@@ -1318,6 +1318,32 @@ func TestRunsView_CKeyEmptyTaskIDWhenNoRunningTask(t *testing.T) {
 	assert.Equal(t, "", chatMsg.TaskID, "TaskID should be empty when no running tasks found")
 }
 
+func TestRunsView_TKeyEmitsOpenSnapshotsMsg(t *testing.T) {
+	v := newRunsView()
+	v.loading = false
+	v.runs = []smithers.RunSummary{
+		makeRunSummaryForTest("run-snapshots", "wf-snapshots", smithers.RunStatusRunning),
+	}
+	v.cursor = 0
+
+	_, cmd := v.Update(tea.KeyPressMsg{Code: 't'})
+	require.NotNil(t, cmd, "'t' should return a command")
+
+	msg := cmd()
+	snapshotsMsg, ok := msg.(OpenSnapshotsMsg)
+	require.True(t, ok, "'t' should emit OpenSnapshotsMsg, got %T", msg)
+	assert.Equal(t, "run-snapshots", snapshotsMsg.RunID)
+	assert.Equal(t, SnapshotsOpenSourceRuns, snapshotsMsg.Source)
+}
+
+func TestRunsView_TKeyNoopWhenNoRuns(t *testing.T) {
+	v := newRunsView()
+	v.loading = false
+
+	_, cmd := v.Update(tea.KeyPressMsg{Code: 't'})
+	assert.Nil(t, cmd, "'t' with no runs should be a no-op")
+}
+
 // TestRunsView_ShortHelp_ContainsChat verifies the 'c' binding appears in ShortHelp.
 func TestRunsView_ShortHelp_ContainsChat(t *testing.T) {
 	v := newRunsView()
@@ -1327,6 +1353,16 @@ func TestRunsView_ShortHelp_ContainsChat(t *testing.T) {
 		descs = append(descs, h.Desc)
 	}
 	assert.Contains(t, strings.Join(descs, " "), "chat", "ShortHelp must include chat binding")
+}
+
+func TestRunsView_ShortHelp_ContainsSnapshots(t *testing.T) {
+	v := newRunsView()
+	var descs []string
+	for _, b := range v.ShortHelp() {
+		h := b.Help()
+		descs = append(descs, h.Desc)
+	}
+	assert.Contains(t, strings.Join(descs, " "), "snapshots", "ShortHelp must include snapshots binding")
 }
 
 // ============================================================
@@ -1525,7 +1561,7 @@ func TestRunsView_View_SearchBarShownWhenActive(t *testing.T) {
 	v.searchInput.Focus() //nolint:errcheck
 
 	out := v.View()
-	assert.Contains(t, out, "/", "search bar must contain '/' prefix")
+	assert.Contains(t, out, "> ", "search bar must contain '> ' prefix")
 }
 
 // TestRunsView_View_SearchBarHiddenWhenInactive verifies that the search bar
@@ -1549,7 +1585,7 @@ func TestRunsView_View_SearchNoMatchEmptyState(t *testing.T) {
 	v.height = 40
 	v.loading = false
 	v.searchActive = true
-	v.searchInput.Focus()          //nolint:errcheck
+	v.searchInput.Focus() //nolint:errcheck
 	v.searchInput.SetValue("zzzzz")
 	v.runs = []smithers.RunSummary{
 		makeRunSummaryForTest("run-1", "wf-a", smithers.RunStatusRunning),

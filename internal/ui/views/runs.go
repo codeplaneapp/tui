@@ -940,7 +940,7 @@ func (v *RunsView) View() string {
 			strings.HasPrefix(v.actionMsg, "Cancel error:") {
 			style = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
 		}
-		b.WriteString(style.Render("  "+v.actionMsg))
+		b.WriteString(style.Render("  " + v.actionMsg))
 		b.WriteString("\n")
 	}
 

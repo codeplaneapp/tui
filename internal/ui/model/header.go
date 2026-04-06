@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	headerDiag           = "╱"
-	minHeaderDiags       = 3
+	headerDiag           = " "
+	minHeaderDiags       = 1
 	leftPadding          = 1
 	rightPadding         = 1
 	diagToDetailsSpacing = 1 // space between diagonal pattern and details section
@@ -50,7 +50,7 @@ func newHeader(com *common.Common) *header {
 		com: com,
 	}
 	t := com.Styles
-	h.compactLogo = styles.ApplyBoldForegroundGrad(t, "SMITHERS", t.Secondary, t.Primary) + " "
+	h.compactLogo = styles.ApplyBoldForegroundGrad(t, "CRUSH", t.Secondary, t.Primary) + " "
 	return h
 }
 
@@ -157,7 +157,7 @@ func renderHeaderDetails(
 	if smithersStatus != nil {
 		serverName := strings.TrimSpace(smithersStatus.MCPServerName)
 		if serverName == "" {
-			serverName = "smithers"
+			serverName = "crush"
 		}
 
 		indicator := "○"

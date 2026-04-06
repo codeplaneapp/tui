@@ -107,11 +107,6 @@ type (
 		TaskID    string
 		AgentName string
 	}
-	// ActionOpenTimelineView is a message to navigate to the timeline view for a run.
-	// RunID identifies the run whose snapshot history to display.
-	ActionOpenTimelineView struct {
-		RunID string
-	}
 	// ActionOpenView opens a named view via the view registry.
 	// This is the generic action for views registered in views.DefaultRegistry().
 	// It coexists with the specific ActionOpen*View types for backward compatibility.

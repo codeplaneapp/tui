@@ -1,14 +1,19 @@
 package views
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/crush/internal/observability"
 	"github.com/charmbracelet/crush/internal/smithers"
 	"github.com/charmbracelet/crush/internal/ui/components"
 	"github.com/stretchr/testify/assert"
@@ -69,6 +74,68 @@ func makeDiff(fromID, toID string, fromNo, toNo, added, removed, changed int) *s
 				OldValue: "old value", NewValue: "new value"},
 		},
 	}
+}
+
+func configureTimelineObservability(t *testing.T) {
+	t.Helper()
+	t.Cleanup(func() {
+		require.NoError(t, observability.Shutdown(context.Background()))
+	})
+
+	require.NoError(t, observability.Configure(context.Background(), observability.Config{
+		ServiceName:      "test",
+		ServiceVersion:   "dev",
+		Mode:             observability.ModeLocal,
+		TraceBufferSize:  32,
+		TraceSampleRatio: 1,
+	}))
+}
+
+func newTimelineHTTPClient(t *testing.T, handler func(http.ResponseWriter, *http.Request)) *smithers.Client {
+	t.Helper()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		handler(w, r)
+	}))
+	t.Cleanup(server.Close)
+
+	client := smithers.NewClient(
+		smithers.WithAPIURL(server.URL),
+		smithers.WithHTTPClient(server.Client()),
+	)
+	client.SetServerUp(true)
+	t.Cleanup(func() {
+		_ = client.Close()
+	})
+	return client
+}
+
+func writeTimelineEnvelope(t *testing.T, w http.ResponseWriter, payload any) {
+	t.Helper()
+
+	w.Header().Set("Content-Type", "application/json")
+	require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+		"ok":   true,
+		"data": payload,
+	}))
+}
+
+func requireRecentSpanAttrs(t *testing.T, name string) map[string]any {
+	t.Helper()
+
+	spans := observability.RecentSpans(20)
+	for i := len(spans) - 1; i >= 0; i-- {
+		if spans[i].Name == name {
+			return spans[i].Attributes
+		}
+	}
+
+	t.Fatalf("span %q not found in %+v", name, spans)
+	return nil
 }
 
 // pressKey simulates a key press on the view and returns the updated view.
@@ -604,7 +671,7 @@ func TestTimelineView_View_RendersSnapshots(t *testing.T) {
 	v.cursor = 0
 	out := v.View()
 	// Header should be present
-	assert.Contains(t, out, "Timeline")
+	assert.Contains(t, out, "Snapshots")
 	// Snapshot list section heading
 	assert.Contains(t, out, "Snapshots")
 	// At least one marker (encircled 1)
@@ -661,6 +728,19 @@ func TestTimelineView_View_RailMarkers_BeyondTwenty(t *testing.T) {
 	out := v.View()
 	// Snapshot 21 should use bracketed form [21]
 	assert.Contains(t, out, "[21]")
+}
+
+func TestTimelineView_RenderRail_FollowsSelectedSnapshotWindow(t *testing.T) {
+	v := newTimelineView("run-rail-window")
+	v.SetSize(32, 40)
+	v.loading = false
+	v.snapshots = makeSnapshots("run-rail-window", 8)
+	v.cursor = 7
+
+	rail := v.renderRail()
+
+	assert.Contains(t, rail, snapshotMarker(8), "selected latest snapshot should stay visible in the rail window")
+	assert.Contains(t, rail, "...+4", "rail should indicate omitted snapshots on the left")
 }
 
 func TestTimelineView_View_SplitPane_WideTerminal(t *testing.T) {
@@ -975,6 +1055,104 @@ func TestTimelineView_FetchDiff_DoesNotPanic(t *testing.T) {
 	default:
 		t.Errorf("unexpected message type %T from fetchDiff", msg)
 	}
+}
+
+func TestTimelineView_FetchSnapshots_RecordsObservability(t *testing.T) {
+	configureTimelineObservability(t)
+
+	client := newTimelineHTTPClient(t, func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/snapshot/list", r.URL.Path)
+		writeTimelineEnvelope(t, w, makeSnapshots("run-obs", 3))
+	})
+	v := NewTimelineView(client, "run-obs")
+
+	msg := v.fetchSnapshots()()
+	loadedMsg, ok := msg.(timelineLoadedMsg)
+	require.True(t, ok, "expected timelineLoadedMsg, got %T", msg)
+	require.Len(t, loadedMsg.snapshots, 3)
+
+	attrs := requireRecentSpanAttrs(t, "ui.snapshots.load")
+	require.Equal(t, "load", attrs["crush.snapshot.operation"])
+	require.Equal(t, "ok", attrs["crush.snapshot.result"])
+	require.Equal(t, "run-obs", attrs["crush.run_id"])
+	require.EqualValues(t, 3, attrs["crush.snapshot.count"])
+}
+
+func TestTimelineView_FetchDiff_RecordsObservability(t *testing.T) {
+	configureTimelineObservability(t)
+
+	snaps := makeSnapshots("run-diff-obs", 2)
+	client := newTimelineHTTPClient(t, func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/snapshot/diff", r.URL.Path)
+		writeTimelineEnvelope(t, w, makeDiff(snaps[0].ID, snaps[1].ID, 1, 2, 1, 0, 1))
+	})
+	v := NewTimelineView(client, "run-diff-obs")
+
+	msg := v.fetchDiff(snaps[0], snaps[1])()
+	diffMsg, ok := msg.(timelineDiffLoadedMsg)
+	require.True(t, ok, "expected timelineDiffLoadedMsg, got %T", msg)
+	require.NotNil(t, diffMsg.diff)
+
+	attrs := requireRecentSpanAttrs(t, "ui.snapshots.diff")
+	require.Equal(t, "diff", attrs["crush.snapshot.operation"])
+	require.Equal(t, "ok", attrs["crush.snapshot.result"])
+	require.Equal(t, "run-diff-obs", attrs["crush.run_id"])
+	require.Equal(t, snaps[0].ID, attrs["crush.snapshot.from_id"])
+	require.Equal(t, snaps[1].ID, attrs["crush.snapshot.to_id"])
+}
+
+func TestTimelineView_DispatchAction_ForkRecordsObservability(t *testing.T) {
+	configureTimelineObservability(t)
+
+	client := newTimelineHTTPClient(t, func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/snapshot/fork", r.URL.Path)
+		require.Equal(t, http.MethodPost, r.Method)
+		writeTimelineEnvelope(t, w, smithers.ForkReplayRun{
+			ID: "forked-run",
+		})
+	})
+
+	v := NewTimelineView(client, "run-fork-obs")
+	v.snapshots = makeSnapshots("run-fork-obs", 2)
+	v.cursor = 1
+
+	msg := v.dispatchAction(pendingFork)()
+	_, ok := msg.(timelineForkDoneMsg)
+	require.True(t, ok, "expected timelineForkDoneMsg, got %T", msg)
+
+	attrs := requireRecentSpanAttrs(t, "ui.snapshots.fork")
+	require.Equal(t, "fork", attrs["crush.snapshot.operation"])
+	require.Equal(t, "ok", attrs["crush.snapshot.result"])
+	require.Equal(t, "run-fork-obs", attrs["crush.run_id"])
+	require.Equal(t, v.snapshots[1].ID, attrs["crush.snapshot.id"])
+	require.Equal(t, "forked-run", attrs["crush.snapshot.result_run_id"])
+}
+
+func TestTimelineView_DispatchAction_ReplayRecordsObservability(t *testing.T) {
+	configureTimelineObservability(t)
+
+	client := newTimelineHTTPClient(t, func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/snapshot/replay", r.URL.Path)
+		require.Equal(t, http.MethodPost, r.Method)
+		writeTimelineEnvelope(t, w, smithers.ForkReplayRun{
+			ID: "replayed-run",
+		})
+	})
+
+	v := NewTimelineView(client, "run-replay-obs")
+	v.snapshots = makeSnapshots("run-replay-obs", 2)
+	v.cursor = 1
+
+	msg := v.dispatchAction(pendingReplay)()
+	_, ok := msg.(timelineReplayDoneMsg)
+	require.True(t, ok, "expected timelineReplayDoneMsg, got %T", msg)
+
+	attrs := requireRecentSpanAttrs(t, "ui.snapshots.replay")
+	require.Equal(t, "replay", attrs["crush.snapshot.operation"])
+	require.Equal(t, "ok", attrs["crush.snapshot.result"])
+	require.Equal(t, "run-replay-obs", attrs["crush.run_id"])
+	require.Equal(t, v.snapshots[1].ID, attrs["crush.snapshot.id"])
+	require.Equal(t, "replayed-run", attrs["crush.snapshot.result_run_id"])
 }
 
 // ============================================================================

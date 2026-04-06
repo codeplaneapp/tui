@@ -1,10 +1,13 @@
 package dialog
 
 import (
+	"strings"
+
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/crush/internal/ui/common"
+	"github.com/charmbracelet/crush/internal/ui/styles"
 	uv "github.com/charmbracelet/ultraviolet"
 )
 
@@ -50,11 +53,13 @@ type LoadingDialog interface {
 // Overlay manages multiple dialogs as an overlay.
 type Overlay struct {
 	dialogs []Dialog
+	st      *styles.Styles
 }
 
 // NewOverlay creates a new [Overlay] instance.
-func NewOverlay(dialogs ...Dialog) *Overlay {
+func NewOverlay(st *styles.Styles, dialogs ...Dialog) *Overlay {
 	return &Overlay{
+		st:      st,
 		dialogs: dialogs,
 	}
 }
@@ -197,6 +202,17 @@ func DrawOnboardingCursor(scr uv.Screen, area uv.Rectangle, view string, cur *te
 
 // Draw renders the overlay and its dialogs.
 func (d *Overlay) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
+	if len(d.dialogs) > 0 && d.st != nil {
+		// Render dimming layer: a full-screen block with a deep dark background.
+		dimStyle := lipgloss.NewStyle().
+			Background(lipgloss.Color("232")).
+			Faint(true)
+		dimmedRow := dimStyle.Render(strings.Repeat(" ", area.Dx()))
+		for y := area.Min.Y; y < area.Max.Y; y++ {
+			uv.NewStyledString(dimmedRow).Draw(scr, uv.Rect(area.Min.X, y, area.Max.X, y+1))
+		}
+	}
+
 	var cur *tea.Cursor
 	for _, dialog := range d.dialogs {
 		cur = dialog.Draw(scr, area)

@@ -4,12 +4,11 @@ import (
 	"testing"
 
 	"charm.land/catwalk/pkg/catwalk"
-	"github.com/charmbracelet/crush/internal/app"
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/csync"
-	"github.com/charmbracelet/crush/internal/lsp"
 	"github.com/charmbracelet/crush/internal/session"
 	"github.com/charmbracelet/crush/internal/ui/common"
+	"github.com/charmbracelet/crush/internal/workspace"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
 )
@@ -22,12 +21,10 @@ func TestRenderHeaderDetails_WithSmithersStatus(t *testing.T) {
 		PromptTokens:     1200,
 		CompletionTokens: 800,
 	}
-	lspClients := csync.NewMap[string, *lsp.Client]()
-
 	details := renderHeaderDetails(
 		com,
 		sess,
-		lspClients,
+		0,
 		false,
 		220,
 		&SmithersStatus{
@@ -52,9 +49,7 @@ func TestRenderHeaderDetails_WithoutSmithersStatus(t *testing.T) {
 		PromptTokens:     600,
 		CompletionTokens: 400,
 	}
-	lspClients := csync.NewMap[string, *lsp.Client]()
-
-	details := renderHeaderDetails(com, sess, lspClients, false, 200, nil)
+	details := renderHeaderDetails(com, sess, 0, false, 200, nil)
 	plain := ansi.Strip(details)
 
 	require.NotContains(t, plain, "smithers")
@@ -70,12 +65,10 @@ func TestRenderHeaderDetails_MCPDisconnected(t *testing.T) {
 		PromptTokens:     500,
 		CompletionTokens: 300,
 	}
-	lspClients := csync.NewMap[string, *lsp.Client]()
-
 	details := renderHeaderDetails(
 		com,
 		sess,
-		lspClients,
+		0,
 		false,
 		220,
 		&SmithersStatus{
@@ -98,12 +91,10 @@ func TestRenderHeaderDetails_MCPConnectedWithToolCount(t *testing.T) {
 		PromptTokens:     1000,
 		CompletionTokens: 500,
 	}
-	lspClients := csync.NewMap[string, *lsp.Client]()
-
 	details := renderHeaderDetails(
 		com,
 		sess,
-		lspClients,
+		0,
 		false,
 		260,
 		&SmithersStatus{
@@ -122,12 +113,10 @@ func TestRenderHeaderDetails_MCPConnectedZeroTools(t *testing.T) {
 
 	com := newHeaderTestCommon(t)
 	sess := &session.Session{}
-	lspClients := csync.NewMap[string, *lsp.Client]()
-
 	details := renderHeaderDetails(
 		com,
 		sess,
-		lspClients,
+		0,
 		false,
 		220,
 		&SmithersStatus{
@@ -148,13 +137,11 @@ func TestRenderHeaderDetails_DefaultServerName(t *testing.T) {
 
 	com := newHeaderTestCommon(t)
 	sess := &session.Session{}
-	lspClients := csync.NewMap[string, *lsp.Client]()
-
-	// Empty MCPServerName should fall back to "smithers".
+	// Empty MCPServerName should fall back to "crush".
 	details := renderHeaderDetails(
 		com,
 		sess,
-		lspClients,
+		0,
 		false,
 		220,
 		&SmithersStatus{
@@ -164,7 +151,7 @@ func TestRenderHeaderDetails_DefaultServerName(t *testing.T) {
 	)
 
 	plain := ansi.Strip(details)
-	require.Contains(t, plain, "smithers disconnected")
+	require.Contains(t, plain, "crush disconnected")
 }
 
 func TestRenderHeaderDetails_PendingApprovals_Plural(t *testing.T) {
@@ -172,12 +159,10 @@ func TestRenderHeaderDetails_PendingApprovals_Plural(t *testing.T) {
 
 	com := newHeaderTestCommon(t)
 	sess := &session.Session{}
-	lspClients := csync.NewMap[string, *lsp.Client]()
-
 	details := renderHeaderDetails(
 		com,
 		sess,
-		lspClients,
+		0,
 		false,
 		280,
 		&SmithersStatus{
@@ -202,14 +187,12 @@ func TestRenderHeaderDetails_PendingApprovals_EscalatesColor(t *testing.T) {
 	// color mode. At minimum, both should contain the warning text.
 	com := newHeaderTestCommon(t)
 	sess := &session.Session{}
-	lspClients := csync.NewMap[string, *lsp.Client]()
-
 	lowDetails := renderHeaderDetails(
-		com, sess, lspClients, false, 280,
+		com, sess, 0, false, 280,
 		&SmithersStatus{PendingApprovals: 1, MCPConnected: true, MCPServerName: "s"},
 	)
 	highDetails := renderHeaderDetails(
-		com, sess, lspClients, false, 280,
+		com, sess, 0, false, 280,
 		&SmithersStatus{PendingApprovals: 5, MCPConnected: true, MCPServerName: "s"},
 	)
 
@@ -227,12 +210,10 @@ func TestRenderHeaderDetails_NoPendingApprovals_NoBadge(t *testing.T) {
 
 	com := newHeaderTestCommon(t)
 	sess := &session.Session{}
-	lspClients := csync.NewMap[string, *lsp.Client]()
-
 	details := renderHeaderDetails(
 		com,
 		sess,
-		lspClients,
+		0,
 		false,
 		220,
 		&SmithersStatus{
@@ -279,12 +260,22 @@ func newHeaderTestCommon(t *testing.T) *common.Common {
 		},
 	}
 
-	store := &config.ConfigStore{}
-	setUnexportedField(t, store, "config", cfg)
-	setUnexportedField(t, store, "workingDir", t.TempDir())
+	return common.DefaultCommon(&headerTestWorkspace{
+		cfg:        cfg,
+		workingDir: t.TempDir(),
+	})
+}
 
-	appInstance := &app.App{}
-	setUnexportedField(t, appInstance, "config", store)
+type headerTestWorkspace struct {
+	workspace.Workspace
+	cfg        *config.Config
+	workingDir string
+}
 
-	return common.DefaultCommon(appInstance)
+func (w *headerTestWorkspace) Config() *config.Config {
+	return w.cfg
+}
+
+func (w *headerTestWorkspace) WorkingDir() string {
+	return w.workingDir
 }

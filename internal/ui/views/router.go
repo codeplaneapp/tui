@@ -141,6 +141,11 @@ func (r *Router) PopToRoot() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
+// Reset clears the entire view stack.
+func (r *Router) Reset() {
+	r.stack = nil
+}
+
 // Update forwards msg to the current view and replaces it in the stack if it
 // changed. This eliminates the awkward Pop()+Push(updated) pattern.
 func (r *Router) Update(msg tea.Msg) tea.Cmd {

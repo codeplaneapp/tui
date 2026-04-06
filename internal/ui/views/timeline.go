@@ -84,7 +84,7 @@ var _ View = (*TimelineView)(nil)
 type pendingActionKind int
 
 const (
-	pendingNone   pendingActionKind = iota
+	pendingNone pendingActionKind = iota
 	pendingFork
 	pendingReplay
 )

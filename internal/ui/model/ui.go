@@ -33,10 +33,13 @@ import (
 	"github.com/charmbracelet/crush/internal/fsext"
 	"github.com/charmbracelet/crush/internal/history"
 	"github.com/charmbracelet/crush/internal/home"
+	"github.com/charmbracelet/crush/internal/jjhub"
 	"github.com/charmbracelet/crush/internal/message"
+	"github.com/charmbracelet/crush/internal/observability"
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/charmbracelet/crush/internal/session"
+	"github.com/charmbracelet/crush/internal/smithers"
 	"github.com/charmbracelet/crush/internal/ui/anim"
 	"github.com/charmbracelet/crush/internal/ui/attachments"
 	"github.com/charmbracelet/crush/internal/ui/chat"
@@ -46,8 +49,6 @@ import (
 	"github.com/charmbracelet/crush/internal/ui/dialog"
 	fimage "github.com/charmbracelet/crush/internal/ui/image"
 	"github.com/charmbracelet/crush/internal/ui/logo"
-	"github.com/charmbracelet/crush/internal/jjhub"
-	"github.com/charmbracelet/crush/internal/smithers"
 	"github.com/charmbracelet/crush/internal/ui/notification"
 	"github.com/charmbracelet/crush/internal/ui/styles"
 	"github.com/charmbracelet/crush/internal/ui/util"
@@ -58,6 +59,7 @@ import (
 	"github.com/charmbracelet/ultraviolet/layout"
 	"github.com/charmbracelet/ultraviolet/screen"
 	"github.com/charmbracelet/x/editor"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // MouseScrollThreshold defines how many lines to scroll the chat when a mouse
@@ -358,7 +360,7 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 
 	ui := &UI{
 		com:                 com,
-		dialog:              dialog.NewOverlay(),
+		dialog:              dialog.NewOverlay(com.Styles),
 		toasts:              components.NewToastManager(com.Styles),
 		notifTracker:        newNotificationTracker(),
 		keyMap:              keyMap,
@@ -1118,7 +1120,6 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.textarea.MoveToEnd()
 		cmds = append(cmds, m.updateTextareaWithPrevHeight(msg, prevHeight))
 	case views.OpenChatMsg:
-		// Switch from dashboard to chat mode
 		m.setState(uiLanding, uiFocusEditor)
 		return m, tea.Batch(cmds...)
 	case views.InitSmithersMsg:
@@ -1816,18 +1817,6 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		m.setState(uiSmithersView, uiFocusMain)
 		cmds = append(cmds, cmd)
 
-	case dialog.ActionOpenTimelineView:
-		m.dialog.CloseDialog(dialog.CommandsID)
-		if msg.RunID == "" {
-			// Opened from palette without a run ID — no-op for now.
-			// A future ticket can add a run picker here.
-			break
-		}
-		timelineView := views.NewTimelineView(m.smithersClient, msg.RunID)
-		cmd := m.viewRouter.PushView(timelineView)
-		m.setState(uiSmithersView, uiFocusMain)
-		cmds = append(cmds, cmd)
-
 	case dialog.ActionOpenView:
 		m.dialog.CloseDialog(dialog.CommandsID)
 		if v, ok := m.viewRegistry.Open(msg.Name, m.smithersClient); ok {
@@ -1845,6 +1834,19 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 	case views.OpenLiveChatMsg:
 		chatView := views.NewLiveChatView(m.smithersClient, msg.RunID, msg.TaskID, msg.AgentName)
 		cmd := m.viewRouter.PushView(chatView)
+		m.setState(uiSmithersView, uiFocusMain)
+		cmds = append(cmds, cmd)
+
+	case views.OpenSnapshotsMsg:
+		source := string(msg.Source)
+		if source == "" {
+			source = string(views.SnapshotsOpenSourceUnknown)
+		}
+		observability.RecordUINavigation(source, "snapshots", "ok",
+			attribute.String("crush.run_id", msg.RunID),
+		)
+		snapshotsView := views.NewTimelineView(m.smithersClient, msg.RunID)
+		cmd := m.viewRouter.PushView(snapshotsView)
 		m.setState(uiSmithersView, uiFocusMain)
 		cmds = append(cmds, cmd)
 
@@ -2064,6 +2066,9 @@ func (m *UI) handleNavigateToView(msg NavigateToViewMsg) tea.Cmd {
 		cmd := m.viewRouter.Push(approvalsView, m.width, m.height)
 		m.setState(uiSmithersView, uiFocusMain)
 		return cmd
+	case "timeline":
+		observability.RecordUINavigation("global", "timeline", "missing_run_context")
+		return util.ReportInfo("Open snapshots from Runs or Run Inspect")
 	default:
 		// Try the view registry for any registered views.
 		if v, ok := m.viewRegistry.Open(view, m.smithersClient); ok {
@@ -2218,23 +2223,36 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 		cmds = append(cmds, m.updateInitializeView(msg)...)
 		return tea.Batch(cmds...)
 	case uiSmithersDashboard:
+		if handleGlobalKeys(msg) {
+			return tea.Batch(cmds...)
+		}
 		// Forward all keys to the dashboard view.
+		// Commands are executed synchronously because BubbleTea v2 can
+		// drop messages produced by batched commands from nested Update calls.
 		if m.dashboard != nil {
 			updated, cmd := m.dashboard.Update(msg)
-			if cmd != nil {
-				cmds = append(cmds, cmd)
-			}
 			if d, ok := updated.(*views.DashboardView); ok {
 				m.dashboard = d
+			}
+			if cmd != nil {
+				if result := cmd(); result != nil {
+					finalResult := result
+					cmds = append(cmds, func() tea.Msg { return finalResult })
+				}
 			}
 		}
 		return tea.Batch(cmds...)
 	case uiSmithersView:
 		// Forward ALL key presses to the current view first.
 		// Views handle their own Esc (e.g., closing overlays, cancelling forms).
-		// Only when the view emits PopViewMsg do we pop back to chat.
+		//
+		// Navigation commands are executed synchronously rather than batched
+		// because BubbleTea v2 can drop messages produced by commands
+		// returned from nested Update calls.
 		if cmd := m.viewRouter.Update(msg); cmd != nil {
-			cmds = append(cmds, cmd)
+			if result := cmd(); result != nil {
+				cmds = append(cmds, m.handleViewResult(result)...)
+			}
 		}
 		return tea.Batch(cmds...)
 	case uiChat, uiLanding:
@@ -3509,6 +3527,70 @@ func isWhitespace(b byte) bool {
 func (m *UI) isAgentBusy() bool {
 	return m.com.Workspace.AgentIsReady() &&
 		m.com.Workspace.AgentIsBusy()
+}
+
+// handleViewResult processes a message returned by synchronously executing a
+// view's command. Navigation messages are handled inline because BubbleTea v2
+// drops messages produced by commands in nested Update calls.
+func (m *UI) handleViewResult(result tea.Msg) []tea.Cmd {
+	var cmds []tea.Cmd
+	switch msg := result.(type) {
+	case views.PopViewMsg:
+		if c := m.viewRouter.Pop(); c != nil {
+			cmds = append(cmds, c)
+		}
+		if !m.viewRouter.HasViews() {
+			if m.dashboard != nil {
+				m.setState(uiSmithersDashboard, uiFocusMain)
+			} else if m.hasSession() {
+				m.setState(uiChat, uiFocusEditor)
+			} else {
+				m.setState(uiLanding, uiFocusEditor)
+			}
+		}
+	case views.OpenChatMsg:
+		m.setState(uiLanding, uiFocusEditor)
+	case views.DashboardNavigateMsg:
+		if cmd := m.handleNavigateToView(NavigateToViewMsg{View: msg.View}); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	case views.OpenRunInspectMsg:
+		inspectView := views.NewRunInspectView(m.smithersClient, msg.RunID)
+		cmd := m.viewRouter.PushView(inspectView)
+		m.setState(uiSmithersView, uiFocusMain)
+		cmds = append(cmds, cmd)
+	case views.OpenLiveChatMsg:
+		chatView := views.NewLiveChatView(m.smithersClient, msg.RunID, msg.TaskID, msg.AgentName)
+		cmd := m.viewRouter.PushView(chatView)
+		m.setState(uiSmithersView, uiFocusMain)
+		cmds = append(cmds, cmd)
+	case views.OpenSnapshotsMsg:
+		source := string(msg.Source)
+		if source == "" {
+			source = string(views.SnapshotsOpenSourceUnknown)
+		}
+		observability.RecordUINavigation(source, "snapshots", "ok",
+			attribute.String("crush.run_id", msg.RunID),
+		)
+		snapshotsView := views.NewTimelineView(m.smithersClient, msg.RunID)
+		cmd := m.viewRouter.PushView(snapshotsView)
+		m.setState(uiSmithersView, uiFocusMain)
+		cmds = append(cmds, cmd)
+	case views.OpenTicketDetailMsg:
+		var detailView *views.TicketDetailView
+		if msg.EditMode {
+			detailView = views.NewTicketDetailViewEditMode(m.smithersClient, nil, msg.Ticket)
+		} else {
+			detailView = views.NewTicketDetailView(m.smithersClient, nil, msg.Ticket)
+		}
+		cmd := m.viewRouter.PushView(detailView)
+		m.setState(uiSmithersView, uiFocusMain)
+		cmds = append(cmds, cmd)
+	default:
+		finalResult := result
+		cmds = append(cmds, func() tea.Msg { return finalResult })
+	}
+	return cmds
 }
 
 // hasSession returns true if there is an active session with a valid ID.

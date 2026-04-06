@@ -24,11 +24,19 @@ func (m *UI) landingView() string {
 	width := m.layout.main.Dx()
 	cwd := common.PrettyPath(t, m.com.Workspace.WorkingDir(), width)
 
+	modelBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(t.BorderColor).
+		Padding(0, 1).
+		MarginBottom(1).
+		Render(m.modelInfo(width - 4))
+
 	parts := []string{
 		cwd,
+		"",
+		modelBox,
 	}
 
-	parts = append(parts, "", m.modelInfo(width))
 	infoSection := lipgloss.JoinVertical(lipgloss.Left, parts...)
 
 	_, remainingHeightArea := layout.SplitVertical(m.layout.main, layout.Fixed(lipgloss.Height(infoSection)+1))

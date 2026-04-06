@@ -9,7 +9,9 @@ import (
 	"github.com/charmbracelet/crush/internal/ui/attachments"
 	"github.com/charmbracelet/crush/internal/ui/common"
 	"github.com/charmbracelet/crush/internal/ui/dialog"
+	"github.com/charmbracelet/crush/internal/ui/styles"
 	"github.com/charmbracelet/crush/internal/ui/views"
+	"github.com/charmbracelet/crush/internal/workspace"
 	"github.com/stretchr/testify/require"
 )
 
@@ -45,15 +47,15 @@ func TestHandleKeyPressMsg_NavigateShortcuts(t *testing.T) {
 	}
 }
 
-func TestShortHelp_IncludesSmithersShortcutBindings(t *testing.T) {
+func TestShortHelp_OmitsSmithersShortcutBindings(t *testing.T) {
 	t.Parallel()
 
 	ui := newShortcutTestUI()
 	ui.focus = uiFocusMain
 
 	bindings := ui.ShortHelp()
-	assertHasHelpBinding(t, bindings, "ctrl+r", "runs")
-	assertHasHelpBinding(t, bindings, "ctrl+a", "approvals")
+	assertLacksHelpBinding(t, bindings, "ctrl+r", "runs")
+	assertLacksHelpBinding(t, bindings, "ctrl+a", "approvals")
 }
 
 func TestFullHelp_IncludesSmithersShortcutBindings(t *testing.T) {
@@ -107,6 +109,13 @@ type keyHelp struct {
 	desc string
 }
 
+type mockWorkspace struct {
+	workspace.Workspace
+}
+
+func (m *mockWorkspace) AgentIsReady() bool { return false }
+func (m *mockWorkspace) AgentIsBusy()  bool { return false }
+
 func assertHasHelpBinding(t *testing.T, bindings []key.Binding, key, desc string) {
 	t.Helper()
 
@@ -120,10 +129,25 @@ func assertHasHelpBinding(t *testing.T, bindings []key.Binding, key, desc string
 	t.Fatalf("missing help binding: %q %q", key, desc)
 }
 
+func assertLacksHelpBinding(t *testing.T, bindings []key.Binding, key, desc string) {
+	t.Helper()
+
+	for _, binding := range bindings {
+		help := binding.Help()
+		if help.Key == key && help.Desc == desc {
+			t.Fatalf("unexpected help binding: %q %q", key, desc)
+		}
+	}
+}
+
 func newShortcutTestUI() *UI {
 	keyMap := DefaultKeyMap()
+	st := styles.DefaultStyles()
 	return &UI{
-		com: &common.Common{},
+		com: &common.Common{
+			Styles:    &st,
+			Workspace: &mockWorkspace{},
+		},
 		attachments: attachments.New(
 			attachments.NewRenderer(
 				lipgloss.NewStyle(),
@@ -137,7 +161,7 @@ func newShortcutTestUI() *UI {
 				Escape:     keyMap.Editor.Escape,
 			},
 		),
-		dialog:       dialog.NewOverlay(),
+		dialog:       dialog.NewOverlay(&st),
 		keyMap:       keyMap,
 		state:        uiChat,
 		focus:        uiFocusEditor,

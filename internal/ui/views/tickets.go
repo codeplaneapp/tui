@@ -225,11 +225,11 @@ func NewTicketsView(client *smithers.Client) *TicketsView {
 	ti.SetVirtualCursor(true)
 
 	return &TicketsView{
-		client:    client,
-		loading:   true,
-		splitPane: sp,
-		listPane:  list,
-		detailPane: detail,
+		client:       client,
+		loading:      true,
+		splitPane:    sp,
+		listPane:     list,
+		detailPane:   detail,
 		createPrompt: createPromptState{input: ti},
 	}
 }
