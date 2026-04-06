@@ -1,0 +1,1 @@
+No implementation exists. The branch is on main with zero source code changes. The ticket requires extending renderSmithersStatus() in internal/ui/model/header.go to display pending approval counts with a warning indicator, but no code was written, no tests were added, and no commits were made for this feature.

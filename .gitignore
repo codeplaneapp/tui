@@ -58,3 +58,12 @@ tests/.tui-test/
 jjhub-tui
 /poc/jjhub-tui/jjhub-tui
 smithers.db*
+
+# Smithers runtime artifacts
+.smithers/db/
+.smithers/logs/
+.smithers/node_modules/
+.smithers/bun.lock
+
+# jj colocated
+.jj/
