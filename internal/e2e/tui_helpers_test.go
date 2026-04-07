@@ -682,9 +682,6 @@ func seedSessions(t *testing.T, dataDir string, seeds ...seededSession) []sessio
 
 func skipUnlessCrushTUIE2E(t *testing.T) {
 	t.Helper()
-	if os.Getenv("CRUSH_TUI_E2E") != "1" {
-		t.Skip("set CRUSH_TUI_E2E=1 to run terminal E2E tests")
-	}
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux is required for this e2e test")
 	}

@@ -1,6 +1,7 @@
 package github
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -34,14 +35,14 @@ func TestClient_RepoArgs_Empty(t *testing.T) {
 
 func TestClient_ResolveRepo_WithRepo(t *testing.T) {
 	c := NewClient("owner/repo")
-	repo, err := c.resolveRepo()
+	repo, err := c.resolveRepo(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, "owner/repo", repo)
 }
 
 func TestClient_CreateIssue_EmptyTitle(t *testing.T) {
 	c := NewClient("owner/repo")
-	issue, err := c.CreateIssue("", "some body")
+	issue, err := c.CreateIssue(context.Background(), "", "some body")
 	assert.Nil(t, issue)
 	require.Error(t, err)
 	assert.Equal(t, "title must not be empty", err.Error())
@@ -49,7 +50,7 @@ func TestClient_CreateIssue_EmptyTitle(t *testing.T) {
 
 func TestClient_CreateIssue_WhitespaceTitle(t *testing.T) {
 	c := NewClient("owner/repo")
-	issue, err := c.CreateIssue("   ", "some body")
+	issue, err := c.CreateIssue(context.Background(), "   ", "some body")
 	assert.Nil(t, issue)
 	require.Error(t, err)
 	assert.Equal(t, "title must not be empty", err.Error())
@@ -57,7 +58,7 @@ func TestClient_CreateIssue_WhitespaceTitle(t *testing.T) {
 
 func TestClient_CreateIssue_TabTitle(t *testing.T) {
 	c := NewClient("owner/repo")
-	issue, err := c.CreateIssue("\t\n", "body")
+	issue, err := c.CreateIssue(context.Background(), "\t\n", "body")
 	assert.Nil(t, issue)
 	require.Error(t, err)
 	assert.Equal(t, "title must not be empty", err.Error())
@@ -101,7 +102,7 @@ func TestClient_RunError_TrimsOutput(t *testing.T) {
 	// verify the error-wrapping contract through CreateIssue validation.
 
 	c := NewClient("owner/repo")
-	_, err := c.CreateIssue("", "body")
+	_, err := c.CreateIssue(context.Background(), "", "body")
 	require.Error(t, err)
 	// The error message should be clean, not wrapped with "exit status" noise.
 	assert.Equal(t, "title must not be empty", err.Error())
@@ -111,7 +112,7 @@ func TestClient_ResolveRepo_Empty_ShellsOut(t *testing.T) {
 	// When repo is empty, resolveRepo calls GetCurrentRepo which shells out.
 	// We verify that the explicit-repo path returns immediately.
 	c := NewClient("explicit/repo")
-	repo, err := c.resolveRepo()
+	repo, err := c.resolveRepo(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, "explicit/repo", repo)
 }
@@ -137,7 +138,7 @@ func TestRunErrorFallback(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := NewClient("owner/repo")
-			_, err := c.CreateIssue(tt.title, tt.body)
+			_, err := c.CreateIssue(context.Background(), tt.title, tt.body)
 			require.Error(t, err)
 			assert.Equal(t, tt.want, err.Error())
 		})
