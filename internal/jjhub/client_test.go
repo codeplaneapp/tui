@@ -1,12 +1,14 @@
 package jjhub
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -57,7 +59,7 @@ func TestClient_RepoArgs_PreservesExactValue(t *testing.T) {
 
 func TestClient_CreateIssue_EmptyTitle(t *testing.T) {
 	c := NewClient("owner/repo")
-	issue, err := c.CreateIssue("", "some body")
+	issue, err := c.CreateIssue(context.Background(), "", "some body")
 	assert.Nil(t, issue)
 	require.Error(t, err)
 	assert.Equal(t, "title must not be empty", err.Error())
@@ -65,7 +67,7 @@ func TestClient_CreateIssue_EmptyTitle(t *testing.T) {
 
 func TestClient_CreateIssue_WhitespaceTitle(t *testing.T) {
 	c := NewClient("owner/repo")
-	issue, err := c.CreateIssue("   ", "some body")
+	issue, err := c.CreateIssue(context.Background(), "   ", "some body")
 	assert.Nil(t, issue)
 	require.Error(t, err)
 	assert.Equal(t, "title must not be empty", err.Error())
@@ -73,7 +75,7 @@ func TestClient_CreateIssue_WhitespaceTitle(t *testing.T) {
 
 func TestClient_CreateIssue_TabNewlineTitle(t *testing.T) {
 	c := NewClient("owner/repo")
-	issue, err := c.CreateIssue("\t\n", "body")
+	issue, err := c.CreateIssue(context.Background(), "\t\n", "body")
 	assert.Nil(t, issue)
 	require.Error(t, err)
 	assert.Equal(t, "title must not be empty", err.Error())
@@ -95,7 +97,7 @@ func TestClient_CreateIssue_TitleValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := NewClient("owner/repo")
-			issue, err := c.CreateIssue(tt.title, "body")
+			issue, err := c.CreateIssue(context.Background(), tt.title, "body")
 			assert.Nil(t, issue)
 			require.Error(t, err)
 			assert.Equal(t, tt.want, err.Error())
@@ -245,6 +247,40 @@ func TestClient_Run_WhitespaceOnlyOutput(t *testing.T) {
 	out, err := c.run("repo", "view")
 	assert.Nil(t, out)
 	require.ErrorIs(t, err, errEmptyCLIResponse)
+}
+
+func TestClient_GetCurrentRepo_WithContext(t *testing.T) {
+	writeFakeJJHub(t, "#!/bin/sh\nprintf '{\"full_name\":\"acme/repo\"}'\n")
+
+	c := NewClient("owner/repo")
+	repo, err := c.GetCurrentRepo(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, repo)
+	assert.Equal(t, "acme/repo", repo.FullName)
+}
+
+func TestClient_GetCurrentRepo_ContextCanceled(t *testing.T) {
+	writeFakeJJHub(t, "#!/bin/sh\nsleep 1\nprintf '{\"full_name\":\"acme/repo\"}'\n")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	c := NewClient("owner/repo")
+	repo, err := c.GetCurrentRepo(ctx)
+	assert.Nil(t, repo)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+}
+
+func TestClient_ChangeDiff_ContextCanceled(t *testing.T) {
+	writeFakeJJHub(t, "#!/bin/sh\nsleep 1\nprintf 'diff output'\n")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	c := NewClient("owner/repo")
+	diff, err := c.ChangeDiff(ctx, "abc123")
+	assert.Empty(t, diff)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
 func TestStructTypes(t *testing.T) {

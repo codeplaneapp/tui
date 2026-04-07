@@ -3,6 +3,7 @@ package jjhub
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -192,9 +193,16 @@ func parseCLIError(out []byte, err error) error {
 }
 
 func (c *Client) run(args ...string) ([]byte, error) {
+	return c.runContext(context.Background(), args...)
+}
+
+func (c *Client) runContext(ctx context.Context, args ...string) ([]byte, error) {
 	allArgs := append(args, "--json", "--no-color")
-	cmd := exec.Command("jjhub", allArgs...)
+	cmd := exec.CommandContext(ctx, "jjhub", allArgs...)
 	out, err := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 	if err := parseCLIError(out, err); err != nil {
 		return nil, err
 	}
@@ -205,9 +213,16 @@ func (c *Client) run(args ...string) ([]byte, error) {
 }
 
 func (c *Client) runRaw(args ...string) (string, error) {
+	return c.runRawContext(context.Background(), args...)
+}
+
+func (c *Client) runRawContext(ctx context.Context, args ...string) (string, error) {
 	allArgs := append(args, "--no-color")
-	cmd := exec.Command("jjhub", allArgs...)
+	cmd := exec.CommandContext(ctx, "jjhub", allArgs...)
 	out, err := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
 	if err := parseCLIError(out, err); err != nil {
 		return "", err
 	}
@@ -232,10 +247,10 @@ func (c *Client) repoArgs() []string {
 	return nil
 }
 
-func (c *Client) ListLandings(state string, limit int) ([]Landing, error) {
+func (c *Client) ListLandings(ctx context.Context, state string, limit int) ([]Landing, error) {
 	args := []string{"land", "list", "-s", state, "-L", fmt.Sprint(limit)}
 	args = append(args, c.repoArgs()...)
-	out, err := c.run(args...)
+	out, err := c.runContext(ctx, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -246,10 +261,10 @@ func (c *Client) ListLandings(state string, limit int) ([]Landing, error) {
 	return landings, nil
 }
 
-func (c *Client) ListIssues(state string, limit int) ([]Issue, error) {
+func (c *Client) ListIssues(ctx context.Context, state string, limit int) ([]Issue, error) {
 	args := []string{"issue", "list", "-s", state, "-L", fmt.Sprint(limit)}
 	args = append(args, c.repoArgs()...)
-	out, err := c.run(args...)
+	out, err := c.runContext(ctx, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -260,7 +275,7 @@ func (c *Client) ListIssues(state string, limit int) ([]Issue, error) {
 	return issues, nil
 }
 
-func (c *Client) CreateIssue(title, body string) (*Issue, error) {
+func (c *Client) CreateIssue(ctx context.Context, title, body string) (*Issue, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return nil, fmt.Errorf("title must not be empty")
@@ -272,7 +287,7 @@ func (c *Client) CreateIssue(title, body string) (*Issue, error) {
 	}
 	args = append(args, c.repoArgs()...)
 
-	out, err := c.run(args...)
+	out, err := c.runContext(ctx, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -284,9 +299,9 @@ func (c *Client) CreateIssue(title, body string) (*Issue, error) {
 	return &issue, nil
 }
 
-func (c *Client) ListRepos(limit int) ([]Repo, error) {
+func (c *Client) ListRepos(ctx context.Context, limit int) ([]Repo, error) {
 	args := []string{"repo", "list", "-L", fmt.Sprint(limit)}
-	out, err := c.run(args...)
+	out, err := c.runContext(ctx, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -297,9 +312,9 @@ func (c *Client) ListRepos(limit int) ([]Repo, error) {
 	return repos, nil
 }
 
-func (c *Client) ListNotifications(limit int) ([]Notification, error) {
+func (c *Client) ListNotifications(ctx context.Context, limit int) ([]Notification, error) {
 	args := []string{"notification", "list", "-L", fmt.Sprint(limit)}
-	out, err := c.run(args...)
+	out, err := c.runContext(ctx, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -310,10 +325,10 @@ func (c *Client) ListNotifications(limit int) ([]Notification, error) {
 	return notifications, nil
 }
 
-func (c *Client) ListWorkspaces(limit int) ([]Workspace, error) {
+func (c *Client) ListWorkspaces(ctx context.Context, limit int) ([]Workspace, error) {
 	args := []string{"workspace", "list", "-L", fmt.Sprint(limit)}
 	args = append(args, c.repoArgs()...)
-	out, err := c.run(args...)
+	out, err := c.runContext(ctx, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -324,17 +339,17 @@ func (c *Client) ListWorkspaces(limit int) ([]Workspace, error) {
 	return workspaces, nil
 }
 
-func (c *Client) ViewWorkspace(workspaceID string) (*Workspace, error) {
+func (c *Client) ViewWorkspace(ctx context.Context, workspaceID string) (*Workspace, error) {
 	args := []string{"workspace", "view", workspaceID}
 	args = append(args, c.repoArgs()...)
-	out, err := c.run(args...)
+	out, err := c.runContext(ctx, args...)
 	if err != nil {
 		return nil, err
 	}
 	return decodeJSON[Workspace](out, "workspace")
 }
 
-func (c *Client) CreateWorkspace(name, snapshotID string) (*Workspace, error) {
+func (c *Client) CreateWorkspace(ctx context.Context, name, snapshotID string) (*Workspace, error) {
 	args := []string{"workspace", "create"}
 	if strings.TrimSpace(name) != "" {
 		args = append(args, "-n", name)
@@ -343,57 +358,57 @@ func (c *Client) CreateWorkspace(name, snapshotID string) (*Workspace, error) {
 		args = append(args, "--snapshot", snapshotID)
 	}
 	args = append(args, c.repoArgs()...)
-	out, err := c.run(args...)
+	out, err := c.runContext(ctx, args...)
 	if err != nil {
 		return nil, err
 	}
 	return decodeJSON[Workspace](out, "workspace")
 }
 
-func (c *Client) DeleteWorkspace(workspaceID string) error {
+func (c *Client) DeleteWorkspace(ctx context.Context, workspaceID string) error {
 	args := []string{"workspace", "delete", workspaceID}
 	args = append(args, c.repoArgs()...)
-	_, err := c.runRaw(args...)
+	_, err := c.runRawContext(ctx, args...)
 	return err
 }
 
-func (c *Client) SuspendWorkspace(workspaceID string) (*Workspace, error) {
+func (c *Client) SuspendWorkspace(ctx context.Context, workspaceID string) (*Workspace, error) {
 	args := []string{"workspace", "suspend", workspaceID}
 	args = append(args, c.repoArgs()...)
-	out, err := c.run(args...)
+	out, err := c.runContext(ctx, args...)
 	if err != nil {
 		return nil, err
 	}
 	return decodeJSON[Workspace](out, "workspace")
 }
 
-func (c *Client) ResumeWorkspace(workspaceID string) (*Workspace, error) {
+func (c *Client) ResumeWorkspace(ctx context.Context, workspaceID string) (*Workspace, error) {
 	args := []string{"workspace", "resume", workspaceID}
 	args = append(args, c.repoArgs()...)
-	out, err := c.run(args...)
+	out, err := c.runContext(ctx, args...)
 	if err != nil {
 		return nil, err
 	}
 	return decodeJSON[Workspace](out, "workspace")
 }
 
-func (c *Client) ForkWorkspace(workspaceID, name string) (*Workspace, error) {
+func (c *Client) ForkWorkspace(ctx context.Context, workspaceID, name string) (*Workspace, error) {
 	args := []string{"workspace", "fork", workspaceID}
 	if strings.TrimSpace(name) != "" {
 		args = append(args, "-n", name)
 	}
 	args = append(args, c.repoArgs()...)
-	out, err := c.run(args...)
+	out, err := c.runContext(ctx, args...)
 	if err != nil {
 		return nil, err
 	}
 	return decodeJSON[Workspace](out, "workspace")
 }
 
-func (c *Client) ListWorkspaceSnapshots(limit int) ([]WorkspaceSnapshot, error) {
+func (c *Client) ListWorkspaceSnapshots(ctx context.Context, limit int) ([]WorkspaceSnapshot, error) {
 	args := []string{"workspace", "snapshot", "list", "-L", fmt.Sprint(limit)}
 	args = append(args, c.repoArgs()...)
-	out, err := c.run(args...)
+	out, err := c.runContext(ctx, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -404,40 +419,40 @@ func (c *Client) ListWorkspaceSnapshots(limit int) ([]WorkspaceSnapshot, error) 
 	return snapshots, nil
 }
 
-func (c *Client) ViewWorkspaceSnapshot(snapshotID string) (*WorkspaceSnapshot, error) {
+func (c *Client) ViewWorkspaceSnapshot(ctx context.Context, snapshotID string) (*WorkspaceSnapshot, error) {
 	args := []string{"workspace", "snapshot", "view", snapshotID}
 	args = append(args, c.repoArgs()...)
-	out, err := c.run(args...)
+	out, err := c.runContext(ctx, args...)
 	if err != nil {
 		return nil, err
 	}
 	return decodeJSON[WorkspaceSnapshot](out, "workspace snapshot")
 }
 
-func (c *Client) CreateWorkspaceSnapshot(workspaceID, name string) (*WorkspaceSnapshot, error) {
+func (c *Client) CreateWorkspaceSnapshot(ctx context.Context, workspaceID, name string) (*WorkspaceSnapshot, error) {
 	args := []string{"workspace", "snapshot", "create", workspaceID}
 	if strings.TrimSpace(name) != "" {
 		args = append(args, "-n", name)
 	}
 	args = append(args, c.repoArgs()...)
-	out, err := c.run(args...)
+	out, err := c.runContext(ctx, args...)
 	if err != nil {
 		return nil, err
 	}
 	return decodeJSON[WorkspaceSnapshot](out, "workspace snapshot")
 }
 
-func (c *Client) DeleteWorkspaceSnapshot(snapshotID string) error {
+func (c *Client) DeleteWorkspaceSnapshot(ctx context.Context, snapshotID string) error {
 	args := []string{"workspace", "snapshot", "delete", snapshotID}
 	args = append(args, c.repoArgs()...)
-	_, err := c.runRaw(args...)
+	_, err := c.runRawContext(ctx, args...)
 	return err
 }
 
-func (c *Client) ListWorkflows(limit int) ([]Workflow, error) {
+func (c *Client) ListWorkflows(ctx context.Context, limit int) ([]Workflow, error) {
 	args := []string{"workflow", "list", "-L", fmt.Sprint(limit)}
 	args = append(args, c.repoArgs()...)
-	out, err := c.run(args...)
+	out, err := c.runContext(ctx, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -448,9 +463,10 @@ func (c *Client) ListWorkflows(limit int) ([]Workflow, error) {
 	return workflows, nil
 }
 
-func (c *Client) ListChanges(limit int) ([]Change, error) {
+func (c *Client) ListChanges(ctx context.Context, limit int) ([]Change, error) {
 	args := []string{"change", "list", "--limit", fmt.Sprint(limit)}
-	out, err := c.run(args...)
+	args = append(args, c.repoArgs()...)
+	out, err := c.runContext(ctx, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -461,10 +477,10 @@ func (c *Client) ListChanges(limit int) ([]Change, error) {
 	return changes, nil
 }
 
-func (c *Client) ViewLanding(number int) (*LandingDetail, error) {
+func (c *Client) ViewLanding(ctx context.Context, number int) (*LandingDetail, error) {
 	args := []string{"land", "view", fmt.Sprint(number)}
 	args = append(args, c.repoArgs()...)
-	out, err := c.run(args...)
+	out, err := c.runContext(ctx, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -475,10 +491,10 @@ func (c *Client) ViewLanding(number int) (*LandingDetail, error) {
 	return &detail, nil
 }
 
-func (c *Client) ViewIssue(number int) (*Issue, error) {
+func (c *Client) ViewIssue(ctx context.Context, number int) (*Issue, error) {
 	args := []string{"issue", "view", fmt.Sprint(number)}
 	args = append(args, c.repoArgs()...)
-	out, err := c.run(args...)
+	out, err := c.runContext(ctx, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -489,25 +505,27 @@ func (c *Client) ViewIssue(number int) (*Issue, error) {
 	return &issue, nil
 }
 
-func (c *Client) CloseIssue(number int, comment string) (*Issue, error) {
+func (c *Client) CloseIssue(ctx context.Context, number int, comment string) (*Issue, error) {
 	args := []string{"issue", "close", fmt.Sprint(number)}
 	if strings.TrimSpace(comment) != "" {
 		args = append(args, "-c", comment)
 	}
 	args = append(args, c.repoArgs()...)
-	out, err := c.run(args...)
+	out, err := c.runContext(ctx, args...)
 	if err != nil {
 		return nil, err
 	}
 	var issue Issue
 	if err := json.Unmarshal(out, &issue); err != nil {
-		return c.ViewIssue(number)
+		return c.ViewIssue(ctx, number)
 	}
 	return &issue, nil
 }
 
-func (c *Client) ViewChange(changeID string) (*Change, error) {
-	out, err := c.run("change", "show", changeID)
+func (c *Client) ViewChange(ctx context.Context, changeID string) (*Change, error) {
+	args := []string{"change", "show", changeID}
+	args = append(args, c.repoArgs()...)
+	out, err := c.runContext(ctx, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -518,8 +536,8 @@ func (c *Client) ViewChange(changeID string) (*Change, error) {
 	return &change, nil
 }
 
-func (c *Client) GetCurrentRepo() (*Repo, error) {
-	out, err := c.run("repo", "view")
+func (c *Client) GetCurrentRepo(ctx context.Context) (*Repo, error) {
+	out, err := c.runContext(ctx, "repo", "view")
 	if err != nil {
 		return nil, err
 	}
@@ -530,34 +548,35 @@ func (c *Client) GetCurrentRepo() (*Repo, error) {
 	return &repo, nil
 }
 
-func (c *Client) LandingDiff(number int) (string, error) {
+func (c *Client) LandingDiff(ctx context.Context, number int) (string, error) {
 	args := []string{"land", "diff", fmt.Sprint(number)}
 	args = append(args, c.repoArgs()...)
-	return c.runRaw(args...)
+	return c.runRawContext(ctx, args...)
 }
 
-func (c *Client) ChangeDiff(changeID string) (string, error) {
+func (c *Client) ChangeDiff(ctx context.Context, changeID string) (string, error) {
 	args := []string{"change", "diff"}
 	if strings.TrimSpace(changeID) != "" {
 		args = append(args, changeID)
 	}
-	return c.runRaw(args...)
+	args = append(args, c.repoArgs()...)
+	return c.runRawContext(ctx, args...)
 }
 
-func (c *Client) WorkingCopyDiff() (string, error) {
-	cmd := exec.Command("jj", "diff", "--no-color")
+func (c *Client) WorkingCopyDiff(ctx context.Context) (string, error) {
+	cmd := exec.CommandContext(ctx, "jj", "diff", "--no-color")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
 		return "", fmt.Errorf("jj diff: %w", err)
 	}
 	return string(out), nil
 }
 
-func (c *Client) Status() (string, error) {
-	cmd := exec.Command("jj", "status", "--color=never")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("jj status: %w", err)
-	}
-	return string(out), nil
+func (c *Client) Status(ctx context.Context) (string, error) {
+	args := []string{"status"}
+	args = append(args, c.repoArgs()...)
+	return c.runRawContext(ctx, args...)
 }
