@@ -1610,6 +1610,158 @@ func TestConfig_envVarFallback(t *testing.T) {
 	})
 }
 
+func TestBridgeEnvPrefixes(t *testing.T) {
+	t.Run("CODEPLANE wins when all prefixes are set", func(t *testing.T) {
+		base := "CRUSH_TEST_BRIDGE_PRECEDENCE"
+		preserveBridgeEnv(t, base)
+		clearBridgeEnv(t, base)
+
+		setBridgeEnv(t, "CRUSH_"+base, "crush")
+		setBridgeEnv(t, "SMITHERS_TUI_"+base, "smithers")
+		setBridgeEnv(t, "CODEPLANE_"+base, "codeplane")
+
+		restore := PushPopCodeplaneEnv()
+
+		value, ok := os.LookupEnv(base)
+		require.True(t, ok)
+		require.Equal(t, "codeplane", value)
+
+		restore()
+
+		_, ok = os.LookupEnv(base)
+		require.False(t, ok)
+	})
+
+	t.Run("empty values stay distinct from unset values", func(t *testing.T) {
+		base := "CRUSH_TEST_BRIDGE_EMPTY"
+		preserveBridgeEnv(t, base)
+		clearBridgeEnv(t, base)
+
+		setBridgeEnv(t, "SMITHERS_TUI_"+base, "smithers")
+		setBridgeEnv(t, "CODEPLANE_"+base, "")
+
+		restore := PushPopCodeplaneEnv()
+
+		value, ok := os.LookupEnv(base)
+		require.True(t, ok)
+		require.Empty(t, value)
+
+		restore()
+
+		_, ok = os.LookupEnv(base)
+		require.False(t, ok)
+	})
+
+	t.Run("restore unsets values that were originally absent", func(t *testing.T) {
+		base := "CRUSH_TEST_BRIDGE_RESTORE"
+		preserveBridgeEnv(t, base)
+		clearBridgeEnv(t, base)
+
+		setBridgeEnv(t, "CRUSH_"+base, "legacy")
+
+		restore := PushPopCodeplaneEnv()
+
+		value, ok := os.LookupEnv(base)
+		require.True(t, ok)
+		require.Equal(t, "legacy", value)
+
+		restore()
+
+		_, ok = os.LookupEnv(base)
+		require.False(t, ok)
+	})
+
+	tests := []struct {
+		name   string
+		prefix string
+		value  string
+	}{
+		{
+			name:   "CODEPLANE only",
+			prefix: "CODEPLANE_",
+			value:  "codeplane-only",
+		},
+		{
+			name:   "SMITHERS_TUI only",
+			prefix: "SMITHERS_TUI_",
+			value:  "smithers-only",
+		},
+		{
+			name:   "CRUSH only",
+			prefix: "CRUSH_",
+			value:  "crush-only",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			base := "CRUSH_TEST_BRIDGE_SINGLE_" + tt.value
+			preserveBridgeEnv(t, base)
+			clearBridgeEnv(t, base)
+
+			setBridgeEnv(t, tt.prefix+base, tt.value)
+
+			restore := PushPopCodeplaneEnv()
+
+			value, ok := os.LookupEnv(base)
+			require.True(t, ok)
+			require.Equal(t, tt.value, value)
+
+			restore()
+
+			_, ok = os.LookupEnv(base)
+			require.False(t, ok)
+		})
+	}
+}
+
+type bridgeEnvSnapshot struct {
+	value   string
+	present bool
+}
+
+func preserveBridgeEnv(t *testing.T, base string) {
+	t.Helper()
+
+	snapshots := make(map[string]bridgeEnvSnapshot)
+	for _, name := range bridgeEnvNames(base) {
+		value, present := os.LookupEnv(name)
+		snapshots[name] = bridgeEnvSnapshot{value: value, present: present}
+	}
+
+	t.Cleanup(func() {
+		for name, snapshot := range snapshots {
+			if snapshot.present {
+				require.NoError(t, os.Setenv(name, snapshot.value))
+				continue
+			}
+			require.NoError(t, os.Unsetenv(name))
+		}
+	})
+}
+
+func clearBridgeEnv(t *testing.T, base string) {
+	t.Helper()
+
+	for _, name := range bridgeEnvNames(base) {
+		require.NoError(t, os.Unsetenv(name))
+	}
+}
+
+func setBridgeEnv(t *testing.T, name, value string) {
+	t.Helper()
+	require.NoError(t, os.Setenv(name, value))
+}
+
+func bridgeEnvNames(base string) []string {
+	return []string{
+		base,
+		"CODEPLANE_" + base,
+		"SMITHERS_TUI_" + base,
+		"CRUSH_" + base,
+	}
+}
+
 func TestConfig_prefersExistingLegacyPaths(t *testing.T) {
 	t.Run("GlobalConfig falls back to legacy config file", func(t *testing.T) {
 		cfgHome := t.TempDir()

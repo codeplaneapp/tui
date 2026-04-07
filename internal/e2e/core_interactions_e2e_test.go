@@ -190,6 +190,7 @@ func TestSessionsPersistence_TUI(t *testing.T) {
 
 		waitForDashboard(t, tui)
 		openSessionsDialog(t, tui)
+		tui.SendText("Rename Session")
 		require.NoError(t, tui.WaitForText("Rename Session", 5*time.Second))
 		tui.SendKeys("\x12") // ctrl+r
 		require.NoError(t, tui.WaitForText("Rename this session?", 5*time.Second))
@@ -217,6 +218,7 @@ func TestSessionsPersistence_TUI(t *testing.T) {
 
 		waitForDashboard(t, tui)
 		openSessionsDialog(t, tui)
+		tui.SendText("Delete Session")
 		require.NoError(t, tui.WaitForText("Delete Session", 5*time.Second))
 		tui.SendKeys("\x18") // ctrl+x
 		require.NoError(t, tui.WaitForText("Delete this session?", 5*time.Second))
