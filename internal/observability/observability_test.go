@@ -241,6 +241,41 @@ func TestRecordUINavigation_CapturesSpanAndMetric(t *testing.T) {
 	require.Equal(t, float64(1), counter.GetCounter().GetValue())
 }
 
+func TestRecordStartupFlow_CapturesSpanAndMetric(t *testing.T) {
+	t.Cleanup(func() {
+		require.NoError(t, Shutdown(context.Background()))
+	})
+
+	require.NoError(t, Configure(context.Background(), Config{
+		ServiceName:      "test",
+		ServiceVersion:   "dev",
+		Mode:             ModeLocal,
+		TraceBufferSize:  16,
+		TraceSampleRatio: 1,
+	}))
+
+	RecordStartupFlow("config_source", "global_config", "legacy",
+		attribute.String("codeplane.config.path", "/tmp/crush/crush.json"),
+	)
+
+	spans := RecentSpans(10)
+	require.Len(t, spans, 1)
+	require.Equal(t, "codeplane.startup.config_source", spans[0].Name)
+	require.Equal(t, "config_source", spans[0].Attributes["codeplane.startup.flow"])
+	require.Equal(t, "global_config", spans[0].Attributes["codeplane.startup.source"])
+	require.Equal(t, "legacy", spans[0].Attributes["codeplane.startup.result"])
+	require.Equal(t, "/tmp/crush/crush.json", spans[0].Attributes["codeplane.config.path"])
+
+	st := getState()
+	require.NotNil(t, st)
+	counter := gatherMetric(t, st, "codeplane_startup_flows_total", map[string]string{
+		"flow":   "config_source",
+		"source": "global_config",
+		"result": "legacy",
+	})
+	require.Equal(t, float64(1), counter.GetCounter().GetValue())
+}
+
 func TestRecordSnapshotOperation_CapturesSpanAndMetric(t *testing.T) {
 	t.Cleanup(func() {
 		require.NoError(t, Shutdown(context.Background()))
@@ -281,6 +316,205 @@ func TestRecordSnapshotOperation_CapturesSpanAndMetric(t *testing.T) {
 	})
 	require.Equal(t, uint64(1), metric.GetHistogram().GetSampleCount())
 	require.InDelta(t, 0.25, metric.GetHistogram().GetSampleSum(), 0.0001)
+}
+
+func TestNormalizeConfigAppliesDefaults(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  Config
+		assert func(t *testing.T, cfg Config)
+	}{
+		{
+			name:  "empty service name defaults to crush",
+			input: Config{},
+			assert: func(t *testing.T, cfg Config) {
+				require.Equal(t, "crush", cfg.ServiceName)
+			},
+		},
+		{
+			name:  "whitespace-only service name defaults to crush",
+			input: Config{ServiceName: "   "},
+			assert: func(t *testing.T, cfg Config) {
+				require.Equal(t, "crush", cfg.ServiceName)
+			},
+		},
+		{
+			name:  "explicit service name preserved",
+			input: Config{ServiceName: "myapp"},
+			assert: func(t *testing.T, cfg Config) {
+				require.Equal(t, "myapp", cfg.ServiceName)
+			},
+		},
+		{
+			name:  "zero trace buffer defaults to 512",
+			input: Config{},
+			assert: func(t *testing.T, cfg Config) {
+				require.Equal(t, 512, cfg.TraceBufferSize)
+			},
+		},
+		{
+			name:  "negative trace buffer defaults to 512",
+			input: Config{TraceBufferSize: -10},
+			assert: func(t *testing.T, cfg Config) {
+				require.Equal(t, 512, cfg.TraceBufferSize)
+			},
+		},
+		{
+			name:  "zero sample ratio defaults to 1",
+			input: Config{},
+			assert: func(t *testing.T, cfg Config) {
+				require.InDelta(t, 1.0, cfg.TraceSampleRatio, 0.001)
+			},
+		},
+		{
+			name:  "negative sample ratio clamped to 1",
+			input: Config{TraceSampleRatio: -0.5},
+			assert: func(t *testing.T, cfg Config) {
+				require.InDelta(t, 1.0, cfg.TraceSampleRatio, 0.001)
+			},
+		},
+		{
+			name:  "sample ratio above 1 clamped to 1",
+			input: Config{TraceSampleRatio: 2.5},
+			assert: func(t *testing.T, cfg Config) {
+				require.InDelta(t, 1.0, cfg.TraceSampleRatio, 0.001)
+			},
+		},
+		{
+			name:  "valid sample ratio preserved",
+			input: Config{TraceSampleRatio: 0.5},
+			assert: func(t *testing.T, cfg Config) {
+				require.InDelta(t, 0.5, cfg.TraceSampleRatio, 0.001)
+			},
+		},
+		{
+			name:  "nil OTLP headers initialized to empty map",
+			input: Config{},
+			assert: func(t *testing.T, cfg Config) {
+				require.NotNil(t, cfg.OTLPHeaders)
+				require.Empty(t, cfg.OTLPHeaders)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := normalizeConfig(tt.input)
+			tt.assert(t, cfg)
+		})
+	}
+}
+
+func TestRedactHeaders(t *testing.T) {
+	headers := http.Header{
+		"Content-Type":  []string{"application/json"},
+		"Authorization": []string{"Bearer secret-token"},
+		"X-Api-Key":     []string{"key-123"},
+		"Accept":        []string{"text/html"},
+	}
+
+	redacted := RedactHeaders(headers)
+	require.Equal(t, []string{"application/json"}, redacted["Content-Type"])
+	require.Equal(t, []string{redactedValue}, redacted["Authorization"])
+	require.Equal(t, []string{redactedValue}, redacted["X-Api-Key"])
+	require.Equal(t, []string{"text/html"}, redacted["Accept"])
+}
+
+func TestRedactHeadersNilReturnsNil(t *testing.T) {
+	require.Nil(t, RedactHeaders(nil))
+	require.Nil(t, RedactHeaders(http.Header{}))
+}
+
+func TestRedactStringMap(t *testing.T) {
+	input := map[string]string{
+		"host":     "example.com",
+		"password": "supersecret",
+		"token":    "tok-abc",
+		"mode":     "debug",
+	}
+
+	redacted := RedactStringMap(input)
+	require.Equal(t, "example.com", redacted["host"])
+	require.Equal(t, redactedValue, redacted["password"])
+	require.Equal(t, redactedValue, redacted["token"])
+	require.Equal(t, "debug", redacted["mode"])
+}
+
+func TestRedactStringMapNilReturnsNil(t *testing.T) {
+	require.Nil(t, RedactStringMap(nil))
+	require.Nil(t, RedactStringMap(map[string]string{}))
+}
+
+func TestRedactURLStringScrubsSensitiveQueryParams(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		check func(t *testing.T, result string)
+	}{
+		{
+			name:  "empty string",
+			input: "",
+			check: func(t *testing.T, result string) {
+				require.Empty(t, result)
+			},
+		},
+		{
+			name:  "no query params unchanged",
+			input: "https://example.com/path",
+			check: func(t *testing.T, result string) {
+				require.Contains(t, result, "example.com/path")
+			},
+		},
+		{
+			name:  "token param redacted",
+			input: "https://example.com/api?token=secret123&page=1",
+			check: func(t *testing.T, result string) {
+				require.NotContains(t, result, "secret123")
+				require.Contains(t, result, "page=1")
+				require.Contains(t, result, url.QueryEscape(redactedValue))
+			},
+		},
+		{
+			name:  "api_key param redacted",
+			input: "https://example.com/data?api_key=key-abc&format=json",
+			check: func(t *testing.T, result string) {
+				require.NotContains(t, result, "key-abc")
+				require.Contains(t, result, "format=json")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := RedactURLString(tt.input)
+			tt.check(t, result)
+		})
+	}
+}
+
+func TestIsLoopbackAddress(t *testing.T) {
+	tests := []struct {
+		addr string
+		want bool
+	}{
+		{"", true},
+		{"   ", true},
+		{"localhost", true},
+		{"localhost:8080", true},
+		{"127.0.0.1", true},
+		{"127.0.0.1:9090", true},
+		{"[::1]:8080", true},
+		{"::1", true},
+		{"0.0.0.0", false},
+		{"192.168.1.1:8080", false},
+		{"example.com:443", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.addr, func(t *testing.T) {
+			require.Equal(t, tt.want, isLoopbackAddress(tt.addr))
+		})
+	}
 }
 
 func gatherMetric(t *testing.T, st *state, name string, labels map[string]string) *dto.Metric {

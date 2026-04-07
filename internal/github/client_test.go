@@ -3,7 +3,11 @@ package github
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -165,6 +169,18 @@ func TestClient_RepoArgs_PreservesExactValue(t *testing.T) {
 	}
 }
 
+func TestClient_GetCurrentRepo_ContextCanceled(t *testing.T) {
+	writeFakeGH(t, "#!/bin/sh\nsleep 1\nprintf '{\"nameWithOwner\":\"acme/repo\"}'\n")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	c := NewClient("owner/repo")
+	repo, err := c.GetCurrentRepo(ctx)
+	assert.Nil(t, repo)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+}
+
 func TestStructTypes(t *testing.T) {
 	// Ensure the public types are constructable and zero-valued correctly.
 	var issue Issue
@@ -187,4 +203,17 @@ func TestStructTypes(t *testing.T) {
 
 	// Suppress unused variable warnings by using them.
 	_ = errors.New("unused")
+}
+
+func writeFakeGH(t *testing.T, script string) {
+	t.Helper()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("Fake gh helper uses a POSIX shell script.")
+	}
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gh")
+	require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }

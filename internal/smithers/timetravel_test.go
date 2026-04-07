@@ -855,3 +855,81 @@ func TestForkReplayRun_JSONRoundTrip(t *testing.T) {
 	require.NotNil(t, restored.ForkedFrom)
 	assert.Equal(t, *original.ForkedFrom, *restored.ForkedFrom)
 }
+
+// --- msToTime: negative / pre-epoch ---
+
+func TestMsToTime_Negative(t *testing.T) {
+	// -1000ms should be 1 second before the Unix epoch.
+	result := msToTime(-1000)
+	assert.Equal(t, time.Unix(-1, 0).UTC(), result)
+}
+
+func TestMsToTime_NegativeWithFraction(t *testing.T) {
+	// -500ms: -1 second + 500ms remainder
+	// ms/1000 = 0 (truncates toward zero), ms%1000 = -500
+	// time.Unix(0, -500*1e6) = epoch minus 500ms
+	result := msToTime(-500)
+	expected := time.Unix(0, -500*int64(time.Millisecond)).UTC()
+	assert.Equal(t, expected, result)
+}
+
+// --- parseSnapshotsJSON: null input ---
+
+func TestParseSnapshotsJSON_Null(t *testing.T) {
+	// JSON "null" should unmarshal to a nil slice without error.
+	snaps, err := parseSnapshotsJSON([]byte("null"))
+	require.NoError(t, err)
+	assert.Nil(t, snaps)
+}
+
+// --- parseSnapshotJSON: minimal fields ---
+
+func TestParseSnapshotJSON_MinimalFields(t *testing.T) {
+	// Only required fields set; optional ParentID should be nil.
+	data := []byte(`{
+		"id": "snap-min",
+		"runId": "run-min",
+		"snapshotNo": 1,
+		"nodeId": "node-1",
+		"iteration": 1,
+		"attempt": 1,
+		"label": "",
+		"createdAt": "2026-04-01T00:00:00Z",
+		"stateJson": "{}",
+		"sizeBytes": 0
+	}`)
+	snap, err := parseSnapshotJSON(data)
+	require.NoError(t, err)
+	require.NotNil(t, snap)
+	assert.Equal(t, "snap-min", snap.ID)
+	assert.Equal(t, "run-min", snap.RunID)
+	assert.Nil(t, snap.ParentID, "parentId should be nil when omitted from JSON")
+	assert.Equal(t, int64(0), snap.SizeBytes)
+}
+
+// --- parseForkReplayRunJSON: all optional fields populated ---
+
+func TestParseForkReplayRunJSON_AllFields(t *testing.T) {
+	data := []byte(`{
+		"id": "run-full",
+		"workflowPath": "wf/full.tsx",
+		"status": "completed",
+		"label": "full regression",
+		"startedAt": "2026-04-01T11:00:00Z",
+		"finishedAt": "2026-04-01T12:30:00Z",
+		"forkedFrom": "snap-origin-42"
+	}`)
+	run, err := parseForkReplayRunJSON(data)
+	require.NoError(t, err)
+	require.NotNil(t, run)
+	assert.Equal(t, "run-full", run.ID)
+	assert.Equal(t, "completed", run.Status)
+	assert.Equal(t, "wf/full.tsx", run.WorkflowPath)
+	require.NotNil(t, run.Label)
+	assert.Equal(t, "full regression", *run.Label)
+	require.NotNil(t, run.FinishedAt)
+	assert.Equal(t, 2026, run.FinishedAt.Year())
+	assert.Equal(t, time.April, run.FinishedAt.Month())
+	require.NotNil(t, run.ForkedFrom)
+	assert.Equal(t, "snap-origin-42", *run.ForkedFrom)
+}
