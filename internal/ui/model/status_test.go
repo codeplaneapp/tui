@@ -101,6 +101,50 @@ func TestStatusDraw_SingleRun_NoApprovals(t *testing.T) {
 	require.NotContains(t, out, "approval")
 }
 
+// --- formatSmithersSummary unit tests (pure string formatting) ---
+
+func TestFormatSmithersSummary_RunsAndApprovals(t *testing.T) {
+	t.Parallel()
+
+	s := &Status{smithersStatus: &SmithersStatus{ActiveRuns: 3, PendingApprovals: 1}}
+	require.Equal(t, "3 runs · 1 approval", s.formatSmithersSummary())
+}
+
+func TestFormatSmithersSummary_OnlyRuns(t *testing.T) {
+	t.Parallel()
+
+	s := &Status{smithersStatus: &SmithersStatus{ActiveRuns: 1, PendingApprovals: 0}}
+	require.Equal(t, "1 run", s.formatSmithersSummary())
+}
+
+func TestFormatSmithersSummary_OnlyApprovals(t *testing.T) {
+	t.Parallel()
+
+	s := &Status{smithersStatus: &SmithersStatus{ActiveRuns: 0, PendingApprovals: 5}}
+	require.Equal(t, "5 approvals", s.formatSmithersSummary())
+}
+
+func TestFormatSmithersSummary_NothingActive(t *testing.T) {
+	t.Parallel()
+
+	s := &Status{smithersStatus: &SmithersStatus{ActiveRuns: 0, PendingApprovals: 0}}
+	require.Equal(t, "", s.formatSmithersSummary())
+}
+
+func TestFormatSmithersSummary_PluralRuns(t *testing.T) {
+	t.Parallel()
+
+	s := &Status{smithersStatus: &SmithersStatus{ActiveRuns: 10, PendingApprovals: 0}}
+	require.Equal(t, "10 runs", s.formatSmithersSummary())
+}
+
+func TestFormatSmithersSummary_SingularApproval(t *testing.T) {
+	t.Parallel()
+
+	s := &Status{smithersStatus: &SmithersStatus{ActiveRuns: 0, PendingApprovals: 1}}
+	require.Equal(t, "1 approval", s.formatSmithersSummary())
+}
+
 func renderStatus(t *testing.T, s *Status, width int) string {
 	t.Helper()
 

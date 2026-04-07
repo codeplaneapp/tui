@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/crush/internal/ui/attachments"
@@ -47,15 +48,31 @@ func TestHandleKeyPressMsg_NavigateShortcuts(t *testing.T) {
 	}
 }
 
-func TestShortHelp_OmitsSmithersShortcutBindings(t *testing.T) {
+func TestHandleKeyPressMsg_ViewApprovalsShort_DoesNotStealSmithersViewInput(t *testing.T) {
+	t.Parallel()
+
+	ui := newShortcutTestUI()
+	ui.viewRouter = views.NewRouter()
+	view := &shortcutCaptureView{}
+	ui.viewRouter.Push(view, ui.width, ui.height)
+	ui.state = uiSmithersView
+	ui.focus = uiFocusMain
+
+	cmd := ui.handleKeyPressMsg(tea.KeyPressMsg{Code: 'a'})
+
+	require.Nil(t, cmd)
+	require.True(t, view.receivedKey, "expected smithers view to receive bare 'a'")
+}
+
+func TestShortHelp_IncludesSmithersShortcutBindingsInChat(t *testing.T) {
 	t.Parallel()
 
 	ui := newShortcutTestUI()
 	ui.focus = uiFocusMain
 
 	bindings := ui.ShortHelp()
-	assertLacksHelpBinding(t, bindings, "ctrl+r", "runs")
-	assertLacksHelpBinding(t, bindings, "ctrl+a", "approvals")
+	assertHasHelpBinding(t, bindings, "ctrl+r", "runs")
+	assertHasHelpBinding(t, bindings, "ctrl+a", "approvals")
 }
 
 func TestFullHelp_IncludesSmithersShortcutBindings(t *testing.T) {
@@ -114,7 +131,7 @@ type mockWorkspace struct {
 }
 
 func (m *mockWorkspace) AgentIsReady() bool { return false }
-func (m *mockWorkspace) AgentIsBusy()  bool { return false }
+func (m *mockWorkspace) AgentIsBusy() bool  { return false }
 
 func assertHasHelpBinding(t *testing.T, bindings []key.Binding, key, desc string) {
 	t.Helper()
@@ -143,11 +160,23 @@ func assertLacksHelpBinding(t *testing.T, bindings []key.Binding, key, desc stri
 func newShortcutTestUI() *UI {
 	keyMap := DefaultKeyMap()
 	st := styles.DefaultStyles()
+	ta := textarea.New()
+	ta.SetStyles(st.TextArea)
+	ta.ShowLineNumbers = false
+	ta.CharLimit = -1
+	ta.SetVirtualCursor(false)
+	ta.DynamicHeight = true
+	ta.MinHeight = TextareaMinHeight
+	ta.MaxHeight = TextareaMaxHeight
+	ta.Focus()
+
+	com := &common.Common{
+		Styles:    &st,
+		Workspace: &mockWorkspace{},
+	}
+
 	return &UI{
-		com: &common.Common{
-			Styles:    &st,
-			Workspace: &mockWorkspace{},
-		},
+		com: com,
 		attachments: attachments.New(
 			attachments.NewRenderer(
 				lipgloss.NewStyle(),
@@ -166,5 +195,31 @@ func newShortcutTestUI() *UI {
 		state:        uiChat,
 		focus:        uiFocusEditor,
 		viewRegistry: views.DefaultRegistry(),
+		textarea:     ta,
+		status:       NewStatus(com, nil),
+		chat:         NewChat(com),
+		width:        140,
+		height:       45,
 	}
 }
+
+type shortcutCaptureView struct {
+	receivedKey bool
+}
+
+func (v *shortcutCaptureView) Init() tea.Cmd { return nil }
+
+func (v *shortcutCaptureView) Update(msg tea.Msg) (views.View, tea.Cmd) {
+	if _, ok := msg.(tea.KeyPressMsg); ok {
+		v.receivedKey = true
+	}
+	return v, nil
+}
+
+func (v *shortcutCaptureView) View() string { return "" }
+
+func (v *shortcutCaptureView) Name() string { return "capture" }
+
+func (v *shortcutCaptureView) SetSize(_, _ int) {}
+
+func (v *shortcutCaptureView) ShortHelp() []key.Binding { return nil }

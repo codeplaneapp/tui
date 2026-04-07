@@ -2000,3 +2000,40 @@ func TestTimelineView_ActionError_EmitsToastCmd(t *testing.T) {
 	assert.Equal(t, components.ToastLevelError, toast.Level)
 	assert.Contains(t, toast.Body, "network error")
 }
+
+// --- classifySnapshot: exception keyword ---
+
+func TestClassifySnapshot_Error_Exception(t *testing.T) {
+	snap := makeSnapshot("s1", "r1", "node", "Caught exception in handler", 1, time.Now())
+	assert.Equal(t, snapshotKindError, classifySnapshot(snap))
+}
+
+// --- classifySnapshot: case-insensitivity ---
+
+func TestClassifySnapshot_CaseInsensitive(t *testing.T) {
+	// The function lowercases both label and nodeID before matching.
+	snap := makeSnapshot("s1", "r1", "NODE-X", "MANUAL Save", 1, time.Now())
+	assert.Equal(t, snapshotKindManual, classifySnapshot(snap))
+
+	snapErr := makeSnapshot("s2", "r1", "node", "FATAL ERROR OCCURRED", 2, time.Now())
+	assert.Equal(t, snapshotKindError, classifySnapshot(snapErr))
+}
+
+// --- snapshotKindLabel: unknown kind falls to default ---
+
+func TestSnapshotKindLabel_UnknownKind(t *testing.T) {
+	// An out-of-range snapshotKind should fall through to the default "auto"
+	// branch, since the switch only handles the four known constants.
+	unknown := snapshotKind(999)
+	assert.Equal(t, "auto", snapshotKindLabel(unknown))
+}
+
+// --- snapshotKindStyle: unknown kind returns green (auto) default ---
+
+func TestSnapshotKindStyle_UnknownKind(t *testing.T) {
+	unknown := snapshotKind(999)
+	// The default case should return the auto (green) style.
+	rendered := snapshotKindStyle(unknown).Render("X")
+	autoRendered := snapshotKindStyle(snapshotKindAuto).Render("X")
+	assert.Equal(t, autoRendered, rendered, "unknown kind should use the auto/default style")
+}
