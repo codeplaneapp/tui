@@ -1,5 +1,5 @@
 // Package components provides reusable Bubble Tea v2 UI components for the
-// Smithers TUI.
+// Codeplane.
 package components
 
 import (
@@ -98,10 +98,10 @@ type toast struct {
 //	    m.toasts.Draw(scr, area)
 //	}
 type ToastManager struct {
-	toasts  []toast
-	nextID  uint64
-	st      *styles.Styles
-	now     func() time.Time // injectable for tests; nil uses time.Now
+	toasts []toast
+	nextID uint64
+	st     *styles.Styles
+	now    func() time.Time // injectable for tests; nil uses time.Now
 }
 
 // NewToastManager creates a new [ToastManager].

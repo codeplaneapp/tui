@@ -48,9 +48,9 @@ func (r *Registry) Names() []string {
 // DefaultRegistry returns a Registry pre-loaded with all built-in Smithers views.
 func DefaultRegistry() *Registry {
 	r := NewRegistry()
-	r.Register("agents", func(c *smithers.Client) View { return NewAgentsView(c) })
-	r.Register("approvals", func(c *smithers.Client) View { return NewApprovalsView(c) })
-	r.Register("changes", func(c *smithers.Client) View { return NewChangesView(c) })
+	r.Register("agents", func(c *smithers.Client) View { return NewAgentsView(packageCom, c) })
+	r.Register("approvals", func(c *smithers.Client) View { return NewApprovalsView(packageCom, c) })
+	r.Register("changes", func(c *smithers.Client) View { return NewChangesView(packageCom, c) })
 	r.Register("chat", func(c *smithers.Client) View { return NewChatView(c) })
 	r.Register("issues", func(c *smithers.Client) View { return NewIssuesView(c) })
 	r.Register("jjhub-workflows", func(c *smithers.Client) View { return NewJJHubWorkflowsView(c) })
@@ -60,7 +60,7 @@ func DefaultRegistry() *Registry {
 	r.Register("scores", func(c *smithers.Client) View { return NewScoresView(c) })
 	r.Register("search", func(c *smithers.Client) View { return NewSearchView(c) })
 	r.Register("sql", func(c *smithers.Client) View { return NewSQLBrowserView(c) })
-	r.Register("status", func(c *smithers.Client) View { return NewStatusView(c) })
+	r.Register("status", func(c *smithers.Client) View { return NewStatusView(packageCom, c) })
 	r.Register("tickets", func(c *smithers.Client) View { return NewTicketsView(c) })
 	r.Register("triggers", func(c *smithers.Client) View { return NewTriggersView(c) })
 	r.Register("workspaces", func(c *smithers.Client) View { return NewWorkspacesView(c) })

@@ -31,9 +31,9 @@ type ticketDetailErrorMsg struct {
 
 // TicketDetailView is a full-screen view for a single ticket.
 type TicketDetailView struct {
-	client  *smithers.Client
-	sty     *styles.Styles
-	ticket  smithers.Ticket
+	client *smithers.Client
+	sty    *styles.Styles
+	ticket smithers.Ticket
 
 	rendered      []string
 	renderedWidth int
@@ -322,25 +322,19 @@ func (v *TicketDetailView) View() string {
 
 // renderHeader renders the breadcrumb header with scroll info and key hints.
 func (v *TicketDetailView) renderHeader() string {
-	title := "SMITHERS \u203a Tickets \u203a " + v.ticket.ID
-	styledTitle := lipgloss.NewStyle().Bold(true).Render(title)
+	viewName := "Tickets › " + v.ticket.ID
 
 	var scrollInfo string
 	if len(v.rendered) > 0 {
 		scrollInfo = fmt.Sprintf("(%d/%d)", v.scrollOffset+1, len(v.rendered))
 	}
 
-	hints := "[e] Edit  [Esc] Back"
-	styledHints := lipgloss.NewStyle().Faint(true).Render(hints)
-
-	if v.width > 0 {
-		right := scrollInfo + "  " + styledHints
-		gap := v.width - lipgloss.Width(styledTitle) - lipgloss.Width(right) - 2
-		if gap > 0 {
-			return styledTitle + strings.Repeat(" ", gap) + right
-		}
+	rightSide := "[e] Edit  [Esc] Back"
+	if scrollInfo != "" {
+		rightSide = scrollInfo + "  " + rightSide
 	}
-	return styledTitle
+
+	return ViewHeader(packageCom.Styles, "SMITHERS", viewName, v.width, rightSide)
 }
 
 // renderHelpBar renders the bottom key-binding help bar.

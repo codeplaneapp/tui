@@ -5,13 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/crush/internal/jjhub"
+	"github.com/charmbracelet/crush/internal/observability"
 	"github.com/charmbracelet/crush/internal/smithers"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 var _ View = (*SearchView)(nil)
@@ -114,6 +117,17 @@ func newSearchViewWithClient(client searchManager) *SearchView {
 	return v
 }
 
+func (t searchTab) String() string {
+	switch t {
+	case searchTabIssues:
+		return "issues"
+	case searchTabCode:
+		return "code"
+	default:
+		return "repos"
+	}
+}
+
 func (v *SearchView) Init() tea.Cmd {
 	if v.client == nil {
 		return nil
@@ -135,28 +149,51 @@ func (v *SearchView) loadRepoCmd() tea.Cmd {
 func (v *SearchView) searchCmd() tea.Cmd {
 	client := v.client
 	query := strings.TrimSpace(v.input.Value())
+	tab := v.tab
+	queryLength := len([]rune(query))
 	if query == "" {
+		err := errors.New("Search query must not be empty")
+		observability.RecordUIAction("search", "query", 0, err,
+			attribute.String("codeplane.search.tab", tab.String()),
+			attribute.Int("codeplane.search.query_length", queryLength),
+		)
 		return func() tea.Msg {
-			return searchErrorMsg{err: errors.New("Search query must not be empty")}
+			return searchErrorMsg{err: err}
 		}
 	}
 
+	start := time.Now()
 	return func() tea.Msg {
-		switch v.tab {
+		switch tab {
 		case searchTabIssues:
 			results, err := client.SearchIssues(context.Background(), query, "all", 50)
+			observability.RecordUIAction("search", "query", time.Since(start), err,
+				attribute.String("codeplane.search.tab", tab.String()),
+				attribute.Int("codeplane.search.query_length", queryLength),
+				attribute.Int("codeplane.search.result_count", searchIssueCount(results)),
+			)
 			if err != nil {
 				return searchErrorMsg{err: err}
 			}
 			return searchIssueResultsMsg{results: results}
 		case searchTabCode:
 			results, err := client.SearchCode(context.Background(), query, 50)
+			observability.RecordUIAction("search", "query", time.Since(start), err,
+				attribute.String("codeplane.search.tab", tab.String()),
+				attribute.Int("codeplane.search.query_length", queryLength),
+				attribute.Int("codeplane.search.result_count", searchCodeCount(results)),
+			)
 			if err != nil {
 				return searchErrorMsg{err: err}
 			}
 			return searchCodeResultsMsg{results: results}
 		default:
 			results, err := client.SearchRepositories(context.Background(), query, 50)
+			observability.RecordUIAction("search", "query", time.Since(start), err,
+				attribute.String("codeplane.search.tab", tab.String()),
+				attribute.Int("codeplane.search.query_length", queryLength),
+				attribute.Int("codeplane.search.result_count", searchRepoCount(results)),
+			)
 			if err != nil {
 				return searchErrorMsg{err: err}
 			}
@@ -203,6 +240,11 @@ func (v *SearchView) cycleTab() tea.Cmd {
 	v.tab = (v.tab + 1) % 3
 	v.cursor = 0
 	v.err = nil
+	observability.RecordUIAction("search", "cycle_tab", 0, nil,
+		attribute.String("codeplane.search.tab", v.tab.String()),
+		attribute.Bool("codeplane.search.has_query", strings.TrimSpace(v.input.Value()) != ""),
+		attribute.Bool("codeplane.search.has_searched", v.hasSearched),
+	)
 	if strings.TrimSpace(v.input.Value()) == "" || !v.hasSearched {
 		return nil
 	}
@@ -304,10 +346,11 @@ func (v *SearchView) Update(msg tea.Msg) (View, tea.Cmd) {
 
 func (v *SearchView) View() string {
 	var b strings.Builder
-	b.WriteString(jjhubHeader("JJHUB › Search", v.width, jjhubJoinNonEmpty("  ",
+	rightSide := jjhubJoinNonEmpty("  ",
 		jjhubRepoLabel(v.repo),
-		lipgloss.NewStyle().Faint(true).Render("[Esc] Back"),
-	)))
+		"[Esc] Back",
+	)
+	b.WriteString(ViewHeader(packageCom.Styles, "SMITHERS", "Search", v.width, rightSide))
 	b.WriteString("\n\n")
 	b.WriteString(v.renderTabBar())
 	b.WriteString("\n")
@@ -516,4 +559,25 @@ func searchCodePreview(item jjhub.CodeSearchItem) string {
 		return item.Repository
 	}
 	return strings.TrimSpace(item.TextMatches[0].Content)
+}
+
+func searchRepoCount(results *jjhub.RepositorySearchPage) int {
+	if results == nil {
+		return 0
+	}
+	return len(results.Items)
+}
+
+func searchIssueCount(results *jjhub.IssueSearchPage) int {
+	if results == nil {
+		return 0
+	}
+	return len(results.Items)
+}
+
+func searchCodeCount(results *jjhub.CodeSearchPage) int {
+	if results == nil {
+		return 0
+	}
+	return len(results.Items)
 }

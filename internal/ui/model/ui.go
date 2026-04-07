@@ -241,6 +241,8 @@ type UI struct {
 	// Editor components
 	textarea textarea.Model
 
+	systemAnim *anim.Anim
+
 	// Attachment list
 	attachments *attachments.Attachments
 
@@ -379,12 +381,20 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 		viewRouter:          views.NewRouter(),
 		viewRegistry:        views.DefaultRegistry(),
 		smithersClient:      buildSmithersClient(com.Config()),
+		systemAnim: anim.New(anim.Settings{
+			Size:        10,
+			Label:       "SMITHERS",
+			GradColorA:  com.Styles.Primary,
+			GradColorB:  com.Styles.Secondary,
+			LabelColor:  com.Styles.Primary,
+			CycleColors: true,
+		}),
 	}
 
 	// Always create the dashboard — it adapts based on whether Smithers is available.
 	hasSmithers := com.Config().Smithers != nil
 	jjhubClient := jjhub.NewClient("") // auto-detect repo from cwd
-	ui.dashboard = views.NewDashboardViewWithJJHub(ui.smithersClient, hasSmithers, jjhubClient)
+	ui.dashboard = views.NewDashboardViewWithJJHub(ui.com, ui.smithersClient, hasSmithers, jjhubClient)
 
 	status := NewStatus(com, ui)
 
@@ -436,6 +446,7 @@ func featureEnabled(name string) bool {
 // Init initializes the UI model.
 func (m *UI) Init() tea.Cmd {
 	var cmds []tea.Cmd
+	cmds = append(cmds, m.systemAnim.Start())
 	if m.state == uiOnboarding {
 		if cmd := m.openModelsDialog(); cmd != nil {
 			cmds = append(cmds, cmd)
@@ -550,10 +561,14 @@ func bellCmd() tea.Cmd {
 	}
 }
 
-// approvalBellEnabled returns true unless the SMITHERS_APPROVAL_BELL
-// environment variable is set to "0" or "false".
+// approvalBellEnabled returns true unless the CODEPLANE_APPROVAL_BELL
+// environment variable is set to "0" or "false". Legacy Smithers env vars are
+// still honored during migration.
 func approvalBellEnabled() bool {
-	v := os.Getenv("SMITHERS_APPROVAL_BELL")
+	v := os.Getenv("CODEPLANE_APPROVAL_BELL")
+	if v == "" {
+		v = os.Getenv("SMITHERS_APPROVAL_BELL")
+	}
 	return v != "0" && v != "false"
 }
 
@@ -642,6 +657,22 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Update terminal capabilities
 	m.caps.Update(msg)
 	switch msg := msg.(type) {
+	case anim.StepMsg:
+		if !m.com.Workspace.AgentIsReady() {
+			if cmd := m.systemAnim.Animate(msg); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+		if m.state == uiChat {
+			if cmd := m.chat.Animate(msg); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+			if m.chat.Follow() {
+				if cmd := m.chat.ScrollToBottomAndAnimate(); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+			}
+		}
 	case tea.EnvMsg:
 		// Is this Windows Terminal?
 		if !m.sendProgressBar {
@@ -833,7 +864,7 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 		if cmd := m.sendNotification(notification.Notification{
-			Title:   "Crush is waiting...",
+			Title:   "Codeplane is waiting...",
 			Message: fmt.Sprintf("Permission required to execute \"%s\"", msg.Payload.ToolName),
 		}); cmd != nil {
 			cmds = append(cmds, cmd)
@@ -1076,17 +1107,6 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if cmd := m.chat.ScrollToSelectedAndAnimate(); cmd != nil {
 						cmds = append(cmds, cmd)
 					}
-				}
-			}
-		}
-	case anim.StepMsg:
-		if m.state == uiChat {
-			if cmd := m.chat.Animate(msg); cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-			if m.chat.Follow() {
-				if cmd := m.chat.ScrollToBottomAndAnimate(); cmd != nil {
-					cmds = append(cmds, cmd)
 				}
 			}
 		}
@@ -1757,7 +1777,7 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 
 	case dialog.ActionOpenAgentsView:
 		m.dialog.CloseDialog(dialog.CommandsID)
-		agentsView := views.NewAgentsView(m.smithersClient)
+		agentsView := views.NewAgentsView(m.com, m.smithersClient)
 		cmd := m.viewRouter.PushView(agentsView)
 		m.setState(uiSmithersView, uiFocusMain)
 		cmds = append(cmds, cmd)
@@ -1771,7 +1791,7 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 
 	case dialog.ActionOpenApprovalsView:
 		m.dialog.CloseDialog(dialog.CommandsID)
-		approvalsView := views.NewApprovalsView(m.smithersClient)
+		approvalsView := views.NewApprovalsView(m.com, m.smithersClient)
 		cmd := m.viewRouter.PushView(approvalsView)
 		m.setState(uiSmithersView, uiFocusMain)
 		cmds = append(cmds, cmd)
@@ -1854,9 +1874,9 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 	case views.OpenTicketDetailMsg:
 		var detailView *views.TicketDetailView
 		if msg.EditMode {
-			detailView = views.NewTicketDetailViewEditMode(m.smithersClient, nil, msg.Ticket)
+			detailView = views.NewTicketDetailViewEditMode(m.smithersClient, m.com.Styles, msg.Ticket)
 		} else {
-			detailView = views.NewTicketDetailView(m.smithersClient, nil, msg.Ticket)
+			detailView = views.NewTicketDetailView(m.smithersClient, m.com.Styles, msg.Ticket)
 		}
 		cmd := m.viewRouter.PushView(detailView)
 		m.setState(uiSmithersView, uiFocusMain)
@@ -2065,7 +2085,7 @@ func (m *UI) handleNavigateToView(msg NavigateToViewMsg) tea.Cmd {
 		m.setState(uiSmithersView, uiFocusMain)
 		return cmd
 	case "approvals":
-		approvalsView := views.NewApprovalsView(m.smithersClient)
+		approvalsView := views.NewApprovalsView(m.com, m.smithersClient)
 		cmd := m.viewRouter.Push(approvalsView, m.width, m.height)
 		m.setState(uiSmithersView, uiFocusMain)
 		return cmd
@@ -2651,7 +2671,7 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	}
 
 	// Debugging rendering (visually see when the tui rerenders)
-	if os.Getenv("SMITHERS_TUI_UI_DEBUG") == "true" {
+	if os.Getenv("CODEPLANE_UI_DEBUG") == "true" || os.Getenv("SMITHERS_TUI_UI_DEBUG") == "true" {
 		debugView := lipgloss.NewStyle().Background(lipgloss.ANSIColor(rand.Intn(256))).Width(4).Height(2)
 		debug := uv.NewStyledString(debugView.String())
 		debug.Draw(scr, image.Rectangle{
@@ -3585,9 +3605,9 @@ func (m *UI) handleViewResult(result tea.Msg) []tea.Cmd {
 	case views.OpenTicketDetailMsg:
 		var detailView *views.TicketDetailView
 		if msg.EditMode {
-			detailView = views.NewTicketDetailViewEditMode(m.smithersClient, nil, msg.Ticket)
+			detailView = views.NewTicketDetailViewEditMode(m.smithersClient, m.com.Styles, msg.Ticket)
 		} else {
-			detailView = views.NewTicketDetailView(m.smithersClient, nil, msg.Ticket)
+			detailView = views.NewTicketDetailView(m.smithersClient, m.com.Styles, msg.Ticket)
 		}
 		cmd := m.viewRouter.PushView(detailView)
 		m.setState(uiSmithersView, uiFocusMain)
@@ -3930,7 +3950,7 @@ func (m *UI) handleAgentNotification(n notify.Notification) tea.Cmd {
 	switch n.Type {
 	case notify.TypeAgentFinished:
 		return m.sendNotification(notification.Notification{
-			Title:   "Crush is waiting...",
+			Title:   "Codeplane is waiting...",
 			Message: fmt.Sprintf("Agent's turn completed in \"%s\"", n.SessionTitle),
 		})
 	default:

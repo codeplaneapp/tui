@@ -6,13 +6,16 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/crush/internal/jjhub"
+	"github.com/charmbracelet/crush/internal/observability"
 	"github.com/charmbracelet/crush/internal/smithers"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 var _ View = (*WorkspacesView)(nil)
@@ -81,6 +84,12 @@ type (
 	workspaceConnectReturnMsg struct {
 		workspaceID string
 		mode        workspaceConnectMode
+		duration    time.Duration
+		err         error
+	}
+	workspaceSSHReturnMsg struct {
+		workspaceID string
+		duration    time.Duration
 		err         error
 	}
 	workspaceActionDoneMsg struct {
@@ -353,10 +362,12 @@ func (v *WorkspacesView) attachCmd(workspace jjhub.Workspace) tea.Cmd {
 			return workspaceActionErrorMsg{err: err}
 		}
 	}
+	start := time.Now()
 	return tea.ExecProcess(cmd, func(err error) tea.Msg {
 		return workspaceConnectReturnMsg{
 			workspaceID: workspace.ID,
 			mode:        workspaceConnectAttach,
+			duration:    time.Since(start),
 			err:         err,
 		}
 	})
@@ -364,10 +375,12 @@ func (v *WorkspacesView) attachCmd(workspace jjhub.Workspace) tea.Cmd {
 
 func (v *WorkspacesView) sshCmd(workspaceID string) tea.Cmd {
 	cmd := exec.Command("jjhub", "workspace", "ssh", workspaceID) //nolint:gosec
+	start := time.Now()
 	return tea.ExecProcess(cmd, func(err error) tea.Msg {
 		return workspaceConnectReturnMsg{
 			workspaceID: workspaceID,
 			mode:        workspaceConnectSSH,
+			duration:    time.Since(start),
 			err:         err,
 		}
 	})
@@ -376,8 +389,15 @@ func (v *WorkspacesView) sshCmd(workspaceID string) tea.Cmd {
 func (v *WorkspacesView) createWorkspaceCmd(name string) tea.Cmd {
 	client := v.client
 	displayName := strings.TrimSpace(name)
+	start := time.Now()
 	return func() tea.Msg {
 		workspace, err := client.CreateWorkspace(context.Background(), name, "")
+		attrs := workspaceObservabilityAttrs("ui", "")
+		attrs = append(attrs, attribute.Bool("codeplane.workspace.from_snapshot", false))
+		if workspace != nil {
+			attrs = append(attrs, attribute.String("codeplane.workspace.id", workspace.ID))
+		}
+		recordWorkspaceResult("create", time.Since(start), err, attrs...)
 		if err != nil {
 			return workspaceActionErrorMsg{err: err}
 		}
@@ -399,8 +419,18 @@ func (v *WorkspacesView) createWorkspaceFromSnapshotCmd(name string) tea.Cmd {
 	}
 	snapshotID := snapshot.ID
 	displayName := strings.TrimSpace(name)
+	start := time.Now()
 	return func() tea.Msg {
 		workspace, err := client.CreateWorkspace(context.Background(), name, snapshotID)
+		attrs := workspaceObservabilityAttrs("ui", "")
+		attrs = append(attrs,
+			attribute.Bool("codeplane.workspace.from_snapshot", true),
+			attribute.String("codeplane.workspace.snapshot_id", snapshotID),
+		)
+		if workspace != nil {
+			attrs = append(attrs, attribute.String("codeplane.workspace.id", workspace.ID))
+		}
+		recordWorkspaceResult("create", time.Since(start), err, attrs...)
 		if err != nil {
 			return workspaceActionErrorMsg{err: err}
 		}
@@ -422,8 +452,15 @@ func (v *WorkspacesView) forkWorkspaceCmd(name string) tea.Cmd {
 	}
 	sourceID := workspace.ID
 	displayName := strings.TrimSpace(name)
+	start := time.Now()
 	return func() tea.Msg {
 		forked, err := client.ForkWorkspace(context.Background(), sourceID, name)
+		attrs := workspaceObservabilityAttrs("ui", sourceID)
+		attrs = append(attrs, attribute.String("codeplane.workspace.parent_id", sourceID))
+		if forked != nil {
+			attrs = append(attrs, attribute.String("codeplane.workspace.id", forked.ID))
+		}
+		recordWorkspaceResult("fork", time.Since(start), err, attrs...)
 		if err != nil {
 			return workspaceActionErrorMsg{err: err}
 		}
@@ -448,14 +485,22 @@ func (v *WorkspacesView) suspendOrResumeCmd() tea.Cmd {
 	call := func() (*jjhub.Workspace, error) {
 		return client.SuspendWorkspace(context.Background(), id)
 	}
+	operation := "suspend"
 	if strings.EqualFold(workspace.Status, "suspended") {
 		action = "Resumed"
+		operation = "resume"
 		call = func() (*jjhub.Workspace, error) {
 			return client.ResumeWorkspace(context.Background(), id)
 		}
 	}
+	start := time.Now()
 	return func() tea.Msg {
 		updated, err := call()
+		attrs := workspaceObservabilityAttrs("ui", id)
+		if updated != nil {
+			attrs = append(attrs, attribute.String("codeplane.workspace.status", updated.Status))
+		}
+		recordWorkspaceResult(operation, time.Since(start), err, attrs...)
 		if err != nil {
 			return workspaceActionErrorMsg{err: err}
 		}
@@ -474,8 +519,11 @@ func (v *WorkspacesView) deleteWorkspaceCmd() tea.Cmd {
 	}
 	id := workspace.ID
 	name := workspaceName(*workspace)
+	start := time.Now()
 	return func() tea.Msg {
-		if err := client.DeleteWorkspace(context.Background(), id); err != nil {
+		err := client.DeleteWorkspace(context.Background(), id)
+		recordWorkspaceResult("delete", time.Since(start), err, workspaceObservabilityAttrs("ui", id)...)
+		if err != nil {
 			return workspaceActionErrorMsg{err: err}
 		}
 		return workspaceActionDoneMsg{message: fmt.Sprintf("Deleted %s", name)}
@@ -490,8 +538,14 @@ func (v *WorkspacesView) createSnapshotCmd(name string) tea.Cmd {
 	}
 	workspaceID := workspace.ID
 	displayName := strings.TrimSpace(name)
+	start := time.Now()
 	return func() tea.Msg {
 		snapshot, err := client.CreateWorkspaceSnapshot(context.Background(), workspaceID, name)
+		attrs := workspaceObservabilityAttrs("ui", workspaceID)
+		if snapshot != nil {
+			attrs = append(attrs, attribute.String("codeplane.workspace.snapshot_id", snapshot.ID))
+		}
+		recordWorkspaceResult("snapshot_create", time.Since(start), err, attrs...)
 		if err != nil {
 			return workspaceActionErrorMsg{err: err}
 		}
@@ -513,8 +567,15 @@ func (v *WorkspacesView) deleteSnapshotCmd() tea.Cmd {
 	}
 	id := snapshot.ID
 	name := snapshotName(*snapshot)
+	start := time.Now()
 	return func() tea.Msg {
-		if err := client.DeleteWorkspaceSnapshot(context.Background(), id); err != nil {
+		err := client.DeleteWorkspaceSnapshot(context.Background(), id)
+		recordWorkspaceResult("snapshot_delete", time.Since(start), err,
+			append(workspaceObservabilityAttrs("ui", ""),
+				attribute.String("codeplane.workspace.snapshot_id", id),
+			)...,
+		)
+		if err != nil {
 			return workspaceActionErrorMsg{err: err}
 		}
 		return workspaceActionDoneMsg{message: fmt.Sprintf("Deleted snapshot %s", name)}
@@ -605,16 +666,28 @@ func (v *WorkspacesView) Update(msg tea.Msg) (View, tea.Cmd) {
 		v.connectingMode = ""
 		modeLabel := "Attach"
 		successLabel := "Detached from"
+		operation := "attach"
 		if msg.mode == workspaceConnectSSH {
 			modeLabel = "SSH"
 			successLabel = "Disconnected from"
+			operation = "ssh"
 		}
+		recordWorkspaceResult(operation, msg.duration, msg.err,
+			workspaceObservabilityAttrs("ui", msg.workspaceID)...,
+		)
 		if msg.err != nil {
 			v.actionMsg = fmt.Sprintf("%s error: %v", modeLabel, msg.err)
 			return v, nil
 		}
 		v.actionMsg = fmt.Sprintf("%s %s", successLabel, msg.workspaceID)
 		return v, v.refreshCmd()
+	case workspaceSSHReturnMsg:
+		return v.Update(workspaceConnectReturnMsg{
+			workspaceID: msg.workspaceID,
+			mode:        workspaceConnectSSH,
+			duration:    msg.duration,
+			err:         msg.err,
+		})
 	case workspaceActionDoneMsg:
 		v.closePrompt()
 		v.actionMsg = msg.message
@@ -771,11 +844,11 @@ func (v *WorkspacesView) Update(msg tea.Msg) (View, tea.Cmd) {
 func (v *WorkspacesView) View() string {
 	var b strings.Builder
 	right := []string{
-		lipgloss.NewStyle().Faint(true).Render("[" + workspaceModeLabel(v.mode) + "]"),
+		"[" + workspaceModeLabel(v.mode) + "]",
 		jjhubRepoLabel(v.repo),
-		lipgloss.NewStyle().Faint(true).Render("[Esc] Back"),
+		"[Esc] Back",
 	}
-	b.WriteString(jjhubHeader("JJHUB › Workspaces", v.width, jjhubJoinNonEmpty("  ", right...)))
+	b.WriteString(ViewHeader(packageCom.Styles, "SMITHERS", "Workspaces", v.width, jjhubJoinNonEmpty("  ", right...)))
 	b.WriteString("\n\n")
 
 	if v.connectingID != "" {
@@ -1034,6 +1107,30 @@ func workspacePromptUsesInput(kind workspacePromptKind) bool {
 	default:
 		return false
 	}
+}
+
+func workspaceObservabilityAttrs(source, workspaceID string) []attribute.KeyValue {
+	attrs := []attribute.KeyValue{
+		attribute.String("codeplane.workspace.source", source),
+	}
+	if strings.TrimSpace(workspaceID) != "" {
+		attrs = append(attrs, attribute.String("codeplane.workspace.id", workspaceID))
+	}
+	return attrs
+}
+
+func recordWorkspaceResult(operation string, duration time.Duration, err error, attrs ...attribute.KeyValue) {
+	if err != nil {
+		attrs = append(attrs, attribute.String("codeplane.error", err.Error()))
+	}
+	observability.RecordWorkspaceLifecycle(operation, workspaceResult(err), duration, attrs...)
+}
+
+func workspaceResult(err error) string {
+	if err == nil {
+		return "ok"
+	}
+	return "error"
 }
 
 func workspacePromptTitle(kind workspacePromptKind) string {

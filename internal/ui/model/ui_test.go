@@ -95,7 +95,7 @@ func TestHandleViewResult_PopViewMsg_LastViewReturnsToDashboard(t *testing.T) {
 	t.Parallel()
 
 	ui := newShortcutTestUI()
-	ui.dashboard = views.NewDashboardView(nil, false)
+	ui.dashboard = views.NewDashboardView(ui.com, nil, false)
 	ui.viewRouter = views.NewRouter()
 	ui.viewRouter.Push(views.NewChatView(nil), 0, 0)
 	ui.setState(uiSmithersView, uiFocusMain)
@@ -262,7 +262,7 @@ func TestFeatureEnabled(t *testing.T) {
 
 func TestApprovalBellEnabled(t *testing.T) {
 	// Uses t.Setenv so cannot be parallel at the top level.
-	const envKey = "SMITHERS_APPROVAL_BELL"
+	const envKey = "CODEPLANE_APPROVAL_BELL"
 
 	tests := []struct {
 		name  string
@@ -293,7 +293,7 @@ func TestApprovalBellEnabled(t *testing.T) {
 func TestApprovalBellEnabled_DefaultWhenUnset(t *testing.T) {
 	// Verify that when the env var is completely absent, bell is enabled.
 	// We use a name unlikely to be set.
-	t.Setenv("SMITHERS_APPROVAL_BELL", "")
+	t.Setenv("CODEPLANE_APPROVAL_BELL", "")
 	// Empty string: approvalBellEnabled checks != "0" && != "false", so empty passes.
 	require.True(t, approvalBellEnabled())
 }

@@ -208,7 +208,7 @@ func TestApprovalsView_RenderDetail_ShowsAllFields(t *testing.T) {
 	assert.Contains(t, detail, "Deploy to staging")
 	assert.Contains(t, detail, "run-abc")
 	assert.Contains(t, detail, "deploy-node")
-	assert.Contains(t, detail, "pending")
+	assert.Contains(t, detail, "Requested:")
 }
 
 func TestApprovalsView_RenderDetail_EmptyWhenNoCursor(t *testing.T) {
@@ -235,7 +235,7 @@ func TestApprovalsView_RecentDecisions_ShowsDecidedByLine(t *testing.T) {
 	}
 	v = seedDecisions(v, decisions)
 	out := v.View()
-	assert.Contains(t, out, "by alice")
+	assert.Contains(t, out, "Resolved by:")
 }
 
 // Verify no panic when decisions have a nil DecidedBy.
@@ -276,7 +276,7 @@ func TestApprovalsView_RecentDecisions_ManyEntries_NoPanic(t *testing.T) {
 	}
 	v = seedDecisions(v, decisions)
 	out := v.View()
-	assert.Contains(t, out, "RECENT DECISIONS")
+	assert.Contains(t, out, "Resolution History")
 	assert.Contains(t, out, "Gate 0")
 }
 

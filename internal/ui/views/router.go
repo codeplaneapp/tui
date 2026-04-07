@@ -30,6 +30,14 @@ type Focusable interface {
 // PopViewMsg signals the router to pop the current view and return to chat.
 type PopViewMsg struct{}
 
+// OpenChatMsg signals that the embedded Smithers chat should be opened.
+type OpenChatMsg struct{}
+
+// DashboardNavigateMsg signals that the dashboard requested navigation to a named view.
+type DashboardNavigateMsg struct {
+	View string
+}
+
 // Router manages a stack of views with chat as the guaranteed root.
 // Chat is never popped from the stack; all non-root views push on top of it.
 type Router struct {

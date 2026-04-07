@@ -8,6 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/crush/internal/jjhub"
+	"github.com/charmbracelet/crush/internal/observability"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -25,10 +26,10 @@ type mockWorkspaceManager struct {
 		name       string
 		snapshotID string
 	}
-	deleteCalls []string
+	deleteCalls  []string
 	suspendCalls []string
 	resumeCalls  []string
-	forkCalls   []struct {
+	forkCalls    []struct {
 		workspaceID string
 		name        string
 	}
@@ -38,11 +39,11 @@ type mockWorkspaceManager struct {
 	}
 	snapshotDeleteCalls []string
 
-	createErr  error
-	deleteErr  error
-	suspendErr error
-	resumeErr  error
-	forkErr    error
+	createErr     error
+	deleteErr     error
+	suspendErr    error
+	resumeErr     error
+	forkErr       error
 	snapCreateErr error
 	snapDeleteErr error
 }
@@ -142,6 +143,39 @@ func makeWSWithSSH(id, name, status, sshHost string) jjhub.Workspace {
 
 func makeWSSnapshot(id, name, snapshotID string, workspaceID *string) jjhub.WorkspaceSnapshot {
 	return jjhub.WorkspaceSnapshot{ID: id, Name: name, SnapshotID: snapshotID, WorkspaceID: workspaceID}
+}
+
+func configureWorkspacesObservability(t *testing.T) {
+	t.Helper()
+
+	t.Cleanup(func() {
+		require.NoError(t, observability.Shutdown(context.Background()))
+	})
+
+	require.NoError(t, observability.Configure(context.Background(), observability.Config{
+		ServiceName:      "test",
+		ServiceVersion:   "dev",
+		Mode:             observability.ModeLocal,
+		TraceBufferSize:  32,
+		TraceSampleRatio: 1,
+	}))
+}
+
+func requireWorkspaceViewSpanAttrs(t *testing.T, operation, result string) map[string]any {
+	t.Helper()
+
+	for _, span := range observability.RecentSpans(30) {
+		if span.Name != "workspace.lifecycle" {
+			continue
+		}
+		if span.Attributes["codeplane.workspace.operation"] == operation &&
+			span.Attributes["codeplane.workspace.result"] == result {
+			return span.Attributes
+		}
+	}
+
+	t.Fatalf("missing workspace.lifecycle span operation=%q result=%q", operation, result)
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -848,32 +882,67 @@ func TestWorkspacesView_SSH_NoWorkspaceSelected(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestWorkspacesView_SSHReturn_Error(t *testing.T) {
-	t.Parallel()
+	configureWorkspacesObservability(t)
 	manager := &mockWorkspaceManager{}
 	v := newWorkspacesViewWithClient(manager)
 	v.connectingID = "ws-1"
 
-	updated, cmd := v.Update(workspaceSSHReturnMsg{workspaceID: "ws-1", err: errors.New("connection refused")})
+	updated, cmd := v.Update(workspaceConnectReturnMsg{
+		workspaceID: "ws-1",
+		mode:        workspaceConnectSSH,
+		err:         errors.New("connection refused"),
+	})
 	wv := updated.(*WorkspacesView)
 
 	assert.Empty(t, wv.connectingID)
 	assert.Contains(t, wv.actionMsg, "SSH error")
 	assert.Contains(t, wv.actionMsg, "connection refused")
 	assert.Nil(t, cmd, "should not refresh on SSH error")
+
+	attrs := requireWorkspaceViewSpanAttrs(t, "ssh", "error")
+	assert.Equal(t, "ws-1", attrs["codeplane.workspace.id"])
 }
 
 func TestWorkspacesView_SSHReturn_Success(t *testing.T) {
-	t.Parallel()
+	configureWorkspacesObservability(t)
 	manager := &mockWorkspaceManager{}
 	v := newWorkspacesViewWithClient(manager)
 	v.connectingID = "ws-1"
 
-	updated, cmd := v.Update(workspaceSSHReturnMsg{workspaceID: "ws-1", err: nil})
+	updated, cmd := v.Update(workspaceConnectReturnMsg{
+		workspaceID: "ws-1",
+		mode:        workspaceConnectSSH,
+		err:         nil,
+	})
 	wv := updated.(*WorkspacesView)
 
 	assert.Empty(t, wv.connectingID)
 	assert.Contains(t, wv.actionMsg, "Disconnected")
 	require.NotNil(t, cmd, "should refresh after successful SSH disconnect")
+
+	attrs := requireWorkspaceViewSpanAttrs(t, "ssh", "ok")
+	assert.Equal(t, "ws-1", attrs["codeplane.workspace.id"])
+}
+
+func TestWorkspacesView_AttachReturn_SuccessRecordsObservability(t *testing.T) {
+	configureWorkspacesObservability(t)
+
+	v := newWorkspacesViewWithClient(&mockWorkspaceManager{})
+	v.connectingID = "ws-attach"
+
+	updated, cmd := v.Update(workspaceConnectReturnMsg{
+		workspaceID: "ws-attach",
+		mode:        workspaceConnectAttach,
+		err:         nil,
+	})
+	wv := updated.(*WorkspacesView)
+
+	assert.Empty(t, wv.connectingID)
+	assert.Contains(t, wv.actionMsg, "Detached from ws-attach")
+	require.NotNil(t, cmd)
+
+	attrs := requireWorkspaceViewSpanAttrs(t, "attach", "ok")
+	assert.Equal(t, "ws-attach", attrs["codeplane.workspace.id"])
 }
 
 // ---------------------------------------------------------------------------
@@ -1338,5 +1407,5 @@ func TestWorkspacesView_ConnectingIndicator(t *testing.T) {
 	v.height = 24
 
 	output := v.View()
-	assert.Contains(t, output, "Connecting to workspace ws-1")
+	assert.Contains(t, output, "Attaching to workspace ws-1")
 }

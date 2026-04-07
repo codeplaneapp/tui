@@ -543,11 +543,12 @@ func (v *IssuesView) Update(msg tea.Msg) (View, tea.Cmd) {
 func (v *IssuesView) View() string {
 	var b strings.Builder
 
-	b.WriteString(jjhubHeader("JJHUB › Issues", v.width, jjhubJoinNonEmpty("  ",
-		lipgloss.NewStyle().Faint(true).Render("["+v.stateFilter+"]"),
+	rightSide := jjhubJoinNonEmpty("  ",
+		"["+v.stateFilter+"]",
 		jjhubRepoLabel(v.repo),
-		lipgloss.NewStyle().Faint(true).Render("[Esc] Back"),
-	)))
+		"[Esc] Back",
+	)
+	b.WriteString(ViewHeader(packageCom.Styles, "SMITHERS", "Issues", v.width, rightSide))
 	b.WriteString("\n\n")
 
 	if v.prompt.active {

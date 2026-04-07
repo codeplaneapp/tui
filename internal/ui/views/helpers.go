@@ -9,7 +9,63 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/crush/internal/jjhub"
+	"github.com/charmbracelet/crush/internal/smithers"
+	"github.com/charmbracelet/crush/internal/ui/common"
+	"github.com/charmbracelet/crush/internal/ui/styles"
 )
+
+var packageCom = common.DefaultCommon(nil)
+
+var (
+	jjhubTitleStyle     = packageCom.Styles.JJHub.Title
+	jjhubSectionStyle   = packageCom.Styles.JJHub.Section
+	jjhubMetaLabelStyle = packageCom.Styles.JJHub.MetaLabel
+	jjhubMetaValueStyle = packageCom.Styles.JJHub.MetaValue
+	jjhubMutedStyle     = packageCom.Styles.JJHub.Muted
+	jjhubErrorStyle     = packageCom.Styles.JJHub.Error
+)
+
+var v = struct {
+	com *common.Common
+}{
+	com: packageCom,
+}
+
+func viewCommon(com *common.Common) *common.Common {
+	if com != nil && com.Styles != nil {
+		return com
+	}
+	if com == nil {
+		return common.DefaultCommon(nil)
+	}
+	defaultStyles := styles.DefaultStyles()
+	com.Styles = &defaultStyles
+	return com
+}
+
+func parseCommonAndClient(args []any) (*common.Common, *smithers.Client, int) {
+	com := viewCommon(nil)
+	offset := 0
+
+	if len(args) > 0 {
+		if provided, ok := args[0].(*common.Common); ok || args[0] == nil {
+			if ok && provided != nil {
+				com = viewCommon(provided)
+			}
+			offset++
+		}
+	}
+
+	var client *smithers.Client
+	if len(args) > offset {
+		client, _ = args[offset].(*smithers.Client)
+		if client != nil || args[offset] == nil {
+			offset++
+		}
+	}
+
+	return com, client, offset
+}
 
 // padRight pads a string to the given width with spaces.
 func padRight(s string, width int) string {
@@ -35,7 +91,7 @@ func truncate(s string, maxLen int) string {
 // truncateStr shortens s to maxLen runes, appending "…" if truncated.
 func truncateStr(s string, maxLen int) string {
 	if maxLen <= 0 {
-		return s
+		maxLen = 80
 	}
 	runes := []rune(s)
 	if len(runes) <= maxLen {
@@ -106,9 +162,6 @@ func wrapLineToWidth(s string, width int) []string {
 	return result
 }
 
-// fmtRelativeAge returns a human-readable relative age string for a Unix
-// millisecond timestamp, e.g. "30s ago", "5m ago", "3h ago", "2d ago".
-// Returns "" if updatedAtMs <= 0.
 func fmtRelativeAge(updatedAtMs int64) string {
 	if updatedAtMs <= 0 {
 		return ""
@@ -129,22 +182,32 @@ func fmtRelativeAge(updatedAtMs int64) string {
 	}
 }
 
-var (
-	jjhubTitleStyle     = lipgloss.NewStyle().Bold(true)
-	jjhubSectionStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("111"))
-	jjhubMetaLabelStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Width(12)
-	jjhubMetaValueStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
-	jjhubMutedStyle     = lipgloss.NewStyle().Faint(true)
-	jjhubErrorStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Bold(true)
-)
-
 func jjhubAvailable() bool {
 	_, err := exec.LookPath("jjhub")
 	return err == nil
 }
 
-func jjhubHeader(title string, width int, right string) string {
-	left := jjhubTitleStyle.Render(title)
+func jjhubHeader(args ...any) string {
+	t := packageCom.Styles
+	var title string
+	var width int
+	var right string
+	switch len(args) {
+	case 3:
+		title, _ = args[0].(string)
+		width, _ = args[1].(int)
+		right, _ = args[2].(string)
+	case 4:
+		if provided, ok := args[0].(*styles.Styles); ok && provided != nil {
+			t = provided
+		}
+		title, _ = args[1].(string)
+		width, _ = args[2].(int)
+		right, _ = args[3].(string)
+	default:
+		return ""
+	}
+	left := t.JJHub.Title.Render(title)
 	if width <= 0 || strings.TrimSpace(right) == "" {
 		return left
 	}
@@ -155,8 +218,24 @@ func jjhubHeader(title string, width int, right string) string {
 	return left + strings.Repeat(" ", gap) + right
 }
 
-func jjhubMetaRow(label, value string) string {
-	return jjhubMetaLabelStyle.Render(label) + jjhubMetaValueStyle.Render(value)
+func jjhubMetaRow(args ...any) string {
+	t := packageCom.Styles
+	var label string
+	var value string
+	switch len(args) {
+	case 2:
+		label, _ = args[0].(string)
+		value, _ = args[1].(string)
+	case 3:
+		if provided, ok := args[0].(*styles.Styles); ok && provided != nil {
+			t = provided
+		}
+		label, _ = args[1].(string)
+		value, _ = args[2].(string)
+	default:
+		return ""
+	}
+	return t.JJHub.MetaLabel.Render(label) + t.JJHub.MetaValue.Render(value)
 }
 
 func jjhubJoinNonEmpty(sep string, parts ...string) string {
@@ -170,17 +249,30 @@ func jjhubJoinNonEmpty(sep string, parts ...string) string {
 	return strings.Join(filtered, sep)
 }
 
-func jjhubRepoLabel(repo *jjhub.Repo) string {
+func jjhubRepoLabel(args ...any) string {
+	t := packageCom.Styles
+	var repo *jjhub.Repo
+	switch len(args) {
+	case 1:
+		repo, _ = args[0].(*jjhub.Repo)
+	case 2:
+		if provided, ok := args[0].(*styles.Styles); ok && provided != nil {
+			t = provided
+		}
+		repo, _ = args[1].(*jjhub.Repo)
+	default:
+		return ""
+	}
 	if repo == nil {
 		return ""
 	}
 	switch {
 	case strings.TrimSpace(repo.FullName) != "":
-		return jjhubMutedStyle.Render(repo.FullName)
+		return t.JJHub.Muted.Render(repo.FullName)
 	case strings.TrimSpace(repo.Owner) != "" && strings.TrimSpace(repo.Name) != "":
-		return jjhubMutedStyle.Render(repo.Owner + "/" + repo.Name)
+		return t.JJHub.Muted.Render(repo.Owner + "/" + repo.Name)
 	case strings.TrimSpace(repo.Name) != "":
-		return jjhubMutedStyle.Render(repo.Name)
+		return t.JJHub.Muted.Render(repo.Name)
 	default:
 		return ""
 	}
@@ -248,6 +340,265 @@ func jjhubClipLines(s string, maxLines int) (string, bool) {
 		return s, false
 	}
 	return strings.Join(lines[:maxLines], "\n"), true
+}
+
+func jjRelativeTime(ts string) string {
+	t, err := time.Parse(time.RFC3339, ts)
+	if err != nil {
+		t, err = time.Parse(time.RFC3339Nano, ts)
+		if err != nil {
+			return ts
+		}
+	}
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	}
+}
+
+func statusGlyph(args ...any) string {
+	t := packageCom.Styles
+	var s smithers.RunStatus
+	switch len(args) {
+	case 1:
+		s, _ = args[0].(smithers.RunStatus)
+	case 2:
+		if provided, ok := args[0].(*styles.Styles); ok && provided != nil {
+			t = provided
+		}
+		s, _ = args[1].(smithers.RunStatus)
+	default:
+		return t.Subtle.Render("○")
+	}
+	switch s {
+	case smithers.RunStatusRunning:
+		return lipgloss.NewStyle().Foreground(t.Green).Render("●")
+	case smithers.RunStatusWaitingApproval:
+		return lipgloss.NewStyle().Foreground(t.Warning).Render("⚠")
+	case smithers.RunStatusFinished:
+		return t.Subtle.Render("✓")
+	case smithers.RunStatusFailed:
+		return lipgloss.NewStyle().Foreground(t.Error).Render("✗")
+	case smithers.RunStatusCancelled:
+		return t.Subtle.Render("–")
+	default:
+		return t.Subtle.Render("○")
+	}
+}
+
+func fmtDurationMs(ms int64) string {
+	d := time.Duration(ms) * time.Millisecond
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm%ds", int(d.Minutes()), int(d.Seconds())%60)
+	}
+	return fmt.Sprintf("%dh%dm", int(d.Hours()), int(d.Minutes())%60)
+}
+
+func jjLandingStateIcon(args ...any) string {
+	t := packageCom.Styles
+	var state string
+	switch len(args) {
+	case 1:
+		state, _ = args[0].(string)
+	case 2:
+		if provided, ok := args[0].(*styles.Styles); ok && provided != nil {
+			t = provided
+		}
+		state, _ = args[1].(string)
+	default:
+		return t.Subtle.Render("?")
+	}
+	switch state {
+	case "open":
+		return lipgloss.NewStyle().Foreground(t.Green).Render("⬆")
+	case "merged":
+		return lipgloss.NewStyle().Foreground(t.Primary).Render("✓")
+	case "closed":
+		return lipgloss.NewStyle().Foreground(t.Error).Render("✗")
+	case "draft":
+		return t.Subtle.Render("◌")
+	default:
+		return t.Subtle.Render("?")
+	}
+}
+
+func jjLandingStateStyle(args ...any) lipgloss.Style {
+	t := packageCom.Styles
+	var state string
+	switch len(args) {
+	case 1:
+		state, _ = args[0].(string)
+	case 2:
+		if provided, ok := args[0].(*styles.Styles); ok && provided != nil {
+			t = provided
+		}
+		state, _ = args[1].(string)
+	default:
+		return t.Subtle
+	}
+	switch state {
+	case "open":
+		return lipgloss.NewStyle().Foreground(t.Green)
+	case "merged":
+		return lipgloss.NewStyle().Foreground(t.Primary)
+	case "closed":
+		return lipgloss.NewStyle().Foreground(t.Error)
+	case "draft":
+		return t.Subtle
+	default:
+		return t.Subtle
+	}
+}
+
+func jjIssueStateIcon(args ...any) string {
+	t := packageCom.Styles
+	var state string
+	switch len(args) {
+	case 1:
+		state, _ = args[0].(string)
+	case 2:
+		if provided, ok := args[0].(*styles.Styles); ok && provided != nil {
+			t = provided
+		}
+		state, _ = args[1].(string)
+	default:
+		return t.Subtle.Render("?")
+	}
+	switch state {
+	case "open":
+		return lipgloss.NewStyle().Foreground(t.Green).Render("◉")
+	case "closed":
+		return lipgloss.NewStyle().Foreground(t.Error).Render("◎")
+	default:
+		return t.Subtle.Render("?")
+	}
+}
+
+func jjWorkspaceStatusIcon(args ...any) string {
+	t := packageCom.Styles
+	var status string
+	switch len(args) {
+	case 1:
+		status, _ = args[0].(string)
+	case 2:
+		if provided, ok := args[0].(*styles.Styles); ok && provided != nil {
+			t = provided
+		}
+		status, _ = args[1].(string)
+	default:
+		return t.Subtle.Render("?")
+	}
+	switch status {
+	case "running":
+		return lipgloss.NewStyle().Foreground(t.Green).Render("●")
+	case "pending":
+		return lipgloss.NewStyle().Foreground(t.Warning).Render("◌")
+	case "stopped":
+		return t.Subtle.Render("○")
+	case "failed":
+		return lipgloss.NewStyle().Foreground(t.Error).Render("✗")
+	default:
+		return t.Subtle.Render("?")
+	}
+}
+
+func agentStatusIcon(status string) string {
+	switch status {
+	case "likely-subscription", "api-key":
+		return "●"
+	case "binary-only":
+		return "◐"
+	default:
+		return "○"
+	}
+}
+
+func agentStatusStyle(args ...any) lipgloss.Style {
+	t := packageCom.Styles
+	var status string
+	switch len(args) {
+	case 1:
+		status, _ = args[0].(string)
+	case 2:
+		if provided, ok := args[0].(*styles.Styles); ok && provided != nil {
+			t = provided
+		}
+		status, _ = args[1].(string)
+	default:
+		return lipgloss.NewStyle().Faint(true)
+	}
+	switch status {
+	case "likely-subscription":
+		return lipgloss.NewStyle().Foreground(t.Green)
+	case "api-key":
+		return lipgloss.NewStyle().Foreground(t.Yellow)
+	case "binary-only":
+		return lipgloss.NewStyle().Foreground(t.Gray)
+	default:
+		return lipgloss.NewStyle().Faint(true)
+	}
+}
+
+func styledCheck(args ...any) string {
+	t := packageCom.Styles
+	var ok bool
+	switch len(args) {
+	case 1:
+		ok, _ = args[0].(bool)
+	case 2:
+		if provided, styleOK := args[0].(*styles.Styles); styleOK && provided != nil {
+			t = provided
+		}
+		ok, _ = args[1].(bool)
+	default:
+		return lipgloss.NewStyle().Foreground(t.Red).Render("✗")
+	}
+	if ok {
+		return lipgloss.NewStyle().Foreground(t.Green).Render("✓")
+	}
+	return lipgloss.NewStyle().Foreground(t.Red).Render("✗")
+}
+
+func boolLabel(v bool) string {
+	if v {
+		return "yes"
+	}
+	return "no"
+}
+
+func ViewHeader(t *styles.Styles, app, view string, width int, helpHint string) string {
+	appPart := lipgloss.NewStyle().Bold(true).Foreground(t.Primary).Render(app)
+	sepPart := lipgloss.NewStyle().Bold(true).Faint(true).Render(" \u203a ")
+	viewPart := lipgloss.NewStyle().Bold(true).Render(view)
+
+	header := appPart + sepPart + viewPart
+	if helpHint == "" {
+		helpHint = "[Esc] Back"
+	}
+	helpStyle := lipgloss.NewStyle().Faint(true).Render(helpHint)
+
+	if width <= 0 {
+		return header
+	}
+
+	headerWidth := lipgloss.Width(header)
+	helpWidth := lipgloss.Width(helpStyle)
+
+	gap := width - headerWidth - helpWidth - 2
+	if gap <= 0 {
+		return header + "  " + helpStyle
+	}
+	return header + strings.Repeat(" ", gap) + helpStyle
 }
 
 func pluralS(n int) string {

@@ -375,20 +375,12 @@ func (v *TicketsView) View() string {
 	var b strings.Builder
 
 	// Header — include ticket count after loading.
-	title := "SMITHERS \u203a Tickets"
+	viewTitle := "Tickets"
 	if !v.loading && v.err == nil {
-		title = fmt.Sprintf("SMITHERS \u203a Tickets (%d)", len(v.tickets))
+		viewTitle = fmt.Sprintf("Tickets (%d)", len(v.tickets))
 	}
-	header := lipgloss.NewStyle().Bold(true).Render(title)
-	helpHint := lipgloss.NewStyle().Faint(true).Render("[Esc] Back")
-	headerLine := header
-	if v.width > 0 {
-		gap := v.width - lipgloss.Width(header) - lipgloss.Width(helpHint) - 2
-		if gap > 0 {
-			headerLine = header + strings.Repeat(" ", gap) + helpHint
-		}
-	}
-	b.WriteString(headerLine + "\n\n")
+	b.WriteString(ViewHeader(packageCom.Styles, "SMITHERS", viewTitle, v.width, "[Esc] Back"))
+	b.WriteString("\n\n")
 
 	if v.loading {
 		b.WriteString("  Loading tickets...\n")

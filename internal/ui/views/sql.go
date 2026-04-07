@@ -732,17 +732,7 @@ func (v *SQLBrowserView) View() string {
 	var b strings.Builder
 
 	// Header
-	title := "SMITHERS › SQL Browser"
-	header := lipgloss.NewStyle().Bold(true).Render(title)
-	helpHint := lipgloss.NewStyle().Faint(true).Render("[Esc] Back")
-	headerLine := header
-	if v.width > 0 {
-		gap := v.width - lipgloss.Width(header) - lipgloss.Width(helpHint) - 2
-		if gap > 0 {
-			headerLine = header + strings.Repeat(" ", gap) + helpHint
-		}
-	}
-	b.WriteString(headerLine + "\n\n")
+	b.WriteString(ViewHeader(packageCom.Styles, "SMITHERS", "SQL Browser", v.width, "[Esc] Back") + "\n\n")
 
 	if v.loading {
 		b.WriteString("  Loading tables...\n")
@@ -896,8 +886,8 @@ func renderSQLResultTable(result *smithers.SQLResult, maxWidth int, colOffset in
 	}
 
 	// Determine which columns fit within maxWidth starting from colOffset.
-	const indent = 2  // "  " prefix on every line
-	const colSep = 2  // "  " separator between columns
+	const indent = 2 // "  " prefix on every line
+	const colSep = 2 // "  " separator between columns
 	available := maxWidth - indent
 	if available < 10 {
 		available = 10

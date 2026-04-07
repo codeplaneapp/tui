@@ -3,6 +3,8 @@ package model
 import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/crush/internal/ui/common"
+	"github.com/charmbracelet/crush/internal/ui/logo"
+	"github.com/charmbracelet/crush/internal/ui/styles"
 	"github.com/charmbracelet/crush/internal/workspace"
 	"github.com/charmbracelet/ultraviolet/layout"
 )
@@ -24,6 +26,20 @@ func (m *UI) landingView() string {
 	width := m.layout.main.Dx()
 	cwd := common.PrettyPath(t, m.com.Workspace.WorkingDir(), width)
 
+	logoView := logo.LargeRender(t, width)
+	var systemStatus string
+	if m.com.Workspace.AgentIsReady() {
+		systemStatus = styles.ApplyBoldForegroundGrad(t, "SMITHERS", t.Primary, t.Secondary)
+	} else {
+		systemStatus = m.systemAnim.Render()
+	}
+
+	// Smithers Mode indicator.
+	smithersMode := ""
+	if m.com.Config().Smithers != nil {
+		smithersMode = t.ResourceOnlineIcon.Render("Smithers Agent Mode")
+	}
+
 	modelBox := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(t.BorderColor).
@@ -32,21 +48,33 @@ func (m *UI) landingView() string {
 		Render(m.modelInfo(width - 4))
 
 	parts := []string{
-		cwd,
+		logoView,
 		"",
-		modelBox,
+		cwd,
+		systemStatus,
 	}
+	if smithersMode != "" {
+		parts = append(parts, smithersMode)
+	}
+	parts = append(parts, "", modelBox)
 
 	infoSection := lipgloss.JoinVertical(lipgloss.Left, parts...)
 
 	_, remainingHeightArea := layout.SplitVertical(m.layout.main, layout.Fixed(lipgloss.Height(infoSection)+1))
 
-	mcpLspSectionWidth := min(30, (width-1)/2)
+	columnWidth := min(30, (width-1)/2)
+	maxItems := max(1, remainingHeightArea.Dy())
 
-	lspSection := m.lspInfo(mcpLspSectionWidth, max(1, remainingHeightArea.Dy()), false)
-	mcpSection := m.mcpInfo(mcpLspSectionWidth, max(1, remainingHeightArea.Dy()), false)
+	var leftSection, rightSection string
+	if m.com.Config().Smithers != nil {
+		leftSection = m.mcpInfo(columnWidth, maxItems, false)
+		rightSection = m.runsInfo(columnWidth, maxItems, false)
+	} else {
+		leftSection = m.lspInfo(columnWidth, maxItems, false)
+		rightSection = m.mcpInfo(columnWidth, maxItems, false)
+	}
 
-	content := lipgloss.JoinHorizontal(lipgloss.Left, lspSection, " ", mcpSection)
+	content := lipgloss.JoinHorizontal(lipgloss.Left, leftSection, " ", rightSection)
 
 	return lipgloss.NewStyle().
 		Width(width).

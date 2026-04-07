@@ -208,3 +208,10 @@ func TestFindModels(t *testing.T) {
 		})
 	}
 }
+
+func TestFindModels_InvalidProviderErrorUsesCodeplaneModelsCommand(t *testing.T) {
+	err := providerNotFoundError("large", "missing")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "'codeplane models'")
+	require.NotContains(t, err.Error(), "'crush models'")
+}

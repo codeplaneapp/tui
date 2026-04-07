@@ -201,6 +201,16 @@ type Styles struct {
 		Blurred lipgloss.Style
 	}
 
+	// JJHub
+	JJHub struct {
+		Title     lipgloss.Style
+		Section   lipgloss.Style
+		MetaLabel lipgloss.Style
+		MetaValue lipgloss.Style
+		Muted     lipgloss.Style
+		Error     lipgloss.Style
+	}
+
 	// Section Title
 	Section struct {
 		Title lipgloss.Style
@@ -629,6 +639,14 @@ func DefaultStyles() Styles {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(gray).
 		Faint(true)
+
+	// JJHub
+	s.JJHub.Title = lipgloss.NewStyle().Bold(true)
+	s.JJHub.Section = lipgloss.NewStyle().Bold(true).Foreground(blueLight)
+	s.JJHub.MetaLabel = lipgloss.NewStyle().Foreground(fgMuted).Width(12)
+	s.JJHub.MetaValue = lipgloss.NewStyle().Foreground(fgBase)
+	s.JJHub.Muted = lipgloss.NewStyle().Faint(true)
+	s.JJHub.Error = lipgloss.NewStyle().Foreground(red).Bold(true)
 
 	s.TextInput = textinput.Styles{
 		Focused: textinput.StyleState{

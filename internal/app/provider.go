@@ -32,6 +32,10 @@ type modelMatch struct {
 	modelID  string
 }
 
+func providerNotFoundError(label, filter string) error {
+	return fmt.Errorf("%s model: provider %q not found in configuration. Use 'codeplane models' to list available models", label, filter)
+}
+
 func findModels(providers map[string]config.ProviderConfig, largeModel, smallModel string) ([]modelMatch, []modelMatch, error) {
 	largeProviderFilter, largeModelID := parseModelStr(providers, largeModel)
 	smallProviderFilter, smallModelID := parseModelStr(providers, smallModel)
@@ -45,7 +49,7 @@ func findModels(providers map[string]config.ProviderConfig, largeModel, smallMod
 	} {
 		if pf.filter != "" {
 			if _, ok := providers[pf.filter]; !ok {
-				return nil, nil, fmt.Errorf("%s model: provider %q not found in configuration. Use 'crush models' to list available models", pf.label, pf.filter)
+				return nil, nil, providerNotFoundError(pf.label, pf.filter)
 			}
 		}
 	}

@@ -196,9 +196,9 @@ func requireChatSpanAttrs(t *testing.T, entrypoint, target, result string) map[s
 		if span.Name != "ui.navigation" {
 			continue
 		}
-		if span.Attributes["crush.ui.entrypoint"] == entrypoint &&
-			span.Attributes["crush.ui.target"] == target &&
-			span.Attributes["crush.ui.result"] == result {
+		if span.Attributes["codeplane.ui.entrypoint"] == entrypoint &&
+			span.Attributes["codeplane.ui.target"] == target &&
+			span.Attributes["codeplane.ui.result"] == result {
 			return span.Attributes
 		}
 	}

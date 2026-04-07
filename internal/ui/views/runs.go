@@ -889,8 +889,10 @@ func (v *RunsView) View() string {
 
 	// Header with filter indicator, mode indicator and right-justified help hint.
 	filterIndicator := lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Render(filterStr)
-	header := lipgloss.NewStyle().Bold(true).Render("SMITHERS › Runs") + " " + filterIndicator
-	helpHint := lipgloss.NewStyle().Faint(true).Render("[Esc] Back")
+	viewName := "Runs"
+	if filterStr != "" {
+		viewName += " " + filterIndicator
+	}
 
 	modeIndicator := ""
 	switch v.streamMode {
@@ -900,23 +902,14 @@ func (v *RunsView) View() string {
 		modeIndicator = lipgloss.NewStyle().Faint(true).Render("○ Polling")
 	}
 
-	headerLine := header
-	if v.width > 0 {
-		right := modeIndicator
-		if right != "" && helpHint != "" {
-			right = right + "  " + helpHint
-		} else if right == "" {
-			right = helpHint
-		}
-		gap := v.width - lipgloss.Width(header) - lipgloss.Width(right) - 2
-		if gap > 0 {
-			headerLine = header + strings.Repeat(" ", gap) + right
-		} else {
-			// Not enough room for the full gap — just append with one space.
-			headerLine = header + " " + right
-		}
+	rightSide := ""
+	if modeIndicator != "" {
+		rightSide = modeIndicator + "  [Esc] Back"
+	} else {
+		rightSide = "[Esc] Back"
 	}
-	b.WriteString(headerLine)
+
+	b.WriteString(ViewHeader(packageCom.Styles, "SMITHERS", viewName, v.width, rightSide))
 	b.WriteString("\n\n")
 
 	// Search bar: shown when search is active.

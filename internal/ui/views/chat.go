@@ -364,16 +364,7 @@ func (v *ChatView) Update(msg tea.Msg) (View, tea.Cmd) {
 func (v *ChatView) View() string {
 	var b strings.Builder
 
-	header := lipgloss.NewStyle().Bold(true).Render("SMITHERS › Start Chat")
-	helpHint := lipgloss.NewStyle().Faint(true).Render("[Enter] Open  [Esc] Back")
-	headerLine := header
-	if v.width > 0 {
-		gap := v.width - lipgloss.Width(header) - lipgloss.Width(helpHint) - 2
-		if gap > 0 {
-			headerLine = header + strings.Repeat(" ", gap) + helpHint
-		}
-	}
-	b.WriteString(headerLine)
+	b.WriteString(ViewHeader(packageCom.Styles, "SMITHERS", "Start Chat", v.width, "[Enter] Open  [Esc] Back"))
 	b.WriteString("\n\n")
 	b.WriteString("  Choose how you want to chat in this workspace.\n\n")
 

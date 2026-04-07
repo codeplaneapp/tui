@@ -5,13 +5,17 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/crush/internal/jjhub"
+	"github.com/charmbracelet/crush/internal/observability"
 	"github.com/charmbracelet/crush/internal/smithers"
+	"github.com/charmbracelet/crush/internal/ui/common"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 var _ View = (*LandingsView)(nil)
@@ -103,6 +107,7 @@ type (
 var landingStateCycle = []string{"open", "draft", "merged", "closed", "all"}
 
 type LandingsView struct {
+	com    *common.Common
 	client landingManager
 	repo   *jjhub.Repo
 
@@ -134,12 +139,12 @@ type LandingsView struct {
 	prompt               landingPromptState
 }
 
-func NewLandingsView(_ *smithers.Client) *LandingsView {
-	var client landingManager
+func NewLandingsView(client *smithers.Client) *LandingsView {
+	var lm landingManager
 	if jjhubAvailable() {
-		client = jjhubLandingManager{client: jjhub.NewClient("")}
+		lm = jjhubLandingManager{client: jjhub.NewClient("")}
 	}
-	return newLandingsViewWithClient(client)
+	return newLandingsViewWithClient(viewCommon(nil), lm)
 }
 
 type jjhubLandingManager struct {
@@ -178,12 +183,29 @@ func (m jjhubLandingManager) LandingChecks(ctx context.Context, number int) (str
 	return m.client.LandingChecks(ctx, number)
 }
 
-func newLandingsViewWithClient(client landingManager) *LandingsView {
+func newLandingsViewWithClient(args ...any) *LandingsView {
+	com := viewCommon(nil)
+	var client landingManager
+	switch len(args) {
+	case 1:
+		if provided, ok := args[0].(landingManager); ok {
+			client = provided
+		}
+	case 2:
+		if provided, ok := args[0].(*common.Common); ok {
+			com = viewCommon(provided)
+		}
+		if provided, ok := args[1].(landingManager); ok {
+			client = provided
+		}
+	}
+
 	input := textinput.New()
 	input.Placeholder = "Landing title"
 	input.SetVirtualCursor(true)
 
 	v := &LandingsView{
+		com:           com,
 		client:        client,
 		stateFilter:   "open",
 		panel:         landingPanelDetail,
@@ -217,8 +239,13 @@ func (v *LandingsView) Init() tea.Cmd {
 func (v *LandingsView) loadLandingsCmd() tea.Cmd {
 	client := v.client
 	state := v.stateFilter
+	start := time.Now()
 	return func() tea.Msg {
 		landings, err := client.ListLandings(context.Background(), state, 100)
+		observability.RecordUIAction("landings", "list", time.Since(start), err,
+			attribute.String("codeplane.landings.state_filter", state),
+			attribute.Int("codeplane.landings.result_count", len(landings)),
+		)
 		if err != nil {
 			return landingsErrorMsg{err: err}
 		}
@@ -258,8 +285,12 @@ func (v *LandingsView) loadSelectedDetailCmd() tea.Cmd {
 
 	number := landing.Number
 	client := v.client
+	start := time.Now()
 	return func() tea.Msg {
 		detail, err := client.ViewLanding(context.Background(), number)
+		observability.RecordUIAction("landings", "detail", time.Since(start), err,
+			attribute.Int("codeplane.landings.number", number),
+		)
 		if err != nil {
 			return landingDetailErrorMsg{number: number, err: err}
 		}
@@ -280,8 +311,13 @@ func (v *LandingsView) loadSelectedDiffCmd() tea.Cmd {
 
 	number := landing.Number
 	client := v.client
+	start := time.Now()
 	return func() tea.Msg {
 		diff, err := client.LandingDiff(context.Background(), number)
+		observability.RecordUIAction("landings", "diff", time.Since(start), err,
+			attribute.Int("codeplane.landings.number", number),
+			attribute.Int("codeplane.landings.diff_length", len(diff)),
+		)
 		if err != nil {
 			return landingDiffErrorMsg{number: number, err: err}
 		}
@@ -302,8 +338,13 @@ func (v *LandingsView) loadSelectedChecksCmd() tea.Cmd {
 
 	number := landing.Number
 	client := v.client
+	start := time.Now()
 	return func() tea.Msg {
 		checks, err := client.LandingChecks(context.Background(), number)
+		observability.RecordUIAction("landings", "checks", time.Since(start), err,
+			attribute.Int("codeplane.landings.number", number),
+			attribute.Int("codeplane.landings.checks_length", len(checks)),
+		)
 		if err != nil {
 			return landingChecksErrorMsg{number: number, err: err}
 		}
@@ -400,8 +441,18 @@ func (v *LandingsView) selectLandingByNumber(number int) {
 
 func (v *LandingsView) createLandingCmd(title, body, target string) tea.Cmd {
 	client := v.client
+	start := time.Now()
 	return func() tea.Msg {
 		landing, err := client.CreateLanding(context.Background(), title, body, target, true)
+		attrs := []attribute.KeyValue{
+			attribute.Int("codeplane.landings.title_length", len([]rune(title))),
+			attribute.Int("codeplane.landings.body_length", len([]rune(body))),
+			attribute.Bool("codeplane.landings.has_target", strings.TrimSpace(target) != ""),
+		}
+		if landing != nil {
+			attrs = append(attrs, attribute.Int("codeplane.landings.number", landing.Number))
+		}
+		observability.RecordUIAction("landings", "create", time.Since(start), err, attrs...)
 		if err != nil {
 			return landingActionErrorMsg{err: err}
 		}
@@ -420,10 +471,21 @@ func (v *LandingsView) reviewLandingCmd(action, body string) tea.Cmd {
 		return nil
 	}
 	number := landing.Number
+	start := time.Now()
 	return func() tea.Msg {
 		if err := client.ReviewLanding(context.Background(), number, action, body); err != nil {
+			observability.RecordUIAction("landings", "review", time.Since(start), err,
+				attribute.Int("codeplane.landings.number", number),
+				attribute.String("codeplane.landings.review_action", action),
+				attribute.Int("codeplane.landings.body_length", len([]rune(body))),
+			)
 			return landingActionErrorMsg{err: err}
 		}
+		observability.RecordUIAction("landings", "review", time.Since(start), nil,
+			attribute.Int("codeplane.landings.number", number),
+			attribute.String("codeplane.landings.review_action", action),
+			attribute.Int("codeplane.landings.body_length", len([]rune(body))),
+		)
 		return landingActionDoneMsg{
 			message: fmt.Sprintf("%s landing #%d", landingReviewActionLabel(action), number),
 			landing: landing,
@@ -438,10 +500,17 @@ func (v *LandingsView) landLandingCmd() tea.Cmd {
 		return nil
 	}
 	number := landing.Number
+	start := time.Now()
 	return func() tea.Msg {
 		if err := client.LandLanding(context.Background(), number); err != nil {
+			observability.RecordUIAction("landings", "land", time.Since(start), err,
+				attribute.Int("codeplane.landings.number", number),
+			)
 			return landingActionErrorMsg{err: err}
 		}
+		observability.RecordUIAction("landings", "land", time.Since(start), nil,
+			attribute.Int("codeplane.landings.number", number),
+		)
 		return landingActionDoneMsg{message: fmt.Sprintf("Landed landing #%d", number)}
 	}
 }
@@ -688,6 +757,9 @@ func (v *LandingsView) Update(msg tea.Msg) (View, tea.Cmd) {
 			}
 			v.actionMsg = ""
 			v.cycleStateFilter()
+			observability.RecordUIAction("landings", "set_state_filter", 0, nil,
+				attribute.String("codeplane.landings.state_filter", v.stateFilter),
+			)
 			return v, v.refreshCmd()
 
 		case key.Matches(msg, key.NewBinding(key.WithKeys("c"))):
@@ -734,9 +806,12 @@ func (v *LandingsView) Update(msg tea.Msg) (View, tea.Cmd) {
 			} else {
 				v.panel = landingPanelDiff
 			}
+			observability.RecordUIAction("landings", "toggle_panel", 0, nil,
+				attribute.String("codeplane.landings.panel", v.panel.String()),
+			)
 			return v, v.selectedPanelCmd()
 
-		case key.Matches(msg, key.NewBinding(key.WithKeys("k"))):
+		case key.Matches(msg, key.NewBinding(key.WithKeys("t"))):
 			if v.selectedLanding() == nil {
 				return v, nil
 			}
@@ -745,6 +820,9 @@ func (v *LandingsView) Update(msg tea.Msg) (View, tea.Cmd) {
 			} else {
 				v.panel = landingPanelChecks
 			}
+			observability.RecordUIAction("landings", "toggle_panel", 0, nil,
+				attribute.String("codeplane.landings.panel", v.panel.String()),
+			)
 			return v, v.selectedPanelCmd()
 		}
 	}
@@ -762,12 +840,13 @@ func (v *LandingsView) View() string {
 		panelLabel = "[checks]"
 	}
 
-	b.WriteString(jjhubHeader("JJHUB › Landings", v.width, jjhubJoinNonEmpty("  ",
-		lipgloss.NewStyle().Faint(true).Render("["+v.stateFilter+"]"),
-		lipgloss.NewStyle().Faint(true).Render(panelLabel),
+	rightSide := jjhubJoinNonEmpty("  ",
+		"["+v.stateFilter+"]",
+		panelLabel,
 		jjhubRepoLabel(v.repo),
-		lipgloss.NewStyle().Faint(true).Render("[Esc] Back"),
-	)))
+		"[Esc] Back",
+	)
+	b.WriteString(ViewHeader(v.com.Styles, "SMITHERS", "Landings", v.width, rightSide))
 	b.WriteString("\n\n")
 
 	if v.prompt.active {
@@ -967,7 +1046,7 @@ func (v *LandingsView) renderLandingDetail(width int, landing jjhub.Landing) str
 	b.WriteString("\n\n")
 	b.WriteString(jjhubSectionStyle.Render("Actions"))
 	b.WriteString("\n")
-	b.WriteString(wrapText("[d] diff  [k] checks  [a] approve  [x] request changes  [m] comment  [l] land", max(20, width)))
+	b.WriteString(wrapText("[d] diff  [t] checks  [a] approve  [x] request changes  [m] comment  [l] land", max(20, width)))
 	return b.String()
 }
 
@@ -1025,7 +1104,7 @@ func (v *LandingsView) renderLandingChecks(landing jjhub.Landing) string {
 	}
 
 	b.WriteString("\n\n")
-	b.WriteString(jjhubMutedStyle.Render("[k] back to detail"))
+	b.WriteString(jjhubMutedStyle.Render("[t] back to detail"))
 	return b.String()
 }
 
@@ -1046,10 +1125,21 @@ func (v *LandingsView) ShortHelp() []key.Binding {
 		key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "comment")),
 		key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "land")),
 		key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "diff")),
-		key.NewBinding(key.WithKeys("k"), key.WithHelp("k", "checks")),
+		key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "checks")),
 		key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "state")),
 		key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
 		key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
+	}
+}
+
+func (m landingPanelMode) String() string {
+	switch m {
+	case landingPanelDiff:
+		return "diff"
+	case landingPanelChecks:
+		return "checks"
+	default:
+		return "detail"
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/crush/internal/smithers"
+	"github.com/charmbracelet/crush/internal/ui/common"
 	"github.com/charmbracelet/crush/internal/ui/components"
 )
 
@@ -22,25 +23,38 @@ type approvalsLoadedMsg struct {
 	approvals []smithers.Approval
 }
 
-type approvalsErrorMsg struct {
-	err error
-}
-
 type decisionsLoadedMsg struct {
 	decisions []smithers.ApprovalDecision
 }
 
-type decisionsErrorMsg struct {
+type approvalsErrorMsg struct {
 	err error
 }
 
+type approvalActionDoneMsg struct {
+	idx int
+}
+
+type approvalActionErrorMsg struct {
+	idx int
+	err error
+}
+
+type approvalRunContextMsg struct {
+	runID string
+	run   *smithers.RunSummary
+	err   error
+}
+
 type approveSuccessMsg struct{ approvalID string }
+
 type approveErrorMsg struct {
 	approvalID string
 	err        error
 }
 
 type denySuccessMsg struct{ approvalID string }
+
 type denyErrorMsg struct {
 	approvalID string
 	err        error
@@ -56,68 +70,94 @@ type runSummaryErrorMsg struct {
 	err   error
 }
 
-// ApprovalsView displays a split-pane approvals queue with context details.
-// Tab switches between the Pending Queue tab and the Recent Decisions tab.
-// In the pending queue tab, the layout uses a SplitPane: list on the left,
-// detail on the right.
+// ApprovalsView displays a navigable list of human-in-the-loop approval gates
+// with a detail pane showing run context and payload.
 type ApprovalsView struct {
-	client    *smithers.Client
-	approvals []smithers.Approval
-	cursor    int
-	width     int
-	height    int
-	loading   bool
-	err       error
+	com            *common.Common
+	client         *smithers.Client
+	approvals      []smithers.Approval
+	cursor         int
+	width, height  int
+	loading        bool
+	err            error
+	showRecent     bool // toggle between pending queue and resolution history
+	inflightIdx    int  // index of approval with active action; -1 when idle
+	actionErr      error
+	contextLoading bool
+	contextErr     error
+	selectedRun    *smithers.RunSummary
+	lastFetchRun   string
 
-	// Recent decisions tab state
-	showRecent       bool
-	recentDecisions  []smithers.ApprovalDecision
-	decisionsLoading bool
-	decisionsErr     error
-	decisionsCursor  int
-
-	// Split pane for list+detail layout (pending queue tab)
 	splitPane  *components.SplitPane
 	listPane   *approvalListPane
 	detailPane *approvalDetailPane
-
-	// Inflight decision state
-	inflightIdx int          // index of approval being acted on; -1 when idle
-	actionErr   error        // last approve/deny error; nil when idle or cleared
-	spinner     spinner.Model
-
-	// Enriched run context for the selected approval (async-fetched on cursor change).
-	selectedRun    *smithers.RunSummary // nil until fetched or if fetch failed
-	contextLoading bool                // true while fetching RunContext
-	contextErr     error               // non-nil if fetch failed
-	lastFetchRun   string              // RunID of last triggered fetch (for dedup / stale-result guard)
+	spinner    spinner.Model
 }
 
 // NewApprovalsView creates a new approvals view.
-func NewApprovalsView(client *smithers.Client) *ApprovalsView {
-	listPane := &approvalListPane{inflightIdx: -1}
-	detailPane := &approvalDetailPane{}
-	sp := components.NewSplitPane(listPane, detailPane, components.SplitPaneOpts{
-		LeftWidth:         30,
-		CompactBreakpoint: 80,
-	})
+func NewApprovalsView(args ...any) *ApprovalsView {
+	com, client, _ := parseCommonAndClient(args)
 	s := spinner.New()
-	s.Spinner = spinner.MiniDot
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(com.Styles.Primary)
+
+	lp := &approvalListPane{com: com}
+	dp := &approvalDetailPane{com: com}
+
+	sp := components.NewSplitPane(lp, dp, components.SplitPaneOpts{
+		LeftWidth:          32,
+		FocusedBorderColor: "63",
+	})
+
 	return &ApprovalsView{
+		com:         com,
 		client:      client,
 		loading:     true,
-		splitPane:   sp,
-		listPane:    listPane,
-		detailPane:  detailPane,
 		inflightIdx: -1,
+		splitPane:   sp,
+		listPane:    lp,
+		detailPane:  dp,
 		spinner:     s,
 	}
 }
 
-// Init loads approvals from the client.
+// Init loads pending approvals and starts the spinner.
 func (v *ApprovalsView) Init() tea.Cmd {
+	return tea.Batch(
+		v.loadApprovalsCmd(),
+		v.spinner.Tick,
+	)
+}
+
+func (v *ApprovalsView) loadApprovalsCmd() tea.Cmd {
+	client := v.client
+	history := v.showRecent
 	return func() tea.Msg {
-		approvals, err := v.client.ListPendingApprovals(context.Background())
+		var approvals []smithers.Approval
+		var err error
+		if history {
+			decisions, dErr := client.ListRecentDecisions(context.Background(), 50)
+			if dErr != nil {
+				return approvalsErrorMsg{err: dErr}
+			}
+			// Map decisions back to approvals for consistent UI
+			for _, d := range decisions {
+				approvals = append(approvals, smithers.Approval{
+					ID:           d.ID,
+					RunID:        d.RunID,
+					NodeID:       d.NodeID,
+					WorkflowPath: d.WorkflowPath,
+					Gate:         d.Gate,
+					Status:       d.Decision,
+					ResolvedAt:   &d.DecidedAt,
+					ResolvedBy:   d.DecidedBy,
+					RequestedAt:  d.RequestedAt,
+				})
+			}
+		} else {
+			approvals, err = client.ListPendingApprovals(context.Background())
+		}
+
 		if err != nil {
 			return approvalsErrorMsg{err: err}
 		}
@@ -125,328 +165,316 @@ func (v *ApprovalsView) Init() tea.Cmd {
 	}
 }
 
-// doApprove fires a background approve for the given approval and returns success/error messages.
-func (v *ApprovalsView) doApprove(a smithers.Approval) tea.Cmd {
+func (v *ApprovalsView) loadRunContextCmd(runID string) tea.Cmd {
+	client := v.client
 	return func() tea.Msg {
-		err := v.client.Approve(context.Background(), a.RunID, a.NodeID, 0, "")
-		if err != nil {
-			return approveErrorMsg{approvalID: a.ID, err: err}
-		}
-		return approveSuccessMsg{approvalID: a.ID}
+		run, err := client.GetRun(context.Background(), runID)
+		return approvalRunContextMsg{runID: runID, run: run, err: err}
 	}
 }
 
-// doDeny fires a background deny for the given approval and returns success/error messages.
-func (v *ApprovalsView) doDeny(a smithers.Approval) tea.Cmd {
-	return func() tea.Msg {
-		err := v.client.Deny(context.Background(), a.RunID, a.NodeID, 0, "")
-		if err != nil {
-			return denyErrorMsg{approvalID: a.ID, err: err}
-		}
-		return denySuccessMsg{approvalID: a.ID}
+func decisionsAsApprovals(decisions []smithers.ApprovalDecision) []smithers.Approval {
+	approvals := make([]smithers.Approval, 0, len(decisions))
+	for _, d := range decisions {
+		approvals = append(approvals, smithers.Approval{
+			ID:           d.ID,
+			RunID:        d.RunID,
+			NodeID:       d.NodeID,
+			WorkflowPath: d.WorkflowPath,
+			Gate:         d.Gate,
+			Status:       d.Decision,
+			ResolvedAt:   &d.DecidedAt,
+			ResolvedBy:   d.DecidedBy,
+			RequestedAt:  d.RequestedAt,
+		})
 	}
+	return approvals
 }
 
-// loadDecisions returns a command that fetches recent decisions.
-func (v *ApprovalsView) loadDecisions() tea.Cmd {
-	return func() tea.Msg {
-		decisions, err := v.client.ListRecentDecisions(context.Background(), 50)
-		if err != nil {
-			return decisionsErrorMsg{err: err}
-		}
-		return decisionsLoadedMsg{decisions: decisions}
+func (v *ApprovalsView) shouldFetchRunContext(runID string) bool {
+	if strings.TrimSpace(runID) == "" {
+		return false
 	}
+	return v.lastFetchRun != runID || v.selectedRun == nil || v.selectedRun.RunID != runID || v.contextErr != nil
 }
 
-// fetchRunContext returns a Cmd that fetches RunContext for the currently selected approval.
-// Returns nil if the list is empty, if no approval is at the cursor, or if the
-// RunID matches the last triggered fetch (dedup guard).
-func (v *ApprovalsView) fetchRunContext() tea.Cmd {
-	if v.cursor < 0 || v.cursor >= len(v.approvals) {
+func (v *ApprovalsView) beginRunContextLoad(runID string) tea.Cmd {
+	if !v.shouldFetchRunContext(runID) {
+		v.contextLoading = false
+		v.contextErr = nil
+		v.syncPanes()
 		return nil
 	}
-	a := v.approvals[v.cursor]
-	if a.RunID == "" {
-		return nil
-	}
-	if a.RunID == v.lastFetchRun && v.selectedRun != nil {
-		// Already fetched for this run; skip unless we have no result.
-		return nil
-	}
+	v.lastFetchRun = runID
 	v.contextLoading = true
 	v.contextErr = nil
-	v.lastFetchRun = a.RunID
-	v.detailPane.contextLoading = true
-	v.detailPane.contextErr = nil
-	v.detailPane.selectedRun = nil
-	runID := a.RunID
-	return func() tea.Msg {
-		summary, err := v.client.GetRunSummary(context.Background(), runID)
-		if err != nil {
-			return runSummaryErrorMsg{runID: runID, err: err}
+	v.syncPanes()
+	return v.loadRunContextCmd(runID)
+}
+
+func (v *ApprovalsView) removeApprovalByID(approvalID string) {
+	for i, approval := range v.approvals {
+		if approval.ID != approvalID {
+			continue
 		}
-		return runSummaryLoadedMsg{runID: runID, summary: summary}
+		v.approvals = append(v.approvals[:i], v.approvals[i+1:]...)
+		v.clampCursor()
+		v.syncPanes()
+		return
+	}
+}
+
+func (v *ApprovalsView) approveCmd(idx int) tea.Cmd {
+	if idx < 0 || idx >= len(v.approvals) {
+		return nil
+	}
+	a := v.approvals[idx]
+	client := v.client
+	return func() tea.Msg {
+		err := client.Approve(context.Background(), a.RunID, a.NodeID, 0, "")
+		if err != nil {
+			return approvalActionErrorMsg{idx: idx, err: err}
+		}
+		return approvalActionDoneMsg{idx: idx}
+	}
+}
+
+func (v *ApprovalsView) denyCmd(idx int) tea.Cmd {
+	if idx < 0 || idx >= len(v.approvals) {
+		return nil
+	}
+	a := v.approvals[idx]
+	client := v.client
+	return func() tea.Msg {
+		err := client.Deny(context.Background(), a.RunID, a.NodeID, 0, "")
+		if err != nil {
+			return approvalActionErrorMsg{idx: idx, err: err}
+		}
+		return approvalActionDoneMsg{idx: idx}
 	}
 }
 
 // Update handles messages for the approvals view.
 func (v *ApprovalsView) Update(msg tea.Msg) (View, tea.Cmd) {
+	var cmds []tea.Cmd
+
 	switch msg := msg.(type) {
 	case approvalsLoadedMsg:
 		v.approvals = msg.approvals
 		v.loading = false
-		v.listPane.approvals = msg.approvals
-		v.detailPane.approvals = msg.approvals
-		v.splitPane.SetSize(v.width, max(0, v.height-2))
-		// Kick off context fetch for the first item if any approvals loaded.
-		if len(msg.approvals) > 0 {
-			return v, v.fetchRunContext()
+		v.err = nil
+		v.clampCursor()
+		v.syncPanes()
+		if len(v.approvals) > 0 {
+			cmds = append(cmds, v.beginRunContextLoad(v.approvals[v.cursor].RunID))
 		}
-		return v, nil
+		return v, tea.Batch(cmds...)
+
+	case decisionsLoadedMsg:
+		v.approvals = decisionsAsApprovals(msg.decisions)
+		v.loading = false
+		v.err = nil
+		v.clampCursor()
+		v.syncPanes()
+		if len(v.approvals) > 0 {
+			cmds = append(cmds, v.beginRunContextLoad(v.approvals[v.cursor].RunID))
+		}
+		return v, tea.Batch(cmds...)
 
 	case approvalsErrorMsg:
 		v.err = msg.err
 		v.loading = false
 		return v, nil
 
-	case decisionsLoadedMsg:
-		v.recentDecisions = msg.decisions
-		v.decisionsLoading = false
-		v.decisionsErr = nil
-		return v, nil
-
-	case decisionsErrorMsg:
-		v.decisionsErr = msg.err
-		v.decisionsLoading = false
+	case approvalRunContextMsg:
+		if msg.runID != "" && v.lastFetchRun != "" && msg.runID != v.lastFetchRun {
+			return v, nil
+		}
+		v.contextLoading = false
+		v.selectedRun = msg.run
+		v.contextErr = msg.err
+		v.syncPanes()
 		return v, nil
 
 	case runSummaryLoadedMsg:
-		if msg.runID == v.lastFetchRun {
-			v.selectedRun = msg.summary
-			v.contextLoading = false
-			v.contextErr = nil
-			v.detailPane.selectedRun = msg.summary
-			v.detailPane.contextLoading = false
-			v.detailPane.contextErr = nil
+		if msg.runID != "" && v.lastFetchRun != "" && msg.runID != v.lastFetchRun {
+			return v, nil
 		}
+		v.contextLoading = false
+		v.selectedRun = msg.summary
+		v.contextErr = nil
+		if msg.runID != "" {
+			v.lastFetchRun = msg.runID
+		}
+		v.syncPanes()
 		return v, nil
 
 	case runSummaryErrorMsg:
-		if msg.runID == v.lastFetchRun {
-			v.contextErr = msg.err
-			v.contextLoading = false
-			v.detailPane.contextErr = msg.err
-			v.detailPane.contextLoading = false
+		if msg.runID != "" && v.lastFetchRun != "" && msg.runID != v.lastFetchRun {
+			return v, nil
 		}
+		v.contextLoading = false
+		v.selectedRun = nil
+		v.contextErr = msg.err
+		v.syncPanes()
 		return v, nil
 
-	case spinner.TickMsg:
-		if v.inflightIdx != -1 {
-			var cmd tea.Cmd
-			v.spinner, cmd = v.spinner.Update(msg)
-			v.listPane.spinnerView = v.spinner.View()
-			return v, cmd
-		}
+	case approvalActionDoneMsg:
+		v.inflightIdx = -1
+		v.actionErr = nil
+		// Refresh list after successful action.
+		v.loading = true
+		cmds = append(cmds, v.loadApprovalsCmd())
+
+	case approvalActionErrorMsg:
+		v.inflightIdx = -1
+		v.actionErr = msg.err
+		v.syncPanes()
 		return v, nil
 
 	case approveSuccessMsg:
-		for i, a := range v.approvals {
-			if a.ID == msg.approvalID {
-				v.approvals = append(v.approvals[:i], v.approvals[i+1:]...)
-				if v.cursor >= len(v.approvals) && v.cursor > 0 {
-					v.cursor = len(v.approvals) - 1
-				}
-				v.listPane.approvals = v.approvals
-				v.listPane.cursor = v.cursor
-				v.listPane.inflightIdx = -1
-				v.detailPane.approvals = v.approvals
-				v.detailPane.cursor = v.cursor
-				v.detailPane.actionErr = nil
-				break
-			}
-		}
 		v.inflightIdx = -1
 		v.actionErr = nil
+		v.removeApprovalByID(msg.approvalID)
+		return v, nil
+
+	case denySuccessMsg:
+		v.inflightIdx = -1
+		v.actionErr = nil
+		v.removeApprovalByID(msg.approvalID)
 		return v, nil
 
 	case approveErrorMsg:
 		v.inflightIdx = -1
-		v.listPane.inflightIdx = -1
 		v.actionErr = msg.err
-		v.detailPane.actionErr = msg.err
-		return v, nil
-
-	case denySuccessMsg:
-		for i, a := range v.approvals {
-			if a.ID == msg.approvalID {
-				v.approvals = append(v.approvals[:i], v.approvals[i+1:]...)
-				if v.cursor >= len(v.approvals) && v.cursor > 0 {
-					v.cursor = len(v.approvals) - 1
-				}
-				v.listPane.approvals = v.approvals
-				v.listPane.cursor = v.cursor
-				v.listPane.inflightIdx = -1
-				v.detailPane.approvals = v.approvals
-				v.detailPane.cursor = v.cursor
-				v.detailPane.actionErr = nil
-				break
-			}
-		}
-		v.inflightIdx = -1
-		v.actionErr = nil
+		v.syncPanes()
 		return v, nil
 
 	case denyErrorMsg:
 		v.inflightIdx = -1
-		v.listPane.inflightIdx = -1
 		v.actionErr = msg.err
-		v.detailPane.actionErr = msg.err
+		v.syncPanes()
 		return v, nil
+
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		v.spinner, cmd = v.spinner.Update(msg)
+		v.listPane.spinnerView = v.spinner.View()
+		return v, cmd
 
 	case tea.WindowSizeMsg:
 		v.width = msg.Width
 		v.height = msg.Height
-		v.splitPane.SetSize(msg.Width, max(0, msg.Height-2))
-		return v, nil
+		v.syncPanes()
 
 	case tea.KeyPressMsg:
 		switch {
 		case key.Matches(msg, key.NewBinding(key.WithKeys("esc", "alt+esc"))):
 			return v, func() tea.Msg { return PopViewMsg{} }
 
-		case key.Matches(msg, key.NewBinding(key.WithKeys("tab"))):
-			v.showRecent = !v.showRecent
-			if v.showRecent && !v.decisionsLoading && v.recentDecisions == nil {
-				v.decisionsLoading = true
-				return v, v.loadDecisions()
-			}
-			return v, nil
-
-		case key.Matches(msg, key.NewBinding(key.WithKeys("r"))):
-			if v.showRecent {
-				v.decisionsLoading = true
-				return v, v.loadDecisions()
-			}
-			v.loading = true
-			return v, v.Init()
-
-		case key.Matches(msg, key.NewBinding(key.WithKeys("a"))):
-			if !v.showRecent && v.inflightIdx == -1 && v.cursor < len(v.approvals) {
-				if v.approvals[v.cursor].Status == "pending" {
-					v.inflightIdx = v.cursor
-					v.actionErr = nil
-					v.detailPane.actionErr = nil
-					v.listPane.inflightIdx = v.cursor
-					v.listPane.spinnerView = v.spinner.View()
-					return v, tea.Batch(v.spinner.Tick, v.doApprove(v.approvals[v.cursor]))
-				}
-			}
-			return v, nil
-
-		case key.Matches(msg, key.NewBinding(key.WithKeys("d"))):
-			if !v.showRecent && v.inflightIdx == -1 && v.cursor < len(v.approvals) {
-				if v.approvals[v.cursor].Status == "pending" {
-					v.inflightIdx = v.cursor
-					v.actionErr = nil
-					v.detailPane.actionErr = nil
-					v.listPane.inflightIdx = v.cursor
-					v.listPane.spinnerView = v.spinner.View()
-					return v, tea.Batch(v.spinner.Tick, v.doDeny(v.approvals[v.cursor]))
-				}
-			}
-			return v, nil
-
 		case key.Matches(msg, key.NewBinding(key.WithKeys("up", "k"))):
-			if v.showRecent {
-				if v.decisionsCursor > 0 {
-					v.decisionsCursor--
-				}
-			} else {
-				if v.cursor > 0 {
-					v.cursor--
-				}
-				v.listPane.cursor = v.cursor
-				v.detailPane.cursor = v.cursor
-				return v, v.fetchRunContext()
+			if v.cursor > 0 {
+				v.cursor--
+				v.actionErr = nil
+				cmds = append(cmds, v.beginRunContextLoad(v.approvals[v.cursor].RunID))
 			}
-			return v, nil
 
 		case key.Matches(msg, key.NewBinding(key.WithKeys("down", "j"))):
-			if v.showRecent {
-				if v.decisionsCursor < len(v.recentDecisions)-1 {
-					v.decisionsCursor++
-				}
-			} else {
-				if v.cursor < len(v.approvals)-1 {
-					v.cursor++
-				}
-				v.listPane.cursor = v.cursor
-				v.detailPane.cursor = v.cursor
-				return v, v.fetchRunContext()
+			if v.cursor < len(v.approvals)-1 {
+				v.cursor++
+				v.actionErr = nil
+				cmds = append(cmds, v.beginRunContextLoad(v.approvals[v.cursor].RunID))
 			}
-			return v, nil
+
+		case key.Matches(msg, key.NewBinding(key.WithKeys("tab"))):
+			v.showRecent = !v.showRecent
+			v.loading = true
+			v.cursor = 0
+			v.actionErr = nil
+			return v, v.loadApprovalsCmd()
+
+		case key.Matches(msg, key.NewBinding(key.WithKeys("r"))):
+			v.loading = true
+			v.actionErr = nil
+			return v, v.loadApprovalsCmd()
+
+		case key.Matches(msg, key.NewBinding(key.WithKeys("a"))):
+			if v.canAct() {
+				v.inflightIdx = v.cursor
+				v.syncPanes()
+				return v, v.approveCmd(v.cursor)
+			}
+
+		case key.Matches(msg, key.NewBinding(key.WithKeys("d"))):
+			if v.canAct() {
+				v.inflightIdx = v.cursor
+				v.syncPanes()
+				return v, v.denyCmd(v.cursor)
+			}
 		}
 	}
-	return v, nil
+
+	// Forward other messages to SplitPane (handles focus toggle via Tab).
+	sp, cmd := v.splitPane.Update(msg)
+	v.splitPane = sp
+	cmds = append(cmds, cmd)
+
+	return v, tea.Batch(cmds...)
 }
 
-// View renders the approvals view.
+func (v *ApprovalsView) clampCursor() {
+	if len(v.approvals) == 0 {
+		v.cursor = 0
+		return
+	}
+	if v.cursor >= len(v.approvals) {
+		v.cursor = len(v.approvals) - 1
+	}
+}
+
+func (v *ApprovalsView) canAct() bool {
+	return v.inflightIdx == -1 &&
+		v.cursor < len(v.approvals) &&
+		v.approvals[v.cursor].Status == "pending"
+}
+
+func (v *ApprovalsView) renderDetail(width int) string {
+	if v.cursor < 0 || v.cursor >= len(v.approvals) {
+		return ""
+	}
+	return renderApprovalDetail(v.com, v.approvals[v.cursor], v.selectedRun, v.contextLoading, v.contextErr, v.actionErr, width, v.height)
+}
+
+// syncPanes updates the sub-pane state from the main view.
+func (v *ApprovalsView) syncPanes() {
+	v.listPane.approvals = v.approvals
+	v.listPane.cursor = v.cursor
+	v.listPane.inflightIdx = v.inflightIdx
+
+	v.detailPane.approvals = v.approvals
+	v.detailPane.cursor = v.cursor
+	v.detailPane.actionErr = v.actionErr
+	v.detailPane.selectedRun = v.selectedRun
+	v.detailPane.contextLoading = v.contextLoading
+	v.detailPane.contextErr = v.contextErr
+
+	v.splitPane.SetSize(v.width, max(0, v.height-2))
+}
+
+// View renders the approvals layout.
 func (v *ApprovalsView) View() string {
 	var b strings.Builder
+	t := v.com.Styles
 
+	// Header
+	viewName := "Pending Approvals"
 	if v.showRecent {
-		// --- Recent Decisions tab ---
-		header := lipgloss.NewStyle().Bold(true).Render("SMITHERS \u203a RECENT DECISIONS")
-		helpHint := lipgloss.NewStyle().Faint(true).Render("[tab] Pending  [Esc] Back")
-		headerLine := header
-		if v.width > 0 {
-			gap := v.width - lipgloss.Width(header) - lipgloss.Width(helpHint) - 2
-			if gap > 0 {
-				headerLine = header + strings.Repeat(" ", gap) + helpHint
-			}
-		}
-		b.WriteString(headerLine)
-		b.WriteString("\n\n")
-
-		if v.decisionsLoading {
-			b.WriteString("  Loading recent decisions...\n")
-			return b.String()
-		}
-		if v.decisionsErr != nil {
-			b.WriteString(fmt.Sprintf("  Error: %v\n", v.decisionsErr))
-			return b.String()
-		}
-		if len(v.recentDecisions) == 0 {
-			b.WriteString("  No recent decisions.\n")
-			return b.String()
-		}
-		b.WriteString(v.renderRecentDecisions())
-		return b.String()
+		viewName = "Resolution History"
 	}
-
-	// --- Pending Queue tab ---
-	header := lipgloss.NewStyle().Bold(true).Render("SMITHERS \u203a Approvals")
-	var hintParts []string
-	if v.cursor < len(v.approvals) && v.approvals[v.cursor].Status == "pending" {
-		if v.inflightIdx != -1 {
-			hintParts = append(hintParts, "Acting...")
-		} else {
-			hintParts = append(hintParts, "[a] Approve  [d] Deny")
-		}
-	}
-	hintParts = append(hintParts, "[tab] History  [Esc] Back")
-	helpHint := lipgloss.NewStyle().Faint(true).Render(strings.Join(hintParts, "  "))
-	headerLine := header
-	if v.width > 0 {
-		gap := v.width - lipgloss.Width(header) - lipgloss.Width(helpHint) - 2
-		if gap > 0 {
-			headerLine = header + strings.Repeat(" ", gap) + helpHint
-		}
-	}
-	b.WriteString(headerLine)
+	b.WriteString(ViewHeader(v.com.Styles, "SMITHERS", viewName, v.width, "[Tab] switch mode  [Esc] Back"))
 	b.WriteString("\n\n")
 
-	if v.loading {
+	if v.loading && len(v.approvals) == 0 {
 		b.WriteString("  Loading approvals...\n")
 		return b.String()
 	}
@@ -457,92 +485,34 @@ func (v *ApprovalsView) View() string {
 	}
 
 	if len(v.approvals) == 0 {
-		b.WriteString("  No pending approvals.\n")
+		msg := "No pending approvals."
+		if v.showRecent {
+			msg = "No resolution history found."
+		}
+		b.WriteString("  " + t.Subtle.Render(msg) + "\n")
 		return b.String()
 	}
 
-	// SplitPane handles wide vs. compact layout automatically.
 	b.WriteString(v.splitPane.View())
 
 	return b.String()
 }
 
-// renderRecentDecisions renders the recent decisions list.
-func (v *ApprovalsView) renderRecentDecisions() string {
+// renderApprovalDetail renders the metadata and payload for a single approval.
+func renderApprovalDetail(com *common.Common, a smithers.Approval, run *smithers.RunSummary, contextLoading bool, contextErr error, actionErr error, width, height int) string {
 	var b strings.Builder
+	t := com.Styles
+	labelStyle := lipgloss.NewStyle().Bold(true).Foreground(t.Secondary)
+	faintStyle := t.Subtle
 
-	for i, d := range v.recentDecisions {
-		cursor := "  "
-		nameStyle := lipgloss.NewStyle()
-		if i == v.decisionsCursor {
-			cursor = "\u25b8 "
-			nameStyle = nameStyle.Bold(true)
-		}
-
-		icon := "\u2713"
-		if d.Decision == "denied" {
-			icon = "\u2717"
-		}
-
-		label := d.Gate
-		if label == "" {
-			label = d.NodeID
-		}
-		label = truncate(label, 40)
-
-		ts := relativeTime(d.DecidedAt)
-		byStr := ""
-		if d.DecidedBy != nil && *d.DecidedBy != "" {
-			byStr = " by " + *d.DecidedBy
-		}
-
-		line := cursor + icon + " " + nameStyle.Render(label) +
-			lipgloss.NewStyle().Faint(true).Render("  "+ts+byStr)
-
-		b.WriteString(line + "\n")
+	// 1. Title/Gate
+	title := a.Gate
+	if title == "" {
+		title = a.NodeID
 	}
+	b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(t.Primary).Render(title) + "\n\n")
 
-	return b.String()
-}
-
-// renderDetail renders the context detail pane for the currently selected approval.
-// This is used by tests and by the approvalDetailPane.View() method.
-func (v *ApprovalsView) renderDetail(width int) string {
-	if v.cursor < 0 || v.cursor >= len(v.approvals) {
-		return ""
-	}
-	return renderApprovalDetail(v.approvals[v.cursor], v.selectedRun, v.contextLoading, v.contextErr, v.actionErr, width, v.height)
-}
-
-// renderApprovalDetail produces the full detail pane text for a single approval.
-// It is the canonical implementation used by both renderDetail (test/view) and approvalDetailPane.View().
-func renderApprovalDetail(a smithers.Approval, run *smithers.RunSummary, contextLoading bool, contextErr error, actionErr error, width, height int) string {
-	var b strings.Builder
-
-	titleStyle := lipgloss.NewStyle().Bold(true)
-	labelStyle := lipgloss.NewStyle().Faint(true)
-	faintStyle := lipgloss.NewStyle().Faint(true)
-
-	// 1. Gate header (prominent, at the top).
-	gate := a.Gate
-	if gate == "" {
-		gate = a.NodeID
-	}
-	b.WriteString(titleStyle.Render(gate) + "\n")
-
-	// Wait time + status on the same line as the gate, or just below it.
-	wait := time.Since(time.UnixMilli(a.RequestedAt))
-	waitStr := formatWait(wait)
-	statusStr := formatStatus(a.Status)
-	if a.Status == "pending" {
-		waitColored := slaStyle(wait).Render("⏱ " + waitStr)
-		b.WriteString(statusStr + "  " + waitColored + "\n")
-	} else {
-		b.WriteString(statusStr + "\n")
-	}
-	b.WriteString("\n")
-
-	// 2. Workflow name (extracted from WorkflowPath).
+	// 2. Workflow Name (enriched from Run or parsed from path)
 	workflowName := ""
 	if run != nil && run.WorkflowName != "" {
 		workflowName = run.WorkflowName
@@ -561,7 +531,7 @@ func renderApprovalDetail(a smithers.Approval, run *smithers.RunSummary, context
 	if contextLoading {
 		b.WriteString("\n" + faintStyle.Render("Loading run details...") + "\n")
 	} else if contextErr != nil {
-		errStyle := lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("1"))
+		errStyle := lipgloss.NewStyle().Faint(true).Foreground(t.Error)
 		b.WriteString("\n" + errStyle.Render("Could not load run details: "+contextErr.Error()) + "\n")
 	} else if run != nil {
 		// Step progress derived from Summary map (node-state → count).
@@ -603,7 +573,7 @@ func renderApprovalDetail(a smithers.Approval, run *smithers.RunSummary, context
 
 	// 8. Action error banner.
 	if actionErr != nil && a.Status == "pending" {
-		errStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
+		errStyle := lipgloss.NewStyle().Foreground(t.Error)
 		b.WriteString("\n" + errStyle.Render("Action failed: "+actionErr.Error()) + "\n")
 		b.WriteString(faintStyle.Render("  Press [a] to approve or [d] to deny") + "\n")
 	}
@@ -612,9 +582,6 @@ func renderApprovalDetail(a smithers.Approval, run *smithers.RunSummary, context
 }
 
 // workflowNameDisplay extracts a short display name from a workflow path.
-// E.g., ".smithers/workflows/deploy.ts" → "deploy".
-// Unlike the client-side helper, this operates on the raw path string without
-// importing path.Base from the smithers package.
 func workflowNameDisplay(p string) string {
 	base := path.Base(p)
 	for _, ext := range []string{".ts", ".tsx", ".js", ".jsx", ".yaml", ".yml"} {
@@ -625,15 +592,12 @@ func workflowNameDisplay(p string) string {
 	return base
 }
 
-// capPayloadLines limits the payload text to a reasonable number of lines
-// based on available terminal height. Returns the (possibly truncated) text.
-// The builder b is passed to count lines already written above the payload.
+// capPayloadLines limits the payload text to a reasonable number of lines.
 func capPayloadLines(payloadText string, height int, b *strings.Builder) string {
 	if height <= 0 {
 		return payloadText
 	}
-	// Estimate lines already used by the header/metadata above the payload.
-	linesUsed := strings.Count(b.String(), "\n") + 3 // +3 for payload header + padding
+	linesUsed := strings.Count(b.String(), "\n") + 3
 	maxPayloadLines := height - linesUsed
 	if maxPayloadLines < 4 {
 		maxPayloadLines = 4
@@ -648,7 +612,6 @@ func capPayloadLines(payloadText string, height int, b *strings.Builder) string 
 }
 
 // formatWait formats a duration as a short human-readable wait time string.
-// E.g., "<1m", "8m", "1h 23m".
 func formatWait(d time.Duration) string {
 	if d < time.Minute {
 		return "<1m"
@@ -660,25 +623,32 @@ func formatWait(d time.Duration) string {
 }
 
 // slaStyle returns a lipgloss.Style with SLA-appropriate foreground color.
-// Green  < 5 minutes (was recently requested — low urgency)
-// Yellow < 15 minutes (needs attention)
-// Red    ≥ 15 minutes (overdue / blocking)
-// Note: the ticket brief says <5m green, <15m yellow, >15m red.
-func slaStyle(d time.Duration) lipgloss.Style {
+func slaStyle(args ...any) lipgloss.Style {
+	com := packageCom
+	var d time.Duration
+	switch len(args) {
+	case 1:
+		d, _ = args[0].(time.Duration)
+	case 2:
+		if provided, ok := args[0].(*common.Common); ok && provided != nil {
+			com = provided
+		}
+		d, _ = args[1].(time.Duration)
+	default:
+		return lipgloss.NewStyle()
+	}
+	t := com.Styles
 	switch {
 	case d < 5*time.Minute:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("2")) // green
+		return lipgloss.NewStyle().Foreground(t.Green) // green
 	case d < 15*time.Minute:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("3")) // yellow
+		return lipgloss.NewStyle().Foreground(t.Yellow) // yellow
 	default:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("1")) // red
+		return lipgloss.NewStyle().Foreground(t.Red) // red
 	}
 }
 
 // runNodeProgress derives total and done node counts from a RunSummary's Summary map.
-// The Summary map contains node-state → count pairs (e.g., {"running": 1, "finished": 2}).
-// "Done" counts finished + failed + cancelled + skipped states.
-// Returns (0, 0) when the Summary map is nil or empty.
 func runNodeProgress(run *smithers.RunSummary) (nodeTotal, nodesDone int) {
 	if run == nil || len(run.Summary) == 0 {
 		return 0, 0
@@ -754,6 +724,7 @@ func relativeTime(ms int64) string {
 
 // approvalListPane is the left pane: navigable list of approvals.
 type approvalListPane struct {
+	com         *common.Common
 	approvals   []smithers.Approval
 	cursor      int
 	width       int
@@ -837,14 +808,13 @@ func (p *approvalListPane) renderItem(idx int) string {
 	waitBadge := ""
 	if a.Status == "pending" && a.RequestedAt > 0 {
 		wait := time.Since(time.UnixMilli(a.RequestedAt))
-		waitBadge = slaStyle(wait).Render(formatWait(wait))
+		waitBadge = slaStyle(p.com, wait).Render(formatWait(wait))
 	}
 
-	// Compute label width accounting for cursor (2), icon (1), space (1), and wait badge.
 	badgeWidth := lipgloss.Width(waitBadge)
-	reserved := 4 // cursor(2) + icon(1) + space(1)
+	reserved := 4
 	if badgeWidth > 0 {
-		reserved += badgeWidth + 1 // +1 for the space before badge
+		reserved += badgeWidth + 1
 	}
 	maxLabelLen := p.width - reserved
 	if maxLabelLen < 1 {
@@ -869,13 +839,13 @@ func (p *approvalListPane) renderItem(idx int) string {
 
 // approvalDetailPane is the right pane: detail display for the selected approval.
 type approvalDetailPane struct {
+	com       *common.Common
 	approvals []smithers.Approval
 	cursor    int
 	width     int
 	height    int
-	actionErr error // last approve/deny error to display inline
+	actionErr error
 
-	// Enriched run context (populated by ApprovalsView on cursor change).
 	selectedRun    *smithers.RunSummary
 	contextLoading bool
 	contextErr     error
@@ -884,7 +854,7 @@ type approvalDetailPane struct {
 func (p *approvalDetailPane) Init() tea.Cmd { return nil }
 
 func (p *approvalDetailPane) Update(msg tea.Msg) (components.Pane, tea.Cmd) {
-	return p, nil // read-only in v1
+	return p, nil
 }
 
 func (p *approvalDetailPane) SetSize(width, height int) {
@@ -896,5 +866,5 @@ func (p *approvalDetailPane) View() string {
 	if p.cursor < 0 || p.cursor >= len(p.approvals) {
 		return ""
 	}
-	return renderApprovalDetail(p.approvals[p.cursor], p.selectedRun, p.contextLoading, p.contextErr, p.actionErr, p.width, p.height)
+	return renderApprovalDetail(p.com, p.approvals[p.cursor], p.selectedRun, p.contextLoading, p.contextErr, p.actionErr, p.width, p.height)
 }

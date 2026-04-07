@@ -55,7 +55,7 @@ type MemoryView struct {
 
 	// Detail / recall mode.
 	mode          memoryViewMode
-	recallQuery   string        // Accumulated input while typing recall query.
+	recallQuery   string // Accumulated input while typing recall query.
 	recallResults []smithers.MemoryRecallResult
 	recallErr     error
 	recallLoading bool
@@ -482,19 +482,9 @@ func (v *MemoryView) renderDetail() string {
 // renderRecallPrompt renders the inline query input for semantic recall.
 func (v *MemoryView) renderRecallPrompt() string {
 	var b strings.Builder
-	bold := lipgloss.NewStyle().Bold(true)
 	faint := lipgloss.NewStyle().Faint(true)
 
-	header := bold.Render("SMITHERS \u203a Memory \u203a Recall")
-	helpHint := faint.Render("[Enter] Search  [Esc] Cancel")
-	headerLine := header
-	if v.width > 0 {
-		gap := v.width - lipgloss.Width(header) - lipgloss.Width(helpHint) - 2
-		if gap > 0 {
-			headerLine = header + strings.Repeat(" ", gap) + helpHint
-		}
-	}
-	b.WriteString(headerLine + "\n\n")
+	b.WriteString(ViewHeader(packageCom.Styles, "SMITHERS", "Memory › Recall", v.width, "[Enter] Search  [Esc] Cancel") + "\n\n")
 
 	nsLabel := "all namespaces"
 	if v.activeNamespace != "" {

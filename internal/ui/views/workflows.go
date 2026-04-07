@@ -102,9 +102,9 @@ type runFormState int
 
 const (
 	runFormNone    runFormState = iota // no form
-	runFormLoading                    // fetching DAG fields before showing form
-	runFormActive                     // form is visible; user filling in fields
-	runFormError                      // DAG fetch failed (fall back to confirm dialog)
+	runFormLoading                     // fetching DAG fields before showing form
+	runFormActive                      // form is visible; user filling in fields
+	runFormError                       // DAG fetch failed (fall back to confirm dialog)
 )
 
 // --- Info/DAG overlay state ---
@@ -157,7 +157,7 @@ type WorkflowsView struct {
 
 	// Dynamic input form (workflows-dynamic-input-forms)
 	formState      runFormState
-	formWorkflowID string                 // workflow being run via the form
+	formWorkflowID string                  // workflow being run via the form
 	formFields     []smithers.WorkflowTask // ordered field definitions
 	formInputs     []textinput.Model       // one textinput per field
 	formFocused    int                     // index of the focused input
@@ -690,7 +690,7 @@ func (v *WorkflowsView) formMoveFocus(delta int) {
 		return
 	}
 	v.formInputs[v.formFocused].Blur()
-	v.formFocused = ((v.formFocused + delta) % n + n) % n
+	v.formFocused = ((v.formFocused+delta)%n + n) % n
 	v.formInputs[v.formFocused].Focus()
 }
 
@@ -699,16 +699,7 @@ func (v *WorkflowsView) View() string {
 	var b strings.Builder
 
 	// Header
-	header := lipgloss.NewStyle().Bold(true).Render("SMITHERS \u203a Workflows")
-	helpHint := lipgloss.NewStyle().Faint(true).Render("[Esc] Back")
-	headerLine := header
-	if v.width > 0 {
-		gap := v.width - lipgloss.Width(header) - lipgloss.Width(helpHint) - 2
-		if gap > 0 {
-			headerLine = header + strings.Repeat(" ", gap) + helpHint
-		}
-	}
-	b.WriteString(headerLine)
+	b.WriteString(ViewHeader(packageCom.Styles, "SMITHERS", "Workflows", v.width, "[Esc] Back"))
 	b.WriteString("\n\n")
 
 	if v.loading {

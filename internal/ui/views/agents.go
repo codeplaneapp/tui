@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/crush/internal/smithers"
+	"github.com/charmbracelet/crush/internal/ui/common"
 	"github.com/charmbracelet/crush/internal/ui/handoff"
 )
 
@@ -25,6 +26,7 @@ type agentsErrorMsg struct {
 
 // AgentsView displays a selectable list of CLI agents.
 type AgentsView struct {
+	com           *common.Common
 	client        *smithers.Client
 	agents        []smithers.Agent
 	cursor        int
@@ -37,8 +39,10 @@ type AgentsView struct {
 }
 
 // NewAgentsView creates a new agents view.
-func NewAgentsView(client *smithers.Client) *AgentsView {
+func NewAgentsView(args ...any) *AgentsView {
+	com, client, _ := parseCommonAndClient(args)
 	return &AgentsView{
+		com:     com,
 		client:  client,
 		loading: true,
 	}
@@ -163,55 +167,12 @@ func capitalizeRoles(roles []string) []string {
 	return out
 }
 
-// styledCheck returns a colored ✓ (green) or ✗ (red) for boolean flags.
-func styledCheck(ok bool) string {
-	if ok {
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render("✓")
-	}
-	return lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Render("✗")
-}
-
-// agentStatusIcon returns the Unicode status indicator for an agent status string.
-func agentStatusIcon(status string) string {
-	switch status {
-	case "likely-subscription", "api-key":
-		return "●"
-	case "binary-only":
-		return "◐"
-	default:
-		return "○"
-	}
-}
-
-// agentStatusStyle returns a lipgloss style for the status icon.
-func agentStatusStyle(status string) lipgloss.Style {
-	switch status {
-	case "likely-subscription":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("2")) // green
-	case "api-key":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("3")) // yellow
-	case "binary-only":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("8")) // dim
-	default:
-		return lipgloss.NewStyle().Faint(true)
-	}
-}
-
 // View renders the agents list.
 func (v *AgentsView) View() string {
 	var b strings.Builder
 
 	// Header
-	header := lipgloss.NewStyle().Bold(true).Render("SMITHERS › Agents")
-	helpHint := lipgloss.NewStyle().Faint(true).Render("[Esc] Back")
-	headerLine := header
-	if v.width > 0 {
-		gap := v.width - lipgloss.Width(header) - lipgloss.Width(helpHint) - 2
-		if gap > 0 {
-			headerLine = header + strings.Repeat(" ", gap) + helpHint
-		}
-	}
-	b.WriteString(headerLine)
+	b.WriteString(ViewHeader(v.com.Styles, "SMITHERS", "Agents", v.width, "[Esc] Back"))
 	b.WriteString("\n\n")
 
 	if v.loading {
@@ -282,6 +243,7 @@ func (v *AgentsView) renderNarrow(b *strings.Builder, available, unavailable []s
 
 // writeAgentRow writes a single agent row into the builder.
 func (v *AgentsView) writeAgentRow(b *strings.Builder, agent smithers.Agent, idx int, detailed bool) {
+	t := v.com.Styles
 	isSelected := idx == v.cursor
 	cursor := "  "
 	nameStyle := lipgloss.NewStyle()
@@ -301,11 +263,11 @@ func (v *AgentsView) writeAgentRow(b *strings.Builder, agent smithers.Agent, idx
 	}
 
 	icon := agentStatusIcon(agent.Status)
-	styledIcon := agentStatusStyle(agent.Status).Render(icon)
+	styledIcon := agentStatusStyle(t, agent.Status).Render(icon)
 	b.WriteString("  " + styledIcon + " " + agent.Status)
 
 	if detailed {
-		b.WriteString(fmt.Sprintf("   Auth: %s  API Key: %s", styledCheck(agent.HasAuth), styledCheck(agent.HasAPIKey)))
+		b.WriteString(fmt.Sprintf("   Auth: %s  API Key: %s", styledCheck(t, agent.HasAuth), styledCheck(t, agent.HasAPIKey)))
 		if len(agent.Roles) > 0 {
 			b.WriteString("   Roles: " + strings.Join(capitalizeRoles(agent.Roles), ", "))
 		}
@@ -315,6 +277,7 @@ func (v *AgentsView) writeAgentRow(b *strings.Builder, agent smithers.Agent, idx
 
 // renderWide renders a two-column layout for terminals wider than 100 columns.
 func (v *AgentsView) renderWide(b *strings.Builder, available, unavailable []smithers.Agent) {
+	t := v.com.Styles
 	const leftWidth = 36
 	rightWidth := v.width - leftWidth - 3
 	if rightWidth < 20 {
@@ -380,12 +343,12 @@ func (v *AgentsView) renderWide(b *strings.Builder, available, unavailable []smi
 		rightLines = append(rightLines, "Binary: "+lipgloss.NewStyle().Faint(true).Render(binaryLabel))
 
 		icon := agentStatusIcon(a.Status)
-		styledIcon := agentStatusStyle(a.Status).Render(icon)
+		styledIcon := agentStatusStyle(t, a.Status).Render(icon)
 		rightLines = append(rightLines, "Status: "+styledIcon+" "+a.Status)
 
 		rightLines = append(rightLines,
-			fmt.Sprintf("Auth:    %s", styledCheck(a.HasAuth)),
-			fmt.Sprintf("API Key: %s", styledCheck(a.HasAPIKey)),
+			fmt.Sprintf("Auth:    %s", styledCheck(t, a.HasAuth)),
+			fmt.Sprintf("API Key: %s", styledCheck(t, a.HasAPIKey)),
 		)
 		if len(a.Roles) > 0 {
 			rightLines = append(rightLines, "Roles:   "+strings.Join(capitalizeRoles(a.Roles), ", "))

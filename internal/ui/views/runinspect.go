@@ -446,29 +446,17 @@ func (v *RunInspectView) ShortHelp() []key.Binding {
 // --- Rendering helpers ---
 
 func (v *RunInspectView) renderHeader() string {
-	titleStyle := lipgloss.NewStyle().Bold(true)
-	hintStyle := lipgloss.NewStyle().Faint(true)
-
 	runPart := v.runID
 	if len(runPart) > 8 {
 		runPart = runPart[:8]
 	}
 
-	title := "SMITHERS › Runs › " + runPart
+	viewName := "Runs › " + runPart
 	if v.inspection != nil && v.inspection.WorkflowName != "" {
-		title += " (" + v.inspection.WorkflowName + ")"
+		viewName += " (" + v.inspection.WorkflowName + ")"
 	}
 
-	header := titleStyle.Render(title)
-	hint := hintStyle.Render("[Esc] Back")
-
-	if v.width > 0 {
-		gap := v.width - lipgloss.Width(header) - lipgloss.Width(hint) - 2
-		if gap > 0 {
-			return header + strings.Repeat(" ", gap) + hint
-		}
-	}
-	return header
+	return ViewHeader(packageCom.Styles, "SMITHERS", viewName, v.width, "[Esc] Back")
 }
 
 func (v *RunInspectView) renderSubHeader() string {

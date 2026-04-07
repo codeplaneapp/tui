@@ -581,16 +581,7 @@ func (v *TriggersView) View() string {
 	var b strings.Builder
 
 	// Header
-	header := lipgloss.NewStyle().Bold(true).Render("SMITHERS \u203a Triggers")
-	helpHint := lipgloss.NewStyle().Faint(true).Render("[Esc] Back")
-	headerLine := header
-	if v.width > 0 {
-		gap := v.width - lipgloss.Width(header) - lipgloss.Width(helpHint) - 2
-		if gap > 0 {
-			headerLine = header + strings.Repeat(" ", gap) + helpHint
-		}
-	}
-	b.WriteString(headerLine)
+	b.WriteString(ViewHeader(packageCom.Styles, "SMITHERS", "Triggers", v.width, "[Esc] Back"))
 	b.WriteString("\n\n")
 
 	if v.loading {

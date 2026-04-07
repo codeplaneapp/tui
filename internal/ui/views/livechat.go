@@ -735,29 +735,17 @@ func (v *LiveChatView) ShortHelp() []key.Binding {
 // --- Rendering helpers ---
 
 func (v *LiveChatView) renderHeader() string {
-	titleStyle := lipgloss.NewStyle().Bold(true)
-	hintStyle := lipgloss.NewStyle().Faint(true)
-
 	runPart := v.runID
 	if len(runPart) > 8 {
 		runPart = runPart[:8]
 	}
 
-	title := "SMITHERS > Chat > " + runPart
+	viewName := "Chat › " + runPart
 	if v.run != nil && v.run.WorkflowName != "" {
-		title += " (" + v.run.WorkflowName + ")"
+		viewName += " (" + v.run.WorkflowName + ")"
 	}
 
-	header := titleStyle.Render(title)
-	hint := hintStyle.Render("[Esc] Back")
-
-	if v.width > 0 {
-		gap := v.width - lipgloss.Width(header) - lipgloss.Width(hint) - 2
-		if gap > 0 {
-			return header + strings.Repeat(" ", gap) + hint
-		}
-	}
-	return header
+	return ViewHeader(packageCom.Styles, "SMITHERS", viewName, v.width, "[Esc] Back")
 }
 
 func (v *LiveChatView) renderSubHeader() string {
@@ -1027,9 +1015,9 @@ type liveChatBodyPane struct {
 	view *LiveChatView
 }
 
-func (p *liveChatBodyPane) Init() tea.Cmd                                  { return nil }
+func (p *liveChatBodyPane) Init() tea.Cmd                                 { return nil }
 func (p *liveChatBodyPane) Update(msg tea.Msg) (components.Pane, tea.Cmd) { return p, nil }
-func (p *liveChatBodyPane) View() string                                   { return p.view.renderBody() }
+func (p *liveChatBodyPane) View() string                                  { return p.view.renderBody() }
 func (p *liveChatBodyPane) SetSize(width, height int) {
 	// The body pane shares the parent view's rendering; dimensions are
 	// governed by the parent LiveChatView.

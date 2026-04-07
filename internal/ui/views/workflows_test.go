@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/crush/internal/smithers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -174,7 +175,7 @@ func TestWorkflowsView_View_HeaderText(t *testing.T) {
 	v.width = 80
 	v.height = 24
 	out := v.View()
-	assert.Contains(t, out, "SMITHERS \u203a Workflows")
+	assert.Contains(t, ansi.Strip(out), "SMITHERS \u203a Workflows")
 }
 
 // --- 11. View shows workflow names ---
@@ -1404,7 +1405,7 @@ func TestWorkflowsView_DoctorOverlay_BlocksKeysWhileRunning(t *testing.T) {
 func TestRunWorkflowDoctor_ReturnsBinaryCheck(t *testing.T) {
 	// Use a client where smithers binary is not on PATH.
 	c := smithers.NewClient(
-		// Override lookPath to simulate binary not found.
+	// Override lookPath to simulate binary not found.
 	)
 	_ = c
 	// We test the exported RunWorkflowDoctor with a real client.

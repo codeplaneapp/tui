@@ -36,7 +36,7 @@ func TestRenderHeaderDetails_WithSmithersStatus(t *testing.T) {
 	)
 
 	plain := ansi.Strip(details)
-	require.Contains(t, plain, "● codeplane connected")
+	require.Contains(t, plain, "● smithers connected")
 	require.Contains(t, plain, "2 active")
 	require.Contains(t, plain, "⚠ 1 pending approval")
 }
@@ -78,8 +78,8 @@ func TestRenderHeaderDetails_MCPDisconnected(t *testing.T) {
 	)
 
 	plain := ansi.Strip(details)
-	require.Contains(t, plain, "○ codeplane disconnected")
-	require.NotContains(t, plain, "● codeplane connected")
+	require.Contains(t, plain, "○ smithers disconnected")
+	require.NotContains(t, plain, "● smithers connected")
 	require.NotContains(t, plain, "tools")
 }
 
@@ -105,7 +105,7 @@ func TestRenderHeaderDetails_MCPConnectedWithToolCount(t *testing.T) {
 	)
 
 	plain := ansi.Strip(details)
-	require.Contains(t, plain, "● codeplane connected (14 tools)")
+	require.Contains(t, plain, "● smithers connected (14 tools)")
 }
 
 func TestRenderHeaderDetails_MCPConnectedZeroTools(t *testing.T) {
@@ -128,7 +128,7 @@ func TestRenderHeaderDetails_MCPConnectedZeroTools(t *testing.T) {
 
 	plain := ansi.Strip(details)
 	// When tool count is zero do not show "(0 tools)".
-	require.Contains(t, plain, "● codeplane connected")
+	require.Contains(t, plain, "● smithers connected")
 	require.NotContains(t, plain, "tools")
 }
 
@@ -137,7 +137,7 @@ func TestRenderHeaderDetails_DefaultServerName(t *testing.T) {
 
 	com := newHeaderTestCommon(t)
 	sess := &session.Session{}
-	// Empty MCPServerName should fall back to "codeplane".
+	// Empty MCPServerName should fall back to "smithers".
 	details := renderHeaderDetails(
 		com,
 		sess,
@@ -151,7 +151,7 @@ func TestRenderHeaderDetails_DefaultServerName(t *testing.T) {
 	)
 
 	plain := ansi.Strip(details)
-	require.Contains(t, plain, "codeplane disconnected")
+	require.Contains(t, plain, "smithers disconnected")
 }
 
 func TestRenderHeaderDetails_PendingApprovals_Plural(t *testing.T) {

@@ -88,16 +88,16 @@ type PromptsView struct {
 	tmpPath string // temp file path for Ctrl+O external editor handoff
 
 	// Props discovery: most-recently discovered props (may differ from cached source).
-	discoveredProps    []smithers.PromptProp
-	discoveringProps   bool
-	discoverPropsErr   error
+	discoveredProps  []smithers.PromptProp
+	discoveringProps bool
+	discoverPropsErr error
 
 	// Live preview: rendered output from PreviewPrompt.
 	// propValues holds the user-supplied values for each discovered prop.
-	previewText      string
-	previewErr       error
-	previewLoading   bool
-	propValues       map[string]string // propName → value
+	previewText    string
+	previewErr     error
+	previewLoading bool
+	propValues     map[string]string // propName → value
 }
 
 // NewPromptsView creates a new PromptsView.
@@ -437,16 +437,7 @@ func (v *PromptsView) View() string {
 	var b strings.Builder
 
 	// Header
-	header := lipgloss.NewStyle().Bold(true).Render("SMITHERS \u203a Prompts")
-	helpHint := lipgloss.NewStyle().Faint(true).Render("[Esc] Back")
-	headerLine := header
-	if v.width > 0 {
-		gap := v.width - lipgloss.Width(header) - lipgloss.Width(helpHint) - 2
-		if gap > 0 {
-			headerLine = header + strings.Repeat(" ", gap) + helpHint
-		}
-	}
-	b.WriteString(headerLine)
+	b.WriteString(ViewHeader(packageCom.Styles, "SMITHERS", "Prompts", v.width, "[Esc] Back"))
 	b.WriteString("\n\n")
 
 	if v.loading {

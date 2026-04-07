@@ -198,13 +198,17 @@ func (v *JJHubWorkflowsView) openRunPrompt() tea.Cmd {
 	if workflow == nil {
 		return nil
 	}
+	defaultRef := "main"
+	if v.repo != nil && strings.TrimSpace(v.repo.DefaultBookmark) != "" {
+		defaultRef = v.repo.DefaultBookmark
+	}
 	v.prompt.active = true
 	v.prompt.err = nil
 	v.prompt.workflow = workflow
-	v.prompt.ref = "main"
+	v.prompt.ref = defaultRef
 	v.prompt.input.Reset()
 	v.prompt.input.Placeholder = "Git ref"
-	v.prompt.input.SetValue("main")
+	v.prompt.input.SetValue(defaultRef)
 	return v.prompt.input.Focus()
 }
 

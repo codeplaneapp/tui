@@ -180,16 +180,8 @@ func (v *ScoresView) View() string {
 	if v.activeTab == scoresTabDetail {
 		tabLabel = "[Details]"
 	}
-	header := lipgloss.NewStyle().Bold(true).Render("SMITHERS › Scores " + tabLabel)
-	helpHint := lipgloss.NewStyle().Faint(true).Render("[Tab] Switch  [Esc] Back")
-	headerLine := header
-	if v.width > 0 {
-		gap := v.width - lipgloss.Width(header) - lipgloss.Width(helpHint) - 2
-		if gap > 0 {
-			headerLine = header + strings.Repeat(" ", gap) + helpHint
-		}
-	}
-	b.WriteString(headerLine + "\n\n")
+	viewName := "Scores " + tabLabel
+	b.WriteString(ViewHeader(packageCom.Styles, "SMITHERS", viewName, v.width, "[Tab] Switch  [Esc] Back") + "\n\n")
 
 	if v.loading {
 		b.WriteString("  Loading scores...\n")

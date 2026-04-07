@@ -50,7 +50,7 @@ func newHeader(com *common.Common) *header {
 		com: com,
 	}
 	t := com.Styles
-	h.compactLogo = styles.ApplyBoldForegroundGrad(t, "CODEPLANE", t.Secondary, t.Primary) + " "
+	h.compactLogo = styles.ApplyBoldForegroundGrad(t, "SMITHERS", t.Secondary, t.Primary) + " "
 	return h
 }
 
@@ -157,8 +157,8 @@ func renderHeaderDetails(
 	if smithersStatus != nil {
 		serverName := strings.TrimSpace(smithersStatus.MCPServerName)
 		switch serverName {
-		case "", "smithers":
-			serverName = "codeplane"
+		case "", "codeplane":
+			serverName = "smithers"
 		}
 
 		indicator := "○"
