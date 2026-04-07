@@ -5,9 +5,13 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
+
+	"github.com/charmbracelet/crush/internal/observability"
+	"go.opentelemetry.io/otel/attribute"
 )
 
-const defaultWorkerSessionName = "crush-worker"
+const defaultWorkerSessionName = "codeplane-worker"
 
 var (
 	ErrWorkspaceSSHUnavailable = errors.New("workspace SSH is not available")
@@ -15,29 +19,42 @@ var (
 )
 
 // AttachWorkspaceCommand builds the SSH command that attaches to a persistent
-// Crush worker running inside a JJHub workspace. The remote worker is hosted in
-// a tmux session so users can detach and reattach without losing the process.
+// Codeplane worker running inside a JJHub workspace. The remote worker is
+// hosted in a tmux session so users can detach and reattach without losing the
+// process.
 func AttachWorkspaceCommand(workspace Workspace) (*exec.Cmd, error) {
 	return attachWorkspaceCommand(workspace, exec.LookPath)
 }
 
 func attachWorkspaceCommand(workspace Workspace, lookPathFn func(string) (string, error)) (*exec.Cmd, error) {
+	start := time.Now()
+	attrs := []attribute.KeyValue{
+		attribute.String("codeplane.workspace.source", "jjhub"),
+		attribute.String("codeplane.workspace.id", workspace.ID),
+	}
 	host := workspaceSSHHost(workspace)
 	if host == "" {
-		return nil, ErrWorkspaceSSHUnavailable
+		err := ErrWorkspaceSSHUnavailable
+		recordAttachWorkspacePrepareResult(time.Since(start), err, attrs...)
+		return nil, err
 	}
+	attrs = append(attrs, attribute.String("codeplane.workspace.ssh_host", host))
 	if _, err := lookPathFn("ssh"); err != nil {
-		return nil, ErrSSHBinaryUnavailable
+		err = ErrSSHBinaryUnavailable
+		recordAttachWorkspacePrepareResult(time.Since(start), err, attrs...)
+		return nil, err
 	}
 
-	return exec.Command( //nolint:gosec
+	cmd := exec.Command( //nolint:gosec
 		"ssh",
 		"-tt",
 		host,
 		"bash",
 		"-lc",
 		workerAttachScript(defaultWorkerSessionName),
-	), nil
+	)
+	recordAttachWorkspacePrepareResult(time.Since(start), nil, attrs...)
+	return cmd, nil
 }
 
 func workerAttachScript(sessionName string) string {
@@ -45,16 +62,16 @@ func workerAttachScript(sessionName string) string {
 	lines := []string{
 		"set -euo pipefail",
 		"if ! command -v tmux >/dev/null 2>&1; then",
-		"  echo 'tmux is required in the workspace to attach a persistent Crush worker' >&2",
+		"  echo 'tmux is required in the workspace to attach a persistent Codeplane worker' >&2",
 		"  exit 127",
 		"fi",
 		"worker_bin=''",
-		"if command -v crush >/dev/null 2>&1; then",
-		"  worker_bin='crush'",
-		"elif command -v codeplane >/dev/null 2>&1; then",
+		"if command -v codeplane >/dev/null 2>&1; then",
 		"  worker_bin='codeplane'",
+		"elif command -v crush >/dev/null 2>&1; then",
+		"  worker_bin='crush'",
 		"else",
-		"  echo 'Neither crush nor codeplane is installed in the workspace' >&2",
+		"  echo 'Neither codeplane nor crush is installed in the workspace' >&2",
 		"  exit 127",
 		"fi",
 		fmt.Sprintf("session=%s", quotedSession),
@@ -81,4 +98,13 @@ func shellQuote(value string) string {
 		return "''"
 	}
 	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
+}
+
+func recordAttachWorkspacePrepareResult(duration time.Duration, err error, attrs ...attribute.KeyValue) {
+	result := "ok"
+	if err != nil {
+		result = "error"
+		attrs = append(attrs, attribute.String("codeplane.error", err.Error()))
+	}
+	observability.RecordWorkspaceLifecycle("attach_prepare", result, duration, attrs...)
 }

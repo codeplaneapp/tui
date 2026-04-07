@@ -1,15 +1,18 @@
 package jjhub
 
 import (
+	"context"
 	"errors"
+	"strings"
 	"testing"
 
+	"github.com/charmbracelet/crush/internal/observability"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestAttachWorkspaceCommand_MissingSSHHost(t *testing.T) {
-	t.Parallel()
+	configureWorkerObservability(t)
 
 	workspace := Workspace{ID: "ws-1"}
 	cmd, err := attachWorkspaceCommand(workspace, func(string) (string, error) {
@@ -19,10 +22,13 @@ func TestAttachWorkspaceCommand_MissingSSHHost(t *testing.T) {
 
 	assert.Nil(t, cmd)
 	require.ErrorIs(t, err, ErrWorkspaceSSHUnavailable)
+
+	attrs := requireWorkerSpanAttrs(t, "attach_prepare", "error")
+	assert.Equal(t, "ws-1", attrs["codeplane.workspace.id"])
 }
 
 func TestAttachWorkspaceCommand_MissingSSHBinary(t *testing.T) {
-	t.Parallel()
+	configureWorkerObservability(t)
 
 	host := "alpha.example.com"
 	workspace := Workspace{ID: "ws-1", SSHHost: &host}
@@ -33,10 +39,13 @@ func TestAttachWorkspaceCommand_MissingSSHBinary(t *testing.T) {
 
 	assert.Nil(t, cmd)
 	require.ErrorIs(t, err, ErrSSHBinaryUnavailable)
+
+	attrs := requireWorkerSpanAttrs(t, "attach_prepare", "error")
+	assert.Equal(t, host, attrs["codeplane.workspace.ssh_host"])
 }
 
 func TestAttachWorkspaceCommand_BuildsSSHCommand(t *testing.T) {
-	t.Parallel()
+	configureWorkerObservability(t)
 
 	host := "alpha.example.com"
 	workspace := Workspace{ID: "ws-1", SSHHost: &host}
@@ -58,10 +67,17 @@ func TestAttachWorkspaceCommand_BuildsSSHCommand(t *testing.T) {
 	assert.Contains(t, script, "command -v tmux")
 	assert.Contains(t, script, "command -v crush")
 	assert.Contains(t, script, "command -v codeplane")
+	assert.Less(t, strings.Index(script, "command -v codeplane"), strings.Index(script, "command -v crush"))
 	assert.Contains(t, script, "git rev-parse --show-toplevel")
 	assert.Contains(t, script, "tmux new-session -d -s")
 	assert.Contains(t, script, "tmux attach-session -t")
-	assert.Contains(t, script, "session='crush-worker'")
+	assert.Contains(t, script, "session='codeplane-worker'")
+	assert.Contains(t, script, "persistent Codeplane worker")
+	assert.Contains(t, script, "Neither codeplane nor crush is installed")
+
+	attrs := requireWorkerSpanAttrs(t, "attach_prepare", "ok")
+	assert.Equal(t, "ws-1", attrs["codeplane.workspace.id"])
+	assert.Equal(t, host, attrs["codeplane.workspace.ssh_host"])
 }
 
 func TestShellQuote(t *testing.T) {
@@ -71,4 +87,37 @@ func TestShellQuote(t *testing.T) {
 	assert.Equal(t, "'plain'", shellQuote("plain"))
 	assert.Equal(t, `'has"quote'`, shellQuote(`has"quote`))
 	assert.Equal(t, `'a'"'"'b'`, shellQuote("a'b"))
+}
+
+func configureWorkerObservability(t *testing.T) {
+	t.Helper()
+
+	t.Cleanup(func() {
+		require.NoError(t, observability.Shutdown(context.Background()))
+	})
+
+	require.NoError(t, observability.Configure(context.Background(), observability.Config{
+		ServiceName:      "test",
+		ServiceVersion:   "dev",
+		Mode:             observability.ModeLocal,
+		TraceBufferSize:  32,
+		TraceSampleRatio: 1,
+	}))
+}
+
+func requireWorkerSpanAttrs(t *testing.T, operation, result string) map[string]any {
+	t.Helper()
+
+	for _, span := range observability.RecentSpans(20) {
+		if span.Name != "workspace.lifecycle" {
+			continue
+		}
+		if span.Attributes["codeplane.workspace.operation"] == operation &&
+			span.Attributes["codeplane.workspace.result"] == result {
+			return span.Attributes
+		}
+	}
+
+	t.Fatalf("missing workspace lifecycle span operation=%q result=%q", operation, result)
+	return nil
 }

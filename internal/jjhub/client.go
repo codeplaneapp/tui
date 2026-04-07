@@ -676,7 +676,8 @@ func (c *Client) ViewChange(ctx context.Context, changeID string) (*Change, erro
 }
 
 func (c *Client) GetCurrentRepo(ctx context.Context) (*Repo, error) {
-	out, err := c.runContext(ctx, "repo", "view")
+	args := append([]string{"repo", "view"}, c.repoArgs()...)
+	out, err := c.runContext(ctx, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -732,7 +733,11 @@ func (c *Client) ChangeDiff(ctx context.Context, changeID string) (string, error
 }
 
 func (c *Client) WorkingCopyDiff(ctx context.Context) (string, error) {
-	cmd := exec.CommandContext(ctx, "jj", "diff", "--no-color")
+	args := []string{"diff", "--no-color"}
+	if c.repo != "" {
+		args = append(args, "-R", c.repo)
+	}
+	cmd := exec.CommandContext(ctx, "jj", args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		if ctx.Err() != nil {
