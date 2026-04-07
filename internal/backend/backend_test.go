@@ -2,6 +2,8 @@ package backend
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -52,6 +54,37 @@ func TestBackend_CreateWorkspace_EmptyPath(t *testing.T) {
 	assert.Nil(t, ws)
 	assert.Equal(t, proto.Workspace{}, result)
 	assert.ErrorIs(t, err, ErrPathRequired)
+}
+
+func TestBackend_CreateWorkspace_ClosesDBOnAppInitFailure(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmpDir, "config"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(tmpDir, "data"))
+
+	originalNewWorkspaceApp := newWorkspaceApp
+	t.Cleanup(func() {
+		newWorkspaceApp = originalNewWorkspaceApp
+	})
+
+	var capturedConn *sql.DB
+	newWorkspaceApp = func(ctx context.Context, conn *sql.DB, store *config.ConfigStore) (*app.App, error) {
+		capturedConn = conn
+		return nil, errors.New("boom")
+	}
+
+	b := New(t.Context(), nil, nil)
+
+	ws, result, err := b.CreateWorkspace(proto.Workspace{Path: tmpDir})
+	require.Error(t, err)
+	assert.Nil(t, ws)
+	assert.Equal(t, proto.Workspace{}, result)
+	require.NotNil(t, capturedConn)
+	assert.ErrorContains(t, err, "failed to create app workspace")
+	assert.ErrorContains(t, err, "boom")
+
+	pingErr := capturedConn.PingContext(t.Context())
+	require.Error(t, pingErr)
+	assert.ErrorContains(t, pingErr, "closed")
 }
 
 func TestBackend_ListWorkspaces_Empty(t *testing.T) {

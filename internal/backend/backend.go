@@ -33,6 +33,11 @@ var (
 	ErrUnknownCommand          = errors.New("unknown command")
 )
 
+var (
+	connectWorkspaceDB = db.Connect
+	newWorkspaceApp    = app.New
+)
+
 // ShutdownFunc is called when the backend needs to trigger a server
 // shutdown (e.g. when the last workspace is removed).
 type ShutdownFunc func()
@@ -121,13 +126,26 @@ func (b *Backend) CreateWorkspace(args proto.Workspace) (*Workspace, proto.Works
 		return nil, proto.Workspace{}, fmt.Errorf("failed to create data directory: %w", err)
 	}
 
-	conn, err := db.Connect(ctx, cfg.Config().Options.DataDirectory)
+	conn, err := connectWorkspaceDB(ctx, cfg.Config().Options.DataDirectory)
 	if err != nil {
 		errResult = fmt.Errorf("failed to connect to database: %w", err)
 		return nil, proto.Workspace{}, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	appWorkspace, err := app.New(ctx, conn, cfg)
+	closeConn := true
+	defer func() {
+		if !closeConn {
+			return
+		}
+		if closeErr := conn.Close(); closeErr != nil {
+			errResult = errors.Join(errResult,
+				fmt.Errorf("failed to close database connection: %w", closeErr),
+			)
+			slog.Error("Failed to close database connection", "error", closeErr)
+		}
+	}()
+
+	appWorkspace, err := newWorkspaceApp(ctx, conn, cfg)
 	if err != nil {
 		errResult = fmt.Errorf("failed to create app workspace: %w", err)
 		return nil, proto.Workspace{}, fmt.Errorf("failed to create app workspace: %w", err)
@@ -165,6 +183,8 @@ func (b *Backend) CreateWorkspace(args proto.Workspace) (*Workspace, proto.Works
 		Config:  cfg.Config(),
 		Env:     args.Env,
 	}
+
+	closeConn = false
 
 	return ws, result, nil
 }
