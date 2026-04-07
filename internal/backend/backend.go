@@ -92,8 +92,11 @@ func (b *Backend) ListWorkspaces() []proto.Workspace {
 // CreateWorkspace initializes a new workspace from the given
 // parameters. It creates the config, database connection, and
 // [app.App] instance.
-func (b *Backend) CreateWorkspace(args proto.Workspace) (*Workspace, proto.Workspace, error) {
-	ctx, span := observability.StartSpan(b.ctx, "backend.create_workspace")
+func (b *Backend) CreateWorkspace(ctx context.Context, args proto.Workspace) (*Workspace, proto.Workspace, error) {
+	if ctx == nil {
+		ctx = b.ctx
+	}
+	ctx, span := observability.StartSpan(ctx, "backend.create_workspace")
 	span.SetAttributes(
 		attribute.String("workspace.path", args.Path),
 		attribute.Bool("workspace.debug", args.Debug),
@@ -113,6 +116,7 @@ func (b *Backend) CreateWorkspace(args proto.Workspace) (*Workspace, proto.Works
 	}
 
 	id := uuid.New().String()
+	appCtx := observability.WithWorkspaceID(context.WithoutCancel(b.ctx), id)
 	cfg, err := config.Init(args.Path, args.DataDir, args.Debug)
 	if err != nil {
 		errResult = fmt.Errorf("failed to initialize config: %w", err)
@@ -145,7 +149,7 @@ func (b *Backend) CreateWorkspace(args proto.Workspace) (*Workspace, proto.Works
 		}
 	}()
 
-	appWorkspace, err := newWorkspaceApp(ctx, conn, cfg)
+	appWorkspace, err := newWorkspaceApp(appCtx, conn, cfg)
 	if err != nil {
 		errResult = fmt.Errorf("failed to create app workspace: %w", err)
 		return nil, proto.Workspace{}, fmt.Errorf("failed to create app workspace: %w", err)
@@ -191,8 +195,11 @@ func (b *Backend) CreateWorkspace(args proto.Workspace) (*Workspace, proto.Works
 
 // DeleteWorkspace shuts down and removes a workspace. If it was the
 // last workspace, the shutdown callback is invoked.
-func (b *Backend) DeleteWorkspace(id string) {
-	ctx := observability.WithWorkspaceID(b.ctx, id)
+func (b *Backend) DeleteWorkspace(ctx context.Context, id string) {
+	if ctx == nil {
+		ctx = b.ctx
+	}
+	ctx = observability.WithWorkspaceID(ctx, id)
 	ctx, span := observability.StartSpan(ctx, "backend.delete_workspace")
 	start := time.Now()
 	result := "ok"

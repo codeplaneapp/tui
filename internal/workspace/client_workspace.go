@@ -588,6 +588,9 @@ func (w *ClientWorkspace) Subscribe(program *tea.Program) {
 }
 
 func (w *ClientWorkspace) Shutdown() {
+	ctx := observability.WithWorkspaceID(context.Background(), w.workspaceID())
+	ctx = observability.WithComponent(ctx, "workspace_client")
+
 	w.mu.Lock()
 	cancel := w.subscriptionCancel
 	w.subscriptionCancel = nil
@@ -595,7 +598,11 @@ func (w *ClientWorkspace) Shutdown() {
 	if cancel != nil {
 		cancel()
 	}
-	_ = w.client.DeleteWorkspace(context.Background(), w.workspaceID())
+	if err := w.client.DeleteWorkspace(ctx, w.workspaceID()); err != nil {
+		observability.LogAttrs(ctx, slog.LevelWarn, "Failed to delete workspace during shutdown",
+			slog.Any("error", err),
+		)
+	}
 }
 
 // translateEvent converts proto-typed SSE events into the domain types

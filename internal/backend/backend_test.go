@@ -11,6 +11,7 @@ import (
 
 	"github.com/charmbracelet/crush/internal/app"
 	"github.com/charmbracelet/crush/internal/config"
+	"github.com/charmbracelet/crush/internal/observability"
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/proto"
 	"github.com/stretchr/testify/assert"
@@ -34,7 +35,7 @@ func TestBackend_DeleteWorkspace_LastTriggersShutdown(t *testing.T) {
 	})
 
 	// Use CreateWorkspace to get a fully-initialized workspace, then delete it.
-	ws, _, err := b.CreateWorkspace(proto.Workspace{
+	ws, _, err := b.CreateWorkspace(t.Context(), proto.Workspace{
 		Path: tmpDir,
 	})
 	require.NoError(t, err)
@@ -42,7 +43,7 @@ func TestBackend_DeleteWorkspace_LastTriggersShutdown(t *testing.T) {
 
 	assert.False(t, shutdownCalled.Load(), "shutdown should not be called before delete")
 
-	b.DeleteWorkspace(ws.ID)
+	b.DeleteWorkspace(t.Context(), ws.ID)
 
 	assert.True(t, shutdownCalled.Load(), "shutdown should be called when last workspace is deleted")
 }
@@ -50,7 +51,7 @@ func TestBackend_DeleteWorkspace_LastTriggersShutdown(t *testing.T) {
 func TestBackend_CreateWorkspace_EmptyPath(t *testing.T) {
 	b := New(t.Context(), nil, nil)
 
-	ws, result, err := b.CreateWorkspace(proto.Workspace{Path: ""})
+	ws, result, err := b.CreateWorkspace(t.Context(), proto.Workspace{Path: ""})
 	assert.Nil(t, ws)
 	assert.Equal(t, proto.Workspace{}, result)
 	assert.ErrorIs(t, err, ErrPathRequired)
@@ -74,7 +75,7 @@ func TestBackend_CreateWorkspace_ClosesDBOnAppInitFailure(t *testing.T) {
 
 	b := New(t.Context(), nil, nil)
 
-	ws, result, err := b.CreateWorkspace(proto.Workspace{Path: tmpDir})
+	ws, result, err := b.CreateWorkspace(t.Context(), proto.Workspace{Path: tmpDir})
 	require.Error(t, err)
 	assert.Nil(t, ws)
 	assert.Equal(t, proto.Workspace{}, result)
@@ -85,6 +86,70 @@ func TestBackend_CreateWorkspace_ClosesDBOnAppInitFailure(t *testing.T) {
 	pingErr := capturedConn.PingContext(t.Context())
 	require.Error(t, pingErr)
 	assert.ErrorContains(t, pingErr, "closed")
+}
+
+func TestBackend_CreateWorkspace_PropagatesRequestSpanAndSeedsWorkspaceContext(t *testing.T) {
+	t.Cleanup(func() {
+		require.NoError(t, observability.Shutdown(context.Background()))
+	})
+	require.NoError(t, observability.Configure(context.Background(), observability.Config{
+		ServiceName:      "test",
+		ServiceVersion:   "dev",
+		Mode:             observability.ModeLocal,
+		TraceBufferSize:  32,
+		TraceSampleRatio: 1,
+	}))
+
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmpDir, "config"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(tmpDir, "data"))
+
+	originalNewWorkspaceApp := newWorkspaceApp
+	t.Cleanup(func() {
+		newWorkspaceApp = originalNewWorkspaceApp
+	})
+
+	var (
+		appCtx       context.Context
+		capturedConn *sql.DB
+	)
+	newWorkspaceApp = func(ctx context.Context, conn *sql.DB, store *config.ConfigStore) (*app.App, error) {
+		appCtx = ctx
+		capturedConn = conn
+		return &app.App{}, nil
+	}
+	t.Cleanup(func() {
+		if capturedConn != nil {
+			require.NoError(t, capturedConn.Close())
+		}
+	})
+
+	b := New(context.Background(), nil, nil)
+
+	reqCtx := observability.WithRequestID(context.Background(), "req-123")
+	reqCtx, parentSpan := observability.StartSpan(reqCtx, "server.request")
+	traceID := parentSpan.SpanContext().TraceID().String()
+
+	ws, _, err := b.CreateWorkspace(reqCtx, proto.Workspace{Path: tmpDir})
+	parentSpan.End()
+
+	require.NoError(t, err)
+	require.NotNil(t, ws)
+	require.NotNil(t, capturedConn)
+	require.Equal(t, ws.ID, observability.WorkspaceIDFromContext(appCtx))
+	require.Empty(t, observability.RequestIDFromContext(appCtx))
+
+	spans := observability.RecentSpans(20)
+	var createSpanFound bool
+	for _, span := range spans {
+		if span.Name != "backend.create_workspace" {
+			continue
+		}
+		createSpanFound = true
+		require.Equal(t, traceID, span.TraceID)
+		require.Equal(t, ws.ID, span.Attributes["crush.workspace_id"])
+	}
+	require.True(t, createSpanFound)
 }
 
 func TestBackend_ListWorkspaces_Empty(t *testing.T) {
@@ -114,7 +179,7 @@ func TestBackend_DeleteWorkspace_NotFound(t *testing.T) {
 
 	// Deleting a non-existent workspace should be a no-op (no panic).
 	assert.NotPanics(t, func() {
-		b.DeleteWorkspace("does-not-exist")
+		b.DeleteWorkspace(t.Context(), "does-not-exist")
 	})
 
 	// The shutdown callback should NOT be called because no real workspace was removed.
