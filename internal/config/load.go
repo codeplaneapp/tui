@@ -437,16 +437,16 @@ func (c *Config) setDefaults(workingDir, dataDir string) {
 				Think:    true,
 			}
 		}
-	}
 
-	// Add default workflow MCP server if not already configured by user.
-	if _, exists := c.MCP[SmithersMCPName]; !exists {
-		c.MCP[SmithersMCPName] = DefaultSmithersMCPConfig()
-	}
+		// Add default workflow MCP server if not already configured by user.
+		if _, exists := c.MCP[SmithersMCPName]; !exists {
+			c.MCP[SmithersMCPName] = DefaultSmithersMCPConfig()
+		}
 
-	// Apply default disabled tools if user hasn't set any.
-	if c.Options.DisabledTools == nil {
-		c.Options.DisabledTools = DefaultDisabledTools()
+		// Apply default disabled tools if user hasn't set any.
+		if c.Options.DisabledTools == nil {
+			c.Options.DisabledTools = DefaultDisabledTools()
+		}
 	}
 
 	// Apply defaults to LSP configurations
@@ -550,8 +550,8 @@ func defaultSmithersPaths(workingDir string) (dbPath, workflowDir string) {
 		return filepath.Join(dir, "smithers.db"), filepath.Join(dir, "workflows")
 	}
 
-	return filepath.Join(defaultDataDirectory, "codeplane.db"),
-		filepath.Join(defaultDataDirectory, "workflows")
+	return filepath.Join(workingDir, defaultDataDirectory, "codeplane.db"),
+		filepath.Join(workingDir, defaultDataDirectory, "workflows")
 }
 
 func lookupSmithersProjectDir(workingDir string) (path string, modern bool, ok bool) {
@@ -833,6 +833,10 @@ func loadFromConfigPaths(configPaths []string) (*Config, error) {
 		if len(data) == 0 {
 			continue
 		}
+		if isLegacyConfigPath(path) {
+			slog.Warn("Loaded legacy config file; please migrate to Codeplane naming",
+				"path", path)
+		}
 		configs = append(configs, data)
 	}
 
@@ -887,10 +891,10 @@ func hasAWSCredentials(env env.Env) bool {
 // GlobalConfig returns the global configuration file path for the application.
 func GlobalConfig() string {
 	if globalConfig := envWithFallback("CODEPLANE_GLOBAL_CONFIG", "SMITHERS_TUI_GLOBAL_CONFIG", "CRUSH_GLOBAL_CONFIG"); globalConfig != "" {
-		return preferExistingPath(namedPathsInDir(globalConfig)...)
+		return preferExistingPath("global_config", namedPathsInDir(globalConfig)...)
 	}
 
-	return preferExistingPath(configPathsFor(home.Config())...)
+	return preferExistingPath("global_config", configPathsFor(home.Config())...)
 }
 
 // GlobalCacheDir returns the path to the global cache directory for the
@@ -916,10 +920,10 @@ func GlobalCacheDir() string {
 // this config is used when the app overrides configurations instead of updating the global config.
 func GlobalConfigData() string {
 	if globalData := envWithFallback("CODEPLANE_GLOBAL_DATA", "SMITHERS_TUI_GLOBAL_DATA", "CRUSH_GLOBAL_DATA"); globalData != "" {
-		return preferExistingPath(namedPathsInDir(globalData)...)
+		return preferExistingPath("global_data", namedPathsInDir(globalData)...)
 	}
 	if xdgDataHome := os.Getenv("XDG_DATA_HOME"); xdgDataHome != "" {
-		return preferExistingPath(dataPathsFor(xdgDataHome)...)
+		return preferExistingPath("global_data", dataPathsFor(xdgDataHome)...)
 	}
 
 	// Return the path to the main data directory.
@@ -930,10 +934,10 @@ func GlobalConfigData() string {
 			os.Getenv("LOCALAPPDATA"),
 			filepath.Join(os.Getenv("USERPROFILE"), "AppData", "Local"),
 		)
-		return preferExistingPath(dataPathsFor(localAppData)...)
+		return preferExistingPath("global_data", dataPathsFor(localAppData)...)
 	}
 
-	return preferExistingPath(dataPathsFor(filepath.Join(home.Dir(), ".local", "share"))...)
+	return preferExistingPath("global_data", dataPathsFor(filepath.Join(home.Dir(), ".local", "share"))...)
 }
 
 // GlobalWorkspaceDir returns the path to the global server workspace
@@ -1029,20 +1033,43 @@ func envWithFallback(primary string, legacy ...string) string {
 	return ""
 }
 
-func preferExistingPath(paths ...string) string {
-	for _, path := range paths {
-		if _, err := os.Stat(path); err == nil {
-			return path
-		}
-	}
+func preferExistingPath(kind string, paths ...string) string {
 	if len(paths) == 0 {
 		return ""
+	}
+	for _, path := range paths {
+		if _, err := os.Stat(path); err == nil {
+			if path != paths[0] {
+				slog.Warn(fmt.Sprintf("Using legacy %s path; please migrate to the Codeplane path", kind),
+					"selected", path, "replacement", paths[0])
+			}
+			return path
+		}
 	}
 	return paths[0]
 }
 
 func workspaceConfigPath(dataDir string) string {
-	return preferExistingPath(workspaceConfigPathsFor(dataDir)...)
+	return preferExistingPath("workspace_config", workspaceConfigPathsFor(dataDir)...)
+}
+
+func isLegacyConfigPath(path string) bool {
+	base := filepath.Base(path)
+	for _, legacyAppName := range legacyAppNames {
+		if base == legacyAppName+".json" || base == "."+legacyAppName+".json" {
+			return true
+		}
+		if strings.Contains(path, string(filepath.Separator)+legacyAppName+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsLegacyConfigPath reports whether a selected config or data path still uses
+// a Smithers/Crush-era name.
+func IsLegacyConfigPath(path string) bool {
+	return isLegacyConfigPath(path)
 }
 
 func configPathsFor(baseDir string) []string {

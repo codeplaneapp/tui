@@ -38,6 +38,13 @@ type ConfigStore struct {
 	overrides      RuntimeOverrides
 }
 
+// NewConfigStore creates a ConfigStore wrapping the given Config.
+// Use this for lightweight construction when you already have a Config
+// (e.g. in tests or programmatic scenarios that bypass disk loading).
+func NewConfigStore(cfg *Config) *ConfigStore {
+	return &ConfigStore{config: cfg}
+}
+
 // Config returns the pure-data config struct (read-only after load).
 func (s *ConfigStore) Config() *Config {
 	return s.config
@@ -46,6 +53,16 @@ func (s *ConfigStore) Config() *Config {
 // WorkingDir returns the current working directory.
 func (s *ConfigStore) WorkingDir() string {
 	return s.workingDir
+}
+
+// GlobalDataPath returns the global data config path selected for this store.
+func (s *ConfigStore) GlobalDataPath() string {
+	return s.globalDataPath
+}
+
+// WorkspaceConfigPath returns the workspace config path selected for this store.
+func (s *ConfigStore) WorkspaceConfigPath() string {
+	return s.workspacePath
 }
 
 // Resolver returns the variable resolver.
