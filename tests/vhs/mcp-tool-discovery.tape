@@ -1,8 +1,8 @@
 # Smithers MCP tool discovery happy-path recording.
 # This tape verifies that:
 # 1. Smithers TUI starts successfully
-# 2. MCP status shows Smithers connected (or error gracefully)
-# 3. Agent can see and use MCP tools
+# 2. The Start Chat flow opens the built-in Smithers chat
+# 3. The chat chrome shows Smithers MCP tool discovery state
 
 Output tests/vhs/output/mcp-tool-discovery.gif
 Set Shell zsh
@@ -10,22 +10,20 @@ Set FontSize 14
 Set Width 1200
 Set Height 800
 
-Type "CRUSH_GLOBAL_CONFIG=tests/vhs/fixtures CRUSH_GLOBAL_DATA=/tmp/crush-vhs-mcp go run ."
+Type "CODEPLANE_GLOBAL_CONFIG=tests/vhs/fixtures CODEPLANE_GLOBAL_DATA=/tmp/codeplane-vhs-mcp ./crush 2>/dev/null"
 Enter
-Sleep 3s
+Sleep 5s
 
-# The MCP status area should show smithers connection state.
-# If smithers binary is available, it should show "connected".
-# If unavailable, it should show "error" but TUI remains usable.
+# Open the Start Chat flow, then launch the built-in Smithers chat.
+Type "c"
 Sleep 1s
-
-# Ask the agent about available tools to verify MCP tool discovery.
-Type "What MCP tools are available for managing workflows?"
 Enter
 Sleep 2s
 
 Screenshot tests/vhs/output/mcp-tool-discovery.png
+Sleep 1s
 
-# Exit the TUI cleanly.
 Ctrl+c
+Sleep 1s
+Type "y"
 Sleep 1s
