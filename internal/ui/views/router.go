@@ -61,6 +61,8 @@ func (r *Router) Push(v View, width, height int) tea.Cmd {
 		}
 	}
 
+	r.width = width
+	r.height = height
 	v.SetSize(width, height)
 	r.stack = append(r.stack, v)
 	cmds = append(cmds, v.Init())
