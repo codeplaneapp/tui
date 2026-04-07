@@ -26,6 +26,24 @@ func openRunsDashboardWithFallback(t *testing.T, s *TmuxSession) {
 	s.SendKeys("Enter")
 }
 
+func openSnapshotsWithRetry(t *testing.T, s *TmuxSession) {
+	t.Helper()
+
+	for range 2 {
+		s.SendKeys("t")
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			capture := s.CapturePane()
+			if containsNormalized(capture, "SMITHERS › Snapshots") ||
+				containsNormalized(capture, "Workflow started") ||
+				containsNormalized(capture, "Review auth running") {
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+}
+
 // TestRunsAndInspection exercises the RUNS_AND_INSPECTION feature group
 // using the real compiled binary running inside a tmux session.
 func TestRunsAndInspection(t *testing.T) {
@@ -381,7 +399,7 @@ func TestRunsAndInspection(t *testing.T) {
 			s.WaitForAnyText([]string{"snapdemo", "snapshot-demo"}, 10*time.Second)
 			s.WaitForAnyText([]string{"snapshots", "t"}, 10*time.Second)
 
-			s.SendKeys("t")
+			openSnapshotsWithRetry(t, s)
 			s.WaitForAnyText([]string{"Snapshots", "Workflow started", "Review auth running"}, 10*time.Second)
 			s.AssertVisible("Snapshots")
 			s.AssertVisible("Workflow started")
@@ -583,7 +601,7 @@ func TestRunsAndInspection(t *testing.T) {
 			s.WaitForAnyText([]string{"snapshot-demo", "fetch-deps", "review-auth"}, 10*time.Second)
 			s.WaitForAnyText([]string{"snapshots", "t"}, 10*time.Second)
 
-			s.SendKeys("t")
+			openSnapshotsWithRetry(t, s)
 			s.WaitForAnyText([]string{"Snapshots", "Workflow started", "Review auth running"}, 10*time.Second)
 			s.AssertVisible("Snapshots")
 

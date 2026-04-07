@@ -78,7 +78,9 @@ var rootCmd = &cobra.Command{
 	Short: "A terminal-first AI assistant for software development",
 	Long:  "A glamorous, terminal-first AI assistant for software development and adjacent tasks",
 	PersistentPreRun: func(cmd *cobra.Command, _ []string) {
-		slog.Info("Running Codeplane command", "command", cmd.CommandPath())
+		if shouldLogCommand(cmd) {
+			slog.Info("Running Codeplane command", "command", cmd.CommandPath())
+		}
 	},
 	Example: `
 # Run in interactive mode
@@ -106,6 +108,13 @@ codeplane --session {session-id}
 codeplane --continue
   `,
 	RunE: runInteractive,
+}
+
+func shouldLogCommand(cmd *cobra.Command) bool {
+	if cmd == nil {
+		return false
+	}
+	return cmd.Name() != schemaCmd.Name()
 }
 
 var tuiCmd = &cobra.Command{
