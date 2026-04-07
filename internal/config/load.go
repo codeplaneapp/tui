@@ -142,13 +142,16 @@ func PushPopCodeplaneEnv() func() {
 	}
 
 	for ev := range found {
-		switch {
-		case hasEnv("CODEPLANE_" + ev):
-			os.Setenv(ev, mustGetEnv("CODEPLANE_"+ev))
-		case hasEnv("SMITHERS_TUI_" + ev):
-			os.Setenv(ev, mustGetEnv("SMITHERS_TUI_"+ev))
-		case hasEnv("CRUSH_" + ev):
-			os.Setenv(ev, mustGetEnv("CRUSH_"+ev))
+		if value, ok := lookupPrefixedEnvValue("CODEPLANE_", ev); ok {
+			os.Setenv(ev, value)
+			continue
+		}
+		if value, ok := lookupPrefixedEnvValue("SMITHERS_TUI_", ev); ok {
+			os.Setenv(ev, value)
+			continue
+		}
+		if value, ok := lookupPrefixedEnvValue("CRUSH_", ev); ok {
+			os.Setenv(ev, value)
 		}
 	}
 
@@ -163,14 +166,8 @@ func PushPopCodeplaneEnv() func() {
 	}
 }
 
-func hasEnv(name string) bool {
-	_, ok := os.LookupEnv(name)
-	return ok
-}
-
-func mustGetEnv(name string) string {
-	value, _ := os.LookupEnv(name)
-	return value
+func lookupPrefixedEnvValue(prefix, name string) (string, bool) {
+	return os.LookupEnv(prefix + name)
 }
 
 func (c *Config) configureProviders(store *ConfigStore, env env.Env, resolver VariableResolver, knownProviders []catwalk.Provider) error {
