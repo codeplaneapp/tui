@@ -721,7 +721,7 @@ func TestWorkspacesView_SnapshotEnter_WithWorkspaceID(t *testing.T) {
 			makeWS("ws-linked", "linked-ws", "running"),
 		},
 		snapshots: []jjhub.WorkspaceSnapshot{
-			makeWSSnapshot("snap-1", "linked-snap", "sid-1", strPtr(wsID)),
+			makeWSSnapshot("snap-1", "linked-snap", "sid-1", wsStrPtr(wsID)),
 		},
 	}
 	v := newWorkspacesViewWithClient(manager)
