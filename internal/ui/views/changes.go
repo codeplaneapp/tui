@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/crush/internal/jjhub"
@@ -21,6 +22,8 @@ type changeManager interface {
 	ViewChange(ctx context.Context, changeID string) (*jjhub.Change, error)
 	ChangeDiff(ctx context.Context, changeID string) (string, error)
 	Status(ctx context.Context) (string, error)
+	CreateBookmark(ctx context.Context, name, changeID string, remote bool) (*jjhub.Bookmark, error)
+	DeleteBookmark(ctx context.Context, name string, remote bool) error
 }
 
 type changesViewMode uint8
@@ -69,6 +72,28 @@ type workingCopyLoadedMsg struct {
 	diffErr   error
 }
 
+type changePromptKind uint8
+
+const (
+	changePromptCreateBookmark changePromptKind = iota
+	changePromptDeleteBookmark
+)
+
+type changePromptState struct {
+	active bool
+	kind   changePromptKind
+	input  textinput.Model
+	err    error
+}
+
+type changeActionDoneMsg struct {
+	message string
+}
+
+type changeActionErrorMsg struct {
+	err error
+}
+
 // ChangesView displays JJHub recent changes and working copy status.
 type ChangesView struct {
 	client    changeManager
@@ -99,6 +124,9 @@ type ChangesView struct {
 	statusErr      error
 	workingDiff    string
 	workingDiffErr error
+
+	actionMsg string
+	prompt    changePromptState
 }
 
 // NewChangesView creates a JJHub changes view.
@@ -142,7 +170,19 @@ func (a jjhubChangeAdapter) Status(ctx context.Context) (string, error) {
 	return a.client.Status(ctx)
 }
 
+func (a jjhubChangeAdapter) CreateBookmark(ctx context.Context, name, changeID string, remote bool) (*jjhub.Bookmark, error) {
+	return a.client.CreateBookmark(ctx, name, changeID, remote)
+}
+
+func (a jjhubChangeAdapter) DeleteBookmark(ctx context.Context, name string, remote bool) error {
+	return a.client.DeleteBookmark(ctx, name, remote)
+}
+
 func newChangesViewWithClient(routeName string, mode changesViewMode, client changeManager) *ChangesView {
+	input := textinput.New()
+	input.Placeholder = "Bookmark name"
+	input.SetVirtualCursor(true)
+
 	v := &ChangesView{
 		client:        client,
 		routeName:     routeName,
@@ -155,6 +195,9 @@ func newChangesViewWithClient(routeName string, mode changesViewMode, client cha
 		diffCache:     make(map[string]string),
 		diffErr:       make(map[string]error),
 		diffLoading:   make(map[string]bool),
+		prompt: changePromptState{
+			input: input,
+		},
 	}
 	if client == nil {
 		v.err = errors.New("jjhub CLI not found on PATH")
@@ -348,6 +391,120 @@ func (v *ChangesView) selectedModeCmd() tea.Cmd {
 	return v.loadSelectedDetailCmd()
 }
 
+func (v *ChangesView) createBookmarkCmd(name string) tea.Cmd {
+	client := v.client
+	change := v.selectedChange()
+	if change == nil {
+		return nil
+	}
+
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return func() tea.Msg {
+			return changeActionErrorMsg{err: errors.New("Bookmark name must not be empty")}
+		}
+	}
+
+	changeID := ""
+	remote := !change.IsWorkingCopy && strings.TrimSpace(change.ChangeID) != ""
+	if remote {
+		changeID = change.ChangeID
+	}
+
+	return func() tea.Msg {
+		bookmark, err := client.CreateBookmark(context.Background(), name, changeID, remote)
+		if err != nil {
+			return changeActionErrorMsg{err: err}
+		}
+		if bookmark != nil && strings.TrimSpace(bookmark.Name) != "" {
+			name = bookmark.Name
+		}
+		return changeActionDoneMsg{message: fmt.Sprintf("Created bookmark %s", name)}
+	}
+}
+
+func (v *ChangesView) deleteBookmarkCmd(name string) tea.Cmd {
+	client := v.client
+	change := v.selectedChange()
+	if change == nil {
+		return nil
+	}
+
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return func() tea.Msg {
+			return changeActionErrorMsg{err: errors.New("Bookmark name must not be empty")}
+		}
+	}
+
+	remote := !change.IsWorkingCopy && strings.TrimSpace(change.ChangeID) != ""
+	return func() tea.Msg {
+		if err := client.DeleteBookmark(context.Background(), name, remote); err != nil {
+			return changeActionErrorMsg{err: err}
+		}
+		return changeActionDoneMsg{message: fmt.Sprintf("Deleted bookmark %s", name)}
+	}
+}
+
+func (v *ChangesView) openPrompt(kind changePromptKind, placeholder, value string) tea.Cmd {
+	v.prompt.active = true
+	v.prompt.kind = kind
+	v.prompt.err = nil
+	v.prompt.input.Reset()
+	v.prompt.input.Placeholder = placeholder
+	v.prompt.input.SetValue(value)
+	return v.prompt.input.Focus()
+}
+
+func (v *ChangesView) closePrompt() {
+	v.prompt.active = false
+	v.prompt.err = nil
+	v.prompt.input.Reset()
+	v.prompt.input.Blur()
+}
+
+func (v *ChangesView) submitPrompt() tea.Cmd {
+	value := strings.TrimSpace(v.prompt.input.Value())
+	switch v.prompt.kind {
+	case changePromptCreateBookmark:
+		return v.createBookmarkCmd(value)
+	case changePromptDeleteBookmark:
+		return v.deleteBookmarkCmd(value)
+	default:
+		return nil
+	}
+}
+
+func (v *ChangesView) renderPrompt(width int) string {
+	boxWidth := max(32, min(max(32, width-4), 80))
+	title := "Create bookmark"
+	description := "Create a bookmark on the selected change."
+	if v.prompt.kind == changePromptDeleteBookmark {
+		title = "Delete bookmark"
+		description = "Delete a bookmark from the selected change."
+	}
+
+	var body strings.Builder
+	body.WriteString(jjhubSectionStyle.Render(title))
+	body.WriteString("\n")
+	body.WriteString(jjhubMutedStyle.Render(description))
+	body.WriteString("\n\n")
+	body.WriteString(v.prompt.input.View())
+	body.WriteString("\n")
+	body.WriteString(jjhubMutedStyle.Render("[Enter] submit  [Esc] cancel"))
+	if v.prompt.err != nil {
+		body.WriteString("\n")
+		body.WriteString(jjhubErrorStyle.Render(v.prompt.err.Error()))
+	}
+
+	return lipgloss.NewStyle().
+		Width(boxWidth).
+		Padding(0, 1).
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("240")).
+		Render(body.String())
+}
+
 // Update handles messages for the changes view.
 func (v *ChangesView) Update(msg tea.Msg) (View, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -397,6 +554,19 @@ func (v *ChangesView) Update(msg tea.Msg) (View, tea.Cmd) {
 		v.workingDiffErr = msg.diffErr
 		return v, nil
 
+	case changeActionDoneMsg:
+		v.closePrompt()
+		v.actionMsg = msg.message
+		return v, v.refreshCurrentModeCmd()
+
+	case changeActionErrorMsg:
+		if v.prompt.active {
+			v.prompt.err = msg.err
+			return v, nil
+		}
+		v.actionMsg = msg.err.Error()
+		return v, nil
+
 	case tea.WindowSizeMsg:
 		v.width = msg.Width
 		v.height = msg.Height
@@ -404,6 +574,20 @@ func (v *ChangesView) Update(msg tea.Msg) (View, tea.Cmd) {
 		return v, nil
 
 	case tea.KeyPressMsg:
+		if v.prompt.active {
+			switch {
+			case key.Matches(msg, key.NewBinding(key.WithKeys("esc"))):
+				v.closePrompt()
+				return v, nil
+			case key.Matches(msg, key.NewBinding(key.WithKeys("enter"))):
+				return v, v.submitPrompt()
+			default:
+				var cmd tea.Cmd
+				v.prompt.input, cmd = v.prompt.input.Update(msg)
+				return v, cmd
+			}
+		}
+
 		switch {
 		case key.Matches(msg, key.NewBinding(key.WithKeys("esc", "alt+esc"))):
 			return v, func() tea.Msg { return PopViewMsg{} }
@@ -445,6 +629,25 @@ func (v *ChangesView) Update(msg tea.Msg) (View, tea.Cmd) {
 			if v.showDiff {
 				return v, v.loadSelectedDiffCmd()
 			}
+
+		case key.Matches(msg, key.NewBinding(key.WithKeys("b"))):
+			if v.selectedChange() == nil {
+				return v, nil
+			}
+			v.actionMsg = ""
+			return v, v.openPrompt(changePromptCreateBookmark, "Bookmark name", "")
+
+		case key.Matches(msg, key.NewBinding(key.WithKeys("x"))):
+			change := v.selectedChange()
+			if change == nil || len(change.Bookmarks) == 0 {
+				return v, nil
+			}
+			v.actionMsg = ""
+			value := ""
+			if len(change.Bookmarks) == 1 {
+				value = change.Bookmarks[0]
+			}
+			return v, v.openPrompt(changePromptDeleteBookmark, "Bookmark name", value)
 		}
 	}
 
@@ -467,6 +670,13 @@ func (v *ChangesView) View() string {
 		lipgloss.NewStyle().Faint(true).Render("[Esc] Back"),
 	)))
 	b.WriteString("\n\n")
+
+	if v.prompt.active {
+		b.WriteString(v.renderPrompt(v.width))
+		b.WriteString("\n\n")
+	} else if strings.TrimSpace(v.actionMsg) != "" {
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render("  "+v.actionMsg) + "\n\n")
+	}
 
 	if v.client == nil && v.err != nil {
 		b.WriteString("  Error: " + v.err.Error() + "\n")
@@ -655,7 +865,7 @@ func (v *ChangesView) renderChangeDetail(width int) string {
 	b.WriteString("\n\n")
 	b.WriteString(jjhubSectionStyle.Render("Actions"))
 	b.WriteString("\n")
-	b.WriteString(wrapText("[d] diff  [Tab] status  [r] refresh", max(20, width)))
+	b.WriteString(wrapText("[d] diff  [b] create bookmark  [x] delete bookmark  [Tab] status  [r] refresh", max(20, width)))
 	return b.String()
 }
 
@@ -717,6 +927,8 @@ func (v *ChangesView) ShortHelp() []key.Binding {
 	return []key.Binding{
 		key.NewBinding(key.WithKeys("j", "k"), key.WithHelp("j/k", "move")),
 		key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "diff")),
+		key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "bookmark")),
+		key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "delete bookmark")),
 		key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "status")),
 		key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
 		key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),

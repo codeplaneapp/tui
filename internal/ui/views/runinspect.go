@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/tree"
+	"github.com/charmbracelet/crush/internal/jjhub"
 	"github.com/charmbracelet/crush/internal/smithers"
 )
 
@@ -54,6 +56,19 @@ type runInspectHijackReturnMsg struct {
 	err   error
 }
 
+type runInspectWatchReturnMsg struct {
+	runID string
+	err   error
+}
+
+type runInspectRerunDoneMsg struct {
+	message string
+}
+
+type runInspectRerunErrorMsg struct {
+	err error
+}
+
 // --- RunInspectView ---
 
 // dagViewMode tracks which sub-view is active in the run inspector.
@@ -66,9 +81,10 @@ const (
 
 // RunInspectView shows detailed run metadata and a per-node task list.
 type RunInspectView struct {
-	client     *smithers.Client
-	runID      string
-	inspection *smithers.RunInspection
+	client      *smithers.Client
+	jjhubClient *jjhub.Client
+	runID       string
+	inspection  *smithers.RunInspection
 
 	cursor  int
 	width   int
@@ -83,14 +99,20 @@ type RunInspectView struct {
 	// Hijack state
 	hijacking bool
 	hijackErr error
+
+	// JJHub run actions
+	watching  bool
+	rerunning bool
+	actionMsg string
 }
 
 // NewRunInspectView constructs a new inspector for the given run ID.
 func NewRunInspectView(client *smithers.Client, runID string) *RunInspectView {
 	return &RunInspectView{
-		client:  client,
-		runID:   runID,
-		loading: true,
+		client:      client,
+		jjhubClient: jjhub.NewClient(""),
+		runID:       runID,
+		loading:     true,
 	}
 }
 
@@ -117,6 +139,32 @@ func (v *RunInspectView) hijackRunCmd(runID string) tea.Cmd {
 	}
 }
 
+func (v *RunInspectView) watchRunCmd(runID string) tea.Cmd {
+	cmd := exec.Command("jjhub", "run", "watch", runID) //nolint:gosec
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return runInspectWatchReturnMsg{runID: runID, err: err}
+	})
+}
+
+func (v *RunInspectView) rerunRunCmd(runID string) tea.Cmd {
+	client := v.jjhubClient
+	return func() tea.Msg {
+		parsedID, err := strconv.Atoi(runID)
+		if err != nil {
+			return runInspectRerunErrorMsg{err: fmt.Errorf("jjhub rerun expects a numeric run ID: %w", err)}
+		}
+		rerun, err := client.RerunWorkflowRun(context.Background(), parsedID)
+		if err != nil {
+			return runInspectRerunErrorMsg{err: err}
+		}
+		message := fmt.Sprintf("Triggered JJHub rerun for run #%d", parsedID)
+		if rerun != nil && rerun.WorkflowRunID > 0 {
+			message = fmt.Sprintf("Triggered JJHub rerun #%d from run #%d", rerun.WorkflowRunID, parsedID)
+		}
+		return runInspectRerunDoneMsg{message: message}
+	}
+}
+
 // Update handles messages for the run inspect view.
 func (v *RunInspectView) Update(msg tea.Msg) (View, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -132,6 +180,26 @@ func (v *RunInspectView) Update(msg tea.Msg) (View, tea.Cmd) {
 	case runInspectErrorMsg:
 		v.err = msg.err
 		v.loading = false
+		return v, nil
+
+	case runInspectWatchReturnMsg:
+		v.watching = false
+		if msg.err != nil {
+			v.actionMsg = fmt.Sprintf("JJHub watch error: %v", msg.err)
+			return v, nil
+		}
+		v.actionMsg = fmt.Sprintf("Stopped watching run %s", msg.runID)
+		v.loading = true
+		return v, v.Init()
+
+	case runInspectRerunDoneMsg:
+		v.rerunning = false
+		v.actionMsg = msg.message
+		return v, nil
+
+	case runInspectRerunErrorMsg:
+		v.rerunning = false
+		v.actionMsg = msg.err.Error()
 		return v, nil
 
 	// --- Hijack flow ---
@@ -219,6 +287,20 @@ func (v *RunInspectView) Update(msg tea.Msg) (View, tea.Cmd) {
 			v.err = nil
 			return v, v.Init()
 
+		case key.Matches(msg, key.NewBinding(key.WithKeys("w"))):
+			if !v.watching {
+				v.watching = true
+				v.actionMsg = ""
+				return v, v.watchRunCmd(v.runID)
+			}
+
+		case key.Matches(msg, key.NewBinding(key.WithKeys("R"))):
+			if !v.rerunning {
+				v.rerunning = true
+				v.actionMsg = ""
+				return v, v.rerunRunCmd(v.runID)
+			}
+
 		case key.Matches(msg, key.NewBinding(key.WithKeys("c"))):
 			// Use the active-mode cursor to select the task.
 			activeCursor := v.cursor
@@ -286,9 +368,23 @@ func (v *RunInspectView) View() string {
 		b.WriteString("\n")
 		return b.String()
 	}
+	if v.watching {
+		b.WriteString(lipgloss.NewStyle().Bold(true).Render("  Opening JJHub run watch..."))
+		b.WriteString("\n")
+		return b.String()
+	}
+	if v.rerunning {
+		b.WriteString(lipgloss.NewStyle().Bold(true).Render("  Triggering JJHub rerun..."))
+		b.WriteString("\n")
+		return b.String()
+	}
 	if v.hijackErr != nil {
 		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(
 			fmt.Sprintf("  Hijack error: %v", v.hijackErr)))
+		b.WriteString("\n")
+	}
+	if strings.TrimSpace(v.actionMsg) != "" {
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render("  " + v.actionMsg))
 		b.WriteString("\n")
 	}
 
@@ -340,6 +436,8 @@ func (v *RunInspectView) ShortHelp() []key.Binding {
 		key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "chat")),
 		key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "snapshots")),
 		key.NewBinding(key.WithKeys("h"), key.WithHelp("h", "hijack")),
+		key.NewBinding(key.WithKeys("w"), key.WithHelp("w", "watch")),
+		key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "rerun")),
 		key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
 		key.NewBinding(key.WithKeys("q", "esc"), key.WithHelp("q/esc", "back")),
 	}

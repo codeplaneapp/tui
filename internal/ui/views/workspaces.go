@@ -55,6 +55,13 @@ type workspacePromptState struct {
 	err    error
 }
 
+type workspaceConnectMode string
+
+const (
+	workspaceConnectAttach workspaceConnectMode = "attach"
+	workspaceConnectSSH    workspaceConnectMode = "ssh"
+)
+
 type (
 	workspacesLoadedMsg struct {
 		workspaces []jjhub.Workspace
@@ -71,8 +78,9 @@ type (
 	workspacesRepoLoadedMsg struct {
 		repo *jjhub.Repo
 	}
-	workspaceSSHReturnMsg struct {
+	workspaceConnectReturnMsg struct {
 		workspaceID string
+		mode        workspaceConnectMode
 		err         error
 	}
 	workspaceActionDoneMsg struct {
@@ -106,9 +114,10 @@ type WorkspacesView struct {
 	err              error
 	snapshotsErr     error
 
-	connectingID string
-	actionMsg    string
-	prompt       workspacePromptState
+	connectingID   string
+	connectingMode workspaceConnectMode
+	actionMsg      string
+	prompt         workspacePromptState
 }
 
 func NewWorkspacesView(_ *smithers.Client) *WorkspacesView {
@@ -337,10 +346,30 @@ func (v *WorkspacesView) clampCursor() {
 	v.clampSnapshotCursor()
 }
 
+func (v *WorkspacesView) attachCmd(workspace jjhub.Workspace) tea.Cmd {
+	cmd, err := jjhub.AttachWorkspaceCommand(workspace)
+	if err != nil {
+		return func() tea.Msg {
+			return workspaceActionErrorMsg{err: err}
+		}
+	}
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return workspaceConnectReturnMsg{
+			workspaceID: workspace.ID,
+			mode:        workspaceConnectAttach,
+			err:         err,
+		}
+	})
+}
+
 func (v *WorkspacesView) sshCmd(workspaceID string) tea.Cmd {
 	cmd := exec.Command("jjhub", "workspace", "ssh", workspaceID) //nolint:gosec
 	return tea.ExecProcess(cmd, func(err error) tea.Msg {
-		return workspaceSSHReturnMsg{workspaceID: workspaceID, err: err}
+		return workspaceConnectReturnMsg{
+			workspaceID: workspaceID,
+			mode:        workspaceConnectSSH,
+			err:         err,
+		}
 	})
 }
 
@@ -571,13 +600,20 @@ func (v *WorkspacesView) Update(msg tea.Msg) (View, tea.Cmd) {
 	case workspacesRepoLoadedMsg:
 		v.repo = msg.repo
 		return v, nil
-	case workspaceSSHReturnMsg:
+	case workspaceConnectReturnMsg:
 		v.connectingID = ""
+		v.connectingMode = ""
+		modeLabel := "Attach"
+		successLabel := "Detached from"
+		if msg.mode == workspaceConnectSSH {
+			modeLabel = "SSH"
+			successLabel = "Disconnected from"
+		}
 		if msg.err != nil {
-			v.actionMsg = fmt.Sprintf("SSH error: %v", msg.err)
+			v.actionMsg = fmt.Sprintf("%s error: %v", modeLabel, msg.err)
 			return v, nil
 		}
-		v.actionMsg = fmt.Sprintf("Disconnected from %s", msg.workspaceID)
+		v.actionMsg = fmt.Sprintf("%s %s", successLabel, msg.workspaceID)
 		return v, v.refreshCmd()
 	case workspaceActionDoneMsg:
 		v.closePrompt()
@@ -710,6 +746,20 @@ func (v *WorkspacesView) Update(msg tea.Msg) (View, tea.Cmd) {
 				return v, nil
 			}
 			v.connectingID = workspace.ID
+			v.connectingMode = workspaceConnectAttach
+			v.actionMsg = ""
+			return v, v.attachCmd(*workspace)
+		case key.Matches(msg, key.NewBinding(key.WithKeys("x"))):
+			workspace := v.selectedWorkspace()
+			if v.mode != workspaceMode || workspace == nil {
+				return v, nil
+			}
+			if workspace.SSHHost == nil || strings.TrimSpace(*workspace.SSHHost) == "" {
+				v.actionMsg = "SSH is not available for the selected workspace"
+				return v, nil
+			}
+			v.connectingID = workspace.ID
+			v.connectingMode = workspaceConnectSSH
 			v.actionMsg = ""
 			return v, v.sshCmd(workspace.ID)
 		}
@@ -729,7 +779,11 @@ func (v *WorkspacesView) View() string {
 	b.WriteString("\n\n")
 
 	if v.connectingID != "" {
-		b.WriteString(jjhubMutedStyle.Render("Connecting to workspace " + v.connectingID + "..."))
+		label := "Attaching to workspace "
+		if v.connectingMode == workspaceConnectSSH {
+			label = "Connecting to workspace "
+		}
+		b.WriteString(jjhubMutedStyle.Render(label + v.connectingID + "..."))
 		b.WriteString("\n\n")
 	}
 
@@ -880,7 +934,7 @@ func (v *WorkspacesView) renderWorkspaceDetail(width int) string {
 	b.WriteString("\n\n")
 	b.WriteString(jjhubSectionStyle.Render("Actions"))
 	b.WriteString("\n")
-	b.WriteString(wrapText("[Enter] ssh  [c] create  [f] fork  [s] suspend/resume  [n] snapshot  [d] delete  [Tab] snapshots", max(20, width)))
+	b.WriteString(wrapText("[Enter] attach  [x] ssh  [c] create  [f] fork  [s] suspend/resume  [n] snapshot  [d] delete  [Tab] snapshots", max(20, width)))
 	return b.String()
 }
 
@@ -958,7 +1012,8 @@ func (v *WorkspacesView) ShortHelp() []key.Binding {
 	}
 	return []key.Binding{
 		key.NewBinding(key.WithKeys("j", "k"), key.WithHelp("j/k", "move")),
-		key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "ssh")),
+		key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "attach")),
+		key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "ssh")),
 		key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "create")),
 		key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "suspend")),
 		key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "snapshots")),
