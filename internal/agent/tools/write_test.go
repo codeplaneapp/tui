@@ -9,7 +9,7 @@ import (
 
 	"charm.land/fantasy"
 	"github.com/charmbracelet/crush/internal/history"
-	"github.com/charmbracelet/crush/internal/pubsub"
+	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -136,47 +136,6 @@ func TestWriteTool_OverwriteExistingFile(t *testing.T) {
 	assert.Equal(t, "new content", string(got))
 }
 
-type recordingHistoryService struct {
-	*pubsub.Broker[history.File]
-	getErr             error
-	createCalls        []string
-	createVersionCalls []string
-}
-
-func (m *recordingHistoryService) Create(ctx context.Context, sessionID, path, content string) (history.File, error) {
-	m.createCalls = append(m.createCalls, content)
-	return history.File{Path: path, Content: content}, nil
-}
-
-func (m *recordingHistoryService) CreateVersion(ctx context.Context, sessionID, path, content string) (history.File, error) {
-	m.createVersionCalls = append(m.createVersionCalls, content)
-	return history.File{Path: path, Content: content}, nil
-}
-
-func (m *recordingHistoryService) GetByPathAndSession(ctx context.Context, path, sessionID string) (history.File, error) {
-	return history.File{}, m.getErr
-}
-
-func (m *recordingHistoryService) Get(ctx context.Context, id string) (history.File, error) {
-	return history.File{}, nil
-}
-
-func (m *recordingHistoryService) ListBySession(ctx context.Context, sessionID string) ([]history.File, error) {
-	return nil, nil
-}
-
-func (m *recordingHistoryService) ListLatestSessionFiles(ctx context.Context, sessionID string) ([]history.File, error) {
-	return nil, nil
-}
-
-func (m *recordingHistoryService) Delete(ctx context.Context, id string) error {
-	return nil
-}
-
-func (m *recordingHistoryService) DeleteSessionFiles(ctx context.Context, sessionID string) error {
-	return nil
-}
-
 func TestWriteTool_MissingHistoryRowDoesNotCreateDuplicateOldVersion(t *testing.T) {
 	t.Parallel()
 
@@ -188,8 +147,7 @@ func TestWriteTool_MissingHistoryRowDoesNotCreateDuplicateOldVersion(t *testing.
 	ctx := context.WithValue(t.Context(), SessionIDContextKey, "test-session")
 	ft.RecordRead(ctx, "test-session", testFile)
 
-	historyService := &recordingHistoryService{
-		Broker: pubsub.NewBroker[history.File](),
+	historyService := &mockHistoryService{
 		getErr: errors.New("missing history row"),
 	}
 	tool := NewWriteTool(nil, &mockPermissionService{}, historyService, ft, tmpDir)
@@ -204,6 +162,116 @@ func TestWriteTool_MissingHistoryRowDoesNotCreateDuplicateOldVersion(t *testing.
 	assert.False(t, resp.IsError, "expected success, got: %s", resp.Content)
 	assert.Equal(t, []string{"old content"}, historyService.createCalls)
 	assert.Equal(t, []string{"new content"}, historyService.createVersionCalls)
+	assert.Equal(t,
+		[]string{
+			"get",
+			"create:old content",
+			"createVersion:new content",
+		},
+		historyService.callOrder,
+	)
+}
+
+func TestWriteTool_MissingHistoryRowCreateFailureReturnsError(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "existing.txt")
+	require.NoError(t, os.WriteFile(testFile, []byte("old content"), 0o644))
+
+	ft := newMockFiletrackerService()
+	ctx := context.WithValue(t.Context(), SessionIDContextKey, "test-session")
+	ft.RecordRead(ctx, "test-session", testFile)
+
+	historyService := &mockHistoryService{
+		getErr:    errors.New("missing history row"),
+		createErr: errors.New("create failed"),
+	}
+	tool := NewWriteTool(nil, &mockPermissionService{}, historyService, ft, tmpDir)
+
+	_, err := tool.Run(ctx, fantasy.ToolCall{
+		ID:    "call-4c",
+		Name:  WriteToolName,
+		Input: `{"file_path": "` + testFile + `", "content": "new content"}`,
+	})
+
+	require.ErrorContains(t, err, "error creating file history: create failed")
+	assert.Equal(t, []string{"get", "create:old content"}, historyService.callOrder)
+	assert.Empty(t, historyService.createVersionCalls)
+}
+
+func TestWriteTool_CreateVersionFailureDoesNotFailWrite(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "existing.txt")
+	require.NoError(t, os.WriteFile(testFile, []byte("old content"), 0o644))
+
+	ft := newMockFiletrackerService()
+	ctx := context.WithValue(t.Context(), SessionIDContextKey, "test-session")
+	ft.RecordRead(ctx, "test-session", testFile)
+
+	historyService := &mockHistoryService{
+		getFile: history.File{
+			Path:    testFile,
+			Content: "stale history content",
+		},
+		createVersionErrs: map[int]error{
+			1: errors.New("create version failed"),
+		},
+	}
+	tool := NewWriteTool(nil, &mockPermissionService{}, historyService, ft, tmpDir)
+
+	resp, err := tool.Run(ctx, fantasy.ToolCall{
+		ID:    "call-4d",
+		Name:  WriteToolName,
+		Input: `{"file_path": "` + testFile + `", "content": "new content"}`,
+	})
+
+	require.NoError(t, err)
+	assert.False(t, resp.IsError, "expected success, got: %s", resp.Content)
+	assert.Equal(t, []string{"old content", "new content"}, historyService.createVersionCalls)
+
+	got, readErr := os.ReadFile(testFile)
+	require.NoError(t, readErr)
+	assert.Equal(t, "new content", string(got))
+}
+
+func TestWriteTool_PermissionDeniedSkipsHistory(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "existing.txt")
+	originalContent := "old content"
+	require.NoError(t, os.WriteFile(testFile, []byte(originalContent), 0o644))
+
+	ft := newMockFiletrackerService()
+	ctx := context.WithValue(t.Context(), SessionIDContextKey, "test-session")
+	ft.RecordRead(ctx, "test-session", testFile)
+
+	permissionService := &mockPermissionService{deny: true}
+	historyService := &mockHistoryService{
+		getErr:    errors.New("history should not be called"),
+		createErr: errors.New("history should not be called"),
+		createVersionErrs: map[int]error{
+			1: errors.New("history should not be called"),
+		},
+	}
+	tool := NewWriteTool(nil, permissionService, historyService, ft, tmpDir)
+
+	_, err := tool.Run(ctx, fantasy.ToolCall{
+		ID:    "call-4e",
+		Name:  WriteToolName,
+		Input: `{"file_path": "` + testFile + `", "content": "new content"}`,
+	})
+
+	require.ErrorIs(t, err, permission.ErrorPermissionDenied)
+	assert.Len(t, permissionService.requests, 1)
+	assert.Empty(t, historyService.callOrder)
+
+	got, readErr := os.ReadFile(testFile)
+	require.NoError(t, readErr)
+	assert.Equal(t, originalContent, string(got))
 }
 
 func TestWriteTool_SameContentNoChange(t *testing.T) {

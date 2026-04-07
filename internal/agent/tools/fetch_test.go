@@ -2,10 +2,14 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
+	"charm.land/fantasy"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -82,10 +86,10 @@ func TestRemoveNoisyElements(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name       string
-		html       string
-		wantGone   []string
-		wantKept   []string
+		name     string
+		html     string
+		wantGone []string
+		wantKept []string
 	}{
 		{
 			name:     "removes script tag",
@@ -337,4 +341,195 @@ func TestFetchURLAndConvert_PlainText(t *testing.T) {
 	result, err := FetchURLAndConvert(context.Background(), srv.Client(), srv.URL)
 	require.NoError(t, err)
 	assert.Equal(t, "just some plain text", result)
+}
+
+func TestFetchTool_MaxFetchSizeBoundaries(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		size int
+	}{
+		{
+			name: "max fetch size minus one",
+			size: MaxFetchSize - 1,
+		},
+		{
+			name: "max fetch size",
+			size: MaxFetchSize,
+		},
+		{
+			name: "max fetch size plus one",
+			size: MaxFetchSize + 1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			body := strings.Repeat("a", tc.size)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+				_, _ = w.Write([]byte(body))
+			}))
+			defer srv.Close()
+
+			tool := newFetchToolForTest(t, srv.Client())
+			resp := runJSONTool(t, tool, newTestToolContext(t), FetchToolName, FetchParams{
+				URL:    srv.URL,
+				Format: "text",
+			})
+			require.False(t, resp.IsError, resp.Content)
+
+			wantLen := tc.size
+			if wantLen > MaxFetchSize {
+				wantLen = MaxFetchSize
+			}
+
+			assert.Len(t, resp.Content, wantLen)
+			assert.Equal(t, body[:wantLen], resp.Content)
+			assert.NotContains(t, resp.Content, "[Content truncated to")
+		})
+	}
+}
+
+func TestFetchTool_TimeoutBoundaries(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		timeout int
+	}{
+		{
+			name:    "timeout at max",
+			timeout: 120,
+		},
+		{
+			name:    "timeout above max clamps",
+			timeout: 121,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+				_, _ = w.Write([]byte("ok"))
+			}))
+			defer srv.Close()
+
+			client := srv.Client()
+			baseTransport := client.Transport
+			if baseTransport == nil {
+				baseTransport = http.DefaultTransport
+			}
+
+			var deadline time.Time
+			client.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				var ok bool
+				deadline, ok = req.Context().Deadline()
+				require.True(t, ok)
+				return baseTransport.RoundTrip(req)
+			})
+
+			tool := newFetchToolForTest(t, client)
+			resp := runJSONTool(t, tool, newTestToolContext(t), FetchToolName, FetchParams{
+				URL:     srv.URL,
+				Format:  "text",
+				Timeout: tc.timeout,
+			})
+			require.False(t, resp.IsError, resp.Content)
+			require.False(t, deadline.IsZero())
+
+			assert.InDelta(t, 120.0, time.Until(deadline).Seconds(), 3.0)
+		})
+	}
+}
+
+func TestFetchTool_InvalidFormat(t *testing.T) {
+	t.Parallel()
+
+	tool := newFetchToolForTest(t, nil)
+	resp := runJSONTool(t, tool, context.Background(), FetchToolName, FetchParams{
+		URL:    "http://example.com",
+		Format: "json",
+	})
+
+	require.True(t, resp.IsError)
+	assert.Contains(t, resp.Content, "Format must be one of: text, markdown, html")
+}
+
+func TestFetchTool_InvalidScheme(t *testing.T) {
+	t.Parallel()
+
+	tool := newFetchToolForTest(t, nil)
+	resp := runJSONTool(t, tool, context.Background(), FetchToolName, FetchParams{
+		URL:    "ftp://example.com",
+		Format: "text",
+	})
+
+	require.True(t, resp.IsError)
+	assert.Contains(t, resp.Content, "URL must start with http:// or https://")
+}
+
+func TestFetchTool_HTMLWithoutBody(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte("<html><head><title>Only Head</title></head></html>"))
+	}))
+	defer srv.Close()
+
+	tool := newFetchToolForTest(t, srv.Client())
+	resp := runJSONTool(t, tool, newTestToolContext(t), FetchToolName, FetchParams{
+		URL:    srv.URL,
+		Format: "html",
+	})
+
+	require.True(t, resp.IsError)
+	assert.Contains(t, resp.Content, "No body content found in HTML")
+}
+
+func newFetchToolForTest(t *testing.T, client *http.Client) fantasy.AgentTool {
+	t.Helper()
+
+	return NewFetchTool(&mockPermissionService{}, t.TempDir(), client)
+}
+
+func newTestToolContext(t *testing.T) context.Context {
+	t.Helper()
+
+	return context.WithValue(t.Context(), SessionIDContextKey, "test-session")
+}
+
+func runJSONTool[T any](
+	t *testing.T,
+	tool fantasy.AgentTool,
+	ctx context.Context,
+	toolName string,
+	params T,
+) fantasy.ToolResponse {
+	t.Helper()
+
+	input, err := json.Marshal(params)
+	require.NoError(t, err)
+
+	resp, err := tool.Run(ctx, fantasy.ToolCall{
+		ID:    "test-call",
+		Name:  toolName,
+		Input: string(input),
+	})
+	require.NoError(t, err)
+
+	return resp
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
 }
