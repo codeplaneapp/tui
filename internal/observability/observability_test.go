@@ -2,6 +2,7 @@ package observability
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -316,6 +317,49 @@ func TestRecordSnapshotOperation_CapturesSpanAndMetric(t *testing.T) {
 	})
 	require.Equal(t, uint64(1), metric.GetHistogram().GetSampleCount())
 	require.InDelta(t, 0.25, metric.GetHistogram().GetSampleSum(), 0.0001)
+}
+
+func TestRecordSnapshotOperation_ErrorCapturesSpanAndMetric(t *testing.T) {
+	t.Cleanup(func() {
+		require.NoError(t, Shutdown(context.Background()))
+	})
+
+	require.NoError(t, Configure(context.Background(), Config{
+		ServiceName:      "test",
+		ServiceVersion:   "dev",
+		Mode:             ModeLocal,
+		TraceBufferSize:  16,
+		TraceSampleRatio: 1,
+	}))
+
+	opErr := errors.New("diff unavailable")
+	RecordSnapshotOperation("diff", 125*time.Millisecond, opErr,
+		attribute.String("codeplane.run_id", "run-456"),
+	)
+
+	spans := RecentSpans(10)
+	require.Len(t, spans, 1)
+	require.Equal(t, "ui.snapshots.diff", spans[0].Name)
+	require.Equal(t, "diff", spans[0].Attributes["codeplane.snapshot.operation"])
+	require.Equal(t, "error", spans[0].Attributes["codeplane.snapshot.result"])
+	require.Equal(t, "run-456", spans[0].Attributes["codeplane.run_id"])
+	require.Equal(t, "Error", spans[0].StatusCode)
+	require.Equal(t, "diff unavailable", spans[0].StatusDescription)
+
+	st := getState()
+	require.NotNil(t, st)
+
+	counter := gatherMetric(t, st, "codeplane_snapshot_operations_total", map[string]string{
+		"operation": "diff",
+		"result":    "error",
+	})
+	require.Equal(t, float64(1), counter.GetCounter().GetValue())
+
+	metric := gatherMetric(t, st, "codeplane_snapshot_operation_duration_seconds", map[string]string{
+		"operation": "diff",
+	})
+	require.Equal(t, uint64(1), metric.GetHistogram().GetSampleCount())
+	require.InDelta(t, 0.125, metric.GetHistogram().GetSampleSum(), 0.0001)
 }
 
 func TestNormalizeConfigAppliesDefaults(t *testing.T) {

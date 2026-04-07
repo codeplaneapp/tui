@@ -57,3 +57,23 @@ func TestShouldEnableMetricsHonorsCodeplaneEnv(t *testing.T) {
 		Options: &config.Options{},
 	}))
 }
+
+func TestGenerateConfigSchemaUsesCodeplaneBranding(t *testing.T) {
+	t.Parallel()
+
+	bts, err := generateConfigSchema()
+	require.NoError(t, err)
+
+	text := strings.ToLower(string(bts))
+	require.Contains(t, text, "https://charm.land/codeplane.json")
+	require.NotContains(t, text, "https://charm.land/crush.json")
+	require.NotContains(t, text, "crush-config")
+	require.NotContains(t, text, "smithers-tui")
+}
+
+func TestShouldLogCommandSkipsSchema(t *testing.T) {
+	t.Parallel()
+
+	require.False(t, shouldLogCommand(schemaCmd))
+	require.True(t, shouldLogCommand(runCmd))
+}

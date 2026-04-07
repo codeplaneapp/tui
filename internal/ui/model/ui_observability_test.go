@@ -39,9 +39,9 @@ func TestHandleViewResult_OpenSnapshots_RecordsObservability(t *testing.T) {
 	spans := observability.RecentSpans(10)
 	require.Len(t, spans, 1)
 	require.Equal(t, "ui.navigation", spans[0].Name)
-	require.Equal(t, "runs", spans[0].Attributes["crush.ui.entrypoint"])
-	require.Equal(t, "snapshots", spans[0].Attributes["crush.ui.target"])
-	require.Equal(t, "ok", spans[0].Attributes["crush.ui.result"])
+	require.Equal(t, "runs", spans[0].Attributes["codeplane.ui.entrypoint"])
+	require.Equal(t, "snapshots", spans[0].Attributes["codeplane.ui.target"])
+	require.Equal(t, "ok", spans[0].Attributes["codeplane.ui.result"])
 	require.Equal(t, "run-123", spans[0].Attributes["crush.run_id"])
 }
 
@@ -66,7 +66,7 @@ func TestHandleNavigateToView_Timeline_RecordsMissingRunContext(t *testing.T) {
 	spans := observability.RecentSpans(10)
 	require.Len(t, spans, 1)
 	require.Equal(t, "ui.navigation", spans[0].Name)
-	require.Equal(t, "global", spans[0].Attributes["crush.ui.entrypoint"])
-	require.Equal(t, "timeline", spans[0].Attributes["crush.ui.target"])
-	require.Equal(t, "missing_run_context", spans[0].Attributes["crush.ui.result"])
+	require.Equal(t, "global", spans[0].Attributes["codeplane.ui.entrypoint"])
+	require.Equal(t, "timeline", spans[0].Attributes["codeplane.ui.target"])
+	require.Equal(t, "missing_run_context", spans[0].Attributes["codeplane.ui.result"])
 }

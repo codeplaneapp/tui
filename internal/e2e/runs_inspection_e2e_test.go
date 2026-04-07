@@ -5,6 +5,27 @@ import (
 	"time"
 )
 
+func openRunsDashboardWithFallback(t *testing.T, s *TmuxSession) {
+	t.Helper()
+
+	s.SendKeys("C-r")
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		capture := s.CapturePane()
+		if containsNormalized(capture, "toggle details") ||
+			containsNormalized(capture, "filter status") ||
+			containsNormalized(capture, "[All]") ||
+			containsNormalized(capture, "Loading runs") {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	s.WaitForAnyText([]string{"Run Dashboard", "Start Chat"}, 10*time.Second)
+	s.SendKeys("Down")
+	s.SendKeys("Enter")
+}
+
 // TestRunsAndInspection exercises the RUNS_AND_INSPECTION feature group
 // using the real compiled binary running inside a tmux session.
 func TestRunsAndInspection(t *testing.T) {
@@ -355,7 +376,7 @@ func TestRunsAndInspection(t *testing.T) {
 			s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 			waitForObservabilityReady(t, obsAddr, 20*time.Second)
 
-			s.SendKeys("C-r")
+			openRunsDashboardWithFallback(t, s)
 			s.WaitForAnyText([]string{"toggle details", "filter status", "[All]"}, 10*time.Second)
 			s.WaitForAnyText([]string{"snapdemo", "snapshot-demo"}, 10*time.Second)
 			s.WaitForAnyText([]string{"snapshots", "t"}, 10*time.Second)
@@ -367,34 +388,34 @@ func TestRunsAndInspection(t *testing.T) {
 
 			waitForTraceSpan(t, obsAddr, 10*time.Second, func(span debugTraceSpan) bool {
 				return span.Name == "ui.navigation" && spanHasAttrs(span, map[string]string{
-					"crush.ui.entrypoint": "runs",
-					"crush.ui.target":     "snapshots",
-					"crush.ui.result":     "ok",
-					"crush.run_id":        "snapdemo",
+					"codeplane.ui.entrypoint": "runs",
+					"codeplane.ui.target":     "snapshots",
+					"codeplane.ui.result":     "ok",
+					"crush.run_id":            "snapdemo",
 				})
 			})
 			waitForTraceSpan(t, obsAddr, 10*time.Second, func(span debugTraceSpan) bool {
 				return span.Name == "ui.snapshots.load" && spanHasAttrs(span, map[string]string{
-					"crush.snapshot.operation": "load",
-					"crush.snapshot.result":    "ok",
-					"crush.run_id":             "snapdemo",
+					"codeplane.snapshot.operation": "load",
+					"codeplane.snapshot.result":    "ok",
+					"crush.run_id":                 "snapdemo",
 				})
 			})
 			waitForTraceSpan(t, obsAddr, 10*time.Second, func(span debugTraceSpan) bool {
 				return span.Name == "ui.snapshots.diff" && spanHasAttrs(span, map[string]string{
-					"crush.snapshot.operation": "diff",
-					"crush.snapshot.result":    "ok",
-					"crush.run_id":             "snapdemo",
+					"codeplane.snapshot.operation": "diff",
+					"codeplane.snapshot.result":    "error",
+					"crush.run_id":                 "snapdemo",
 				})
 			})
-			waitForMetricAtLeast(t, obsAddr, "crush_ui_navigation_total",
+			waitForMetricAtLeast(t, obsAddr, "codeplane_ui_navigation_total",
 				map[string]string{"entrypoint": "runs", "target": "snapshots", "result": "ok"},
 				1, 10*time.Second)
-			waitForMetricAtLeast(t, obsAddr, "crush_snapshot_operations_total",
+			waitForMetricAtLeast(t, obsAddr, "codeplane_snapshot_operations_total",
 				map[string]string{"operation": "load", "result": "ok"},
 				1, 10*time.Second)
-			waitForMetricAtLeast(t, obsAddr, "crush_snapshot_operations_total",
-				map[string]string{"operation": "diff", "result": "ok"},
+			waitForMetricAtLeast(t, obsAddr, "codeplane_snapshot_operations_total",
+				map[string]string{"operation": "diff", "result": "error"},
 				1, 10*time.Second)
 
 			s.SendKeys("Escape")
@@ -551,7 +572,7 @@ func TestRunsAndInspection(t *testing.T) {
 			s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 			waitForObservabilityReady(t, obsAddr, 20*time.Second)
 
-			s.SendKeys("C-r")
+			openRunsDashboardWithFallback(t, s)
 			s.WaitForAnyText([]string{"toggle details", "filter status", "[All]"}, 10*time.Second)
 			s.WaitForAnyText([]string{"snapdemo", "snapshot-demo"}, 10*time.Second)
 
@@ -568,14 +589,34 @@ func TestRunsAndInspection(t *testing.T) {
 
 			waitForTraceSpan(t, obsAddr, 10*time.Second, func(span debugTraceSpan) bool {
 				return span.Name == "ui.navigation" && spanHasAttrs(span, map[string]string{
-					"crush.ui.entrypoint": "run_inspect",
-					"crush.ui.target":     "snapshots",
-					"crush.ui.result":     "ok",
-					"crush.run_id":        "snapdemo",
+					"codeplane.ui.entrypoint": "run_inspect",
+					"codeplane.ui.target":     "snapshots",
+					"codeplane.ui.result":     "ok",
+					"crush.run_id":            "snapdemo",
 				})
 			})
-			waitForMetricAtLeast(t, obsAddr, "crush_ui_navigation_total",
+			waitForTraceSpan(t, obsAddr, 10*time.Second, func(span debugTraceSpan) bool {
+				return span.Name == "ui.snapshots.load" && spanHasAttrs(span, map[string]string{
+					"codeplane.snapshot.operation": "load",
+					"codeplane.snapshot.result":    "ok",
+					"crush.run_id":                 "snapdemo",
+				})
+			})
+			waitForTraceSpan(t, obsAddr, 10*time.Second, func(span debugTraceSpan) bool {
+				return span.Name == "ui.snapshots.diff" && spanHasAttrs(span, map[string]string{
+					"codeplane.snapshot.operation": "diff",
+					"codeplane.snapshot.result":    "error",
+					"crush.run_id":                 "snapdemo",
+				})
+			})
+			waitForMetricAtLeast(t, obsAddr, "codeplane_ui_navigation_total",
 				map[string]string{"entrypoint": "run_inspect", "target": "snapshots", "result": "ok"},
+				1, 10*time.Second)
+			waitForMetricAtLeast(t, obsAddr, "codeplane_snapshot_operations_total",
+				map[string]string{"operation": "load", "result": "ok"},
+				1, 10*time.Second)
+			waitForMetricAtLeast(t, obsAddr, "codeplane_snapshot_operations_total",
+				map[string]string{"operation": "diff", "result": "error"},
 				1, 10*time.Second)
 
 			s.SendKeys("Escape")

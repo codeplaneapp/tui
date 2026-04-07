@@ -371,6 +371,7 @@ func TestFilter(t *testing.T) {
 		{"filter one", []string{"b"}, 2},
 		{"filter all", []string{"a", "b", "c"}, 0},
 		{"filter nonexistent", []string{"d"}, 3},
+		{"filter legacy builtin alias", []string{"crush-config"}, 3},
 	}
 
 	for _, tt := range tests {
@@ -380,6 +381,19 @@ func TestFilter(t *testing.T) {
 			require.Len(t, result, tt.wantLen)
 		})
 	}
+}
+
+func TestFilterNormalizesLegacyBuiltinSkillName(t *testing.T) {
+	t.Parallel()
+
+	all := []*Skill{
+		{Name: "codeplane-config"},
+		{Name: "other"},
+	}
+
+	result := Filter(all, []string{"crush-config"})
+	require.Len(t, result, 1)
+	require.Equal(t, "other", result[0].Name)
 }
 
 // ---------------------------------------------------------------------------

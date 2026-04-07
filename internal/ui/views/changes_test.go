@@ -12,15 +12,26 @@ import (
 )
 
 type mockChangeManager struct {
-	repo       *jjhub.Repo
-	changes    []jjhub.Change
-	details    map[string]jjhub.Change
-	diffs      map[string]string
-	status     string
-	listErr    error
-	viewErr    error
-	diffErr    error
-	statusErr  error
+	repo        *jjhub.Repo
+	changes     []jjhub.Change
+	details     map[string]jjhub.Change
+	diffs       map[string]string
+	status      string
+	bookmarks   map[string]jjhub.Bookmark
+	createCalls []struct {
+		name     string
+		changeID string
+		remote   bool
+	}
+	deleteCalls []struct {
+		name   string
+		remote bool
+	}
+	listErr     error
+	viewErr     error
+	diffErr     error
+	statusErr   error
+	bookmarkErr error
 }
 
 func (m *mockChangeManager) GetCurrentRepo(context.Context) (*jjhub.Repo, error) {
@@ -59,6 +70,46 @@ func (m *mockChangeManager) Status(context.Context) (string, error) {
 		return "", m.statusErr
 	}
 	return m.status, nil
+}
+
+func (m *mockChangeManager) CreateBookmark(_ context.Context, name, changeID string, remote bool) (*jjhub.Bookmark, error) {
+	if m.bookmarkErr != nil {
+		return nil, m.bookmarkErr
+	}
+	m.createCalls = append(m.createCalls, struct {
+		name     string
+		changeID string
+		remote   bool
+	}{name: name, changeID: changeID, remote: remote})
+	bookmark := jjhub.Bookmark{
+		Name:           name,
+		TargetChangeID: changeID,
+	}
+	if m.bookmarks == nil {
+		m.bookmarks = make(map[string]jjhub.Bookmark)
+	}
+	key := name
+	if remote {
+		key += "@remote"
+	}
+	m.bookmarks[key] = bookmark
+	return &bookmark, nil
+}
+
+func (m *mockChangeManager) DeleteBookmark(_ context.Context, name string, remote bool) error {
+	if m.bookmarkErr != nil {
+		return m.bookmarkErr
+	}
+	m.deleteCalls = append(m.deleteCalls, struct {
+		name   string
+		remote bool
+	}{name: name, remote: remote})
+	key := name
+	if remote {
+		key += "@remote"
+	}
+	delete(m.bookmarks, key)
+	return nil
 }
 
 func TestChangesView_DKeyLoadsDiff(t *testing.T) {
@@ -362,4 +413,77 @@ func TestChangesView_WorkingCopyErrorCombinations(t *testing.T) {
 		assert.Contains(t, output, "cannot read status")
 		assert.Contains(t, output, "cannot read diff")
 	})
+}
+
+func TestChangesView_CreateBookmarkFlow(t *testing.T) {
+	t.Parallel()
+
+	manager := &mockChangeManager{
+		changes: []jjhub.Change{{
+			ChangeID:    "abc123",
+			Description: "Fix login flow",
+		}},
+	}
+
+	v := newChangesViewWithClient("changes", changesModeList, manager)
+	v.changes = manager.changes
+
+	updated, _ := v.Update(tea.KeyPressMsg{Code: 'b'})
+	cv := updated.(*ChangesView)
+	require.True(t, cv.prompt.active)
+	assert.Equal(t, changePromptCreateBookmark, cv.prompt.kind)
+
+	cv.prompt.input.SetValue("ship/login-fix")
+	updated, cmd := cv.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	cv = updated.(*ChangesView)
+	require.NotNil(t, cmd)
+
+	msg, ok := cmd().(changeActionDoneMsg)
+	require.True(t, ok)
+	assert.Equal(t, 1, len(manager.createCalls))
+	assert.Equal(t, "ship/login-fix", manager.createCalls[0].name)
+	assert.Equal(t, "abc123", manager.createCalls[0].changeID)
+	assert.True(t, manager.createCalls[0].remote)
+
+	updated, refreshCmd := cv.Update(msg)
+	cv = updated.(*ChangesView)
+	assert.False(t, cv.prompt.active)
+	assert.Contains(t, cv.actionMsg, "Created bookmark")
+	require.NotNil(t, refreshCmd)
+}
+
+func TestChangesView_DeleteBookmarkFlow(t *testing.T) {
+	t.Parallel()
+
+	manager := &mockChangeManager{
+		changes: []jjhub.Change{{
+			ChangeID:    "abc123",
+			Description: "Fix login flow",
+			Bookmarks:   []string{"ship/login-fix"},
+		}},
+	}
+
+	v := newChangesViewWithClient("changes", changesModeList, manager)
+	v.changes = manager.changes
+
+	updated, _ := v.Update(tea.KeyPressMsg{Code: 'x'})
+	cv := updated.(*ChangesView)
+	require.True(t, cv.prompt.active)
+	assert.Equal(t, "ship/login-fix", cv.prompt.input.Value())
+
+	updated, cmd := cv.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	cv = updated.(*ChangesView)
+	require.NotNil(t, cmd)
+
+	msg, ok := cmd().(changeActionDoneMsg)
+	require.True(t, ok)
+	assert.Equal(t, 1, len(manager.deleteCalls))
+	assert.Equal(t, "ship/login-fix", manager.deleteCalls[0].name)
+	assert.True(t, manager.deleteCalls[0].remote)
+
+	updated, refreshCmd := cv.Update(msg)
+	cv = updated.(*ChangesView)
+	assert.False(t, cv.prompt.active)
+	assert.Contains(t, cv.actionMsg, "Deleted bookmark")
+	require.NotNil(t, refreshCmd)
 }

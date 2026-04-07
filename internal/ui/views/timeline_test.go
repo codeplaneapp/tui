@@ -2,11 +2,13 @@ package views
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +20,7 @@ import (
 	"github.com/charmbracelet/crush/internal/ui/components"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	_ "modernc.org/sqlite"
 )
 
 // --- Test helpers ---
@@ -108,6 +111,24 @@ func newTimelineHTTPClient(t *testing.T, handler func(http.ResponseWriter, *http
 		smithers.WithHTTPClient(server.Client()),
 	)
 	client.SetServerUp(true)
+	t.Cleanup(func() {
+		_ = client.Close()
+	})
+	return client
+}
+
+func newTimelineSQLiteClient(t *testing.T, setup func(*sql.DB)) *smithers.Client {
+	t.Helper()
+
+	dbPath := filepath.Join(t.TempDir(), "smithers.db")
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	if setup != nil {
+		setup(db)
+	}
+	require.NoError(t, db.Close())
+
+	client := smithers.NewClient(smithers.WithDBPath(dbPath))
 	t.Cleanup(func() {
 		_ = client.Close()
 	})
@@ -1072,10 +1093,27 @@ func TestTimelineView_FetchSnapshots_RecordsObservability(t *testing.T) {
 	require.Len(t, loadedMsg.snapshots, 3)
 
 	attrs := requireRecentSpanAttrs(t, "ui.snapshots.load")
-	require.Equal(t, "load", attrs["crush.snapshot.operation"])
-	require.Equal(t, "ok", attrs["crush.snapshot.result"])
+	require.Equal(t, "load", attrs["codeplane.snapshot.operation"])
+	require.Equal(t, "ok", attrs["codeplane.snapshot.result"])
 	require.Equal(t, "run-obs", attrs["crush.run_id"])
 	require.EqualValues(t, 3, attrs["crush.snapshot.count"])
+}
+
+func TestTimelineView_FetchSnapshots_RecordsObservabilityError(t *testing.T) {
+	configureTimelineObservability(t)
+
+	client := newTimelineSQLiteClient(t, nil)
+	v := NewTimelineView(client, "run-obs-error")
+
+	msg := v.fetchSnapshots()()
+	errMsg, ok := msg.(timelineErrorMsg)
+	require.True(t, ok, "expected timelineErrorMsg, got %T", msg)
+	require.Error(t, errMsg.err)
+
+	attrs := requireRecentSpanAttrs(t, "ui.snapshots.load")
+	require.Equal(t, "load", attrs["codeplane.snapshot.operation"])
+	require.Equal(t, "error", attrs["codeplane.snapshot.result"])
+	require.Equal(t, "run-obs-error", attrs["crush.run_id"])
 }
 
 func TestTimelineView_FetchDiff_RecordsObservability(t *testing.T) {
@@ -1094,8 +1132,8 @@ func TestTimelineView_FetchDiff_RecordsObservability(t *testing.T) {
 	require.NotNil(t, diffMsg.diff)
 
 	attrs := requireRecentSpanAttrs(t, "ui.snapshots.diff")
-	require.Equal(t, "diff", attrs["crush.snapshot.operation"])
-	require.Equal(t, "ok", attrs["crush.snapshot.result"])
+	require.Equal(t, "diff", attrs["codeplane.snapshot.operation"])
+	require.Equal(t, "ok", attrs["codeplane.snapshot.result"])
 	require.Equal(t, "run-diff-obs", attrs["crush.run_id"])
 	require.Equal(t, snaps[0].ID, attrs["crush.snapshot.from_id"])
 	require.Equal(t, snaps[1].ID, attrs["crush.snapshot.to_id"])
@@ -1121,8 +1159,8 @@ func TestTimelineView_DispatchAction_ForkRecordsObservability(t *testing.T) {
 	require.True(t, ok, "expected timelineForkDoneMsg, got %T", msg)
 
 	attrs := requireRecentSpanAttrs(t, "ui.snapshots.fork")
-	require.Equal(t, "fork", attrs["crush.snapshot.operation"])
-	require.Equal(t, "ok", attrs["crush.snapshot.result"])
+	require.Equal(t, "fork", attrs["codeplane.snapshot.operation"])
+	require.Equal(t, "ok", attrs["codeplane.snapshot.result"])
 	require.Equal(t, "run-fork-obs", attrs["crush.run_id"])
 	require.Equal(t, v.snapshots[1].ID, attrs["crush.snapshot.id"])
 	require.Equal(t, "forked-run", attrs["crush.snapshot.result_run_id"])
@@ -1148,8 +1186,8 @@ func TestTimelineView_DispatchAction_ReplayRecordsObservability(t *testing.T) {
 	require.True(t, ok, "expected timelineReplayDoneMsg, got %T", msg)
 
 	attrs := requireRecentSpanAttrs(t, "ui.snapshots.replay")
-	require.Equal(t, "replay", attrs["crush.snapshot.operation"])
-	require.Equal(t, "ok", attrs["crush.snapshot.result"])
+	require.Equal(t, "replay", attrs["codeplane.snapshot.operation"])
+	require.Equal(t, "ok", attrs["codeplane.snapshot.result"])
 	require.Equal(t, "run-replay-obs", attrs["crush.run_id"])
 	require.Equal(t, v.snapshots[1].ID, attrs["crush.snapshot.id"])
 	require.Equal(t, "replayed-run", attrs["crush.snapshot.result_run_id"])

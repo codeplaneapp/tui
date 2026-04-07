@@ -126,14 +126,14 @@ func TestBashTool_BackgroundRunPreservesObservabilityContext(t *testing.T) {
 		if span.Name != "shell.background" {
 			continue
 		}
-		if span.Attributes["crush.background_job.id"] != meta.ShellID {
+		if span.Attributes["codeplane.background_job.id"] != meta.ShellID {
 			continue
 		}
 		backgroundSpanFound = true
-		require.Equal(t, "ws-123", span.Attributes["crush.workspace_id"])
-		require.Equal(t, "test-session", span.Attributes["crush.session_id"])
-		require.Equal(t, BashToolName, span.Attributes["crush.tool"])
-		require.Equal(t, "test-call", span.Attributes["crush.tool_call_id"])
+		require.Equal(t, "ws-123", span.Attributes["codeplane.workspace_id"])
+		require.Equal(t, "test-session", span.Attributes["codeplane.session_id"])
+		require.Equal(t, BashToolName, span.Attributes["codeplane.tool"])
+		require.Equal(t, "test-call", span.Attributes["codeplane.tool_call_id"])
 	}
 	require.True(t, backgroundSpanFound)
 }
