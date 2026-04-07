@@ -1155,7 +1155,7 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.tabManager != nil {
 			tab := &WorkspaceTab{
 				ID:          "chat:new",
-				Kind:        TabKindView,
+				Kind:        TabKindChat,
 				Label:       "Chat",
 				Closable:    true,
 				Router:      views.NewRouter(),
@@ -2140,6 +2140,13 @@ func (m *UI) handleNavigateToView(msg NavigateToViewMsg) tea.Cmd {
 	if view == "" {
 		return nil
 	}
+
+	if m.tabManager != nil {
+		if cmd := m.openViewAsTab(view); cmd != nil {
+			return cmd
+		}
+	}
+
 	switch view {
 	case "runs":
 		runsView := views.NewRunsView(m.smithersClient)
@@ -3652,6 +3659,12 @@ func (m *UI) handleViewResult(result tea.Msg) []tea.Cmd {
 	case views.PopViewMsg:
 		if m.viewRouter.Depth() <= 1 {
 			m.viewRouter.Reset()
+			if m.tabManager != nil && m.tabManager.ActiveIndex() > 0 {
+				if cmd := m.closeActiveTab(); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+				break
+			}
 			if m.dashboard != nil {
 				m.setState(uiSmithersDashboard, uiFocusMain)
 			} else if m.hasSession() {

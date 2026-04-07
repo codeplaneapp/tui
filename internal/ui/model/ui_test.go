@@ -106,6 +106,28 @@ func TestHandleViewResult_PopViewMsg_LastViewReturnsToDashboard(t *testing.T) {
 	require.Equal(t, uiSmithersDashboard, ui.state)
 }
 
+func TestHandleViewResult_PopViewMsg_ClosesNonLauncherTab(t *testing.T) {
+	t.Parallel()
+
+	ui := newShortcutTestUI()
+	ui.dashboard = views.NewDashboardView(ui.com, nil, false)
+	ui.tabManager = NewTabManager()
+	ui.viewRouter = ui.tabManager.Active().Router
+
+	cmd := ui.openViewAsTab("changes")
+	require.NotNil(t, cmd)
+	require.Equal(t, 2, ui.tabManager.Len())
+	require.Equal(t, 1, ui.tabManager.ActiveIndex())
+
+	ui.handleViewResult(views.PopViewMsg{})
+
+	require.Equal(t, 1, ui.tabManager.Len())
+	require.Equal(t, 0, ui.tabManager.ActiveIndex())
+	require.Equal(t, "launcher", ui.tabManager.Active().ID)
+	require.Equal(t, uiSmithersDashboard, ui.state)
+	require.Same(t, ui.tabManager.Active().Router, ui.viewRouter)
+}
+
 // ─── substituteArgs ───────────────────────────────────────────────────────────
 
 func TestSubstituteArgs(t *testing.T) {

@@ -101,14 +101,54 @@ func TestHandleNavigateToView_EmptyViewIsNoop(t *testing.T) {
 	require.Nil(t, cmd, "empty view name should return nil cmd")
 }
 
+func TestHandleNavigateToView_OpensViewsAsTabs(t *testing.T) {
+	t.Parallel()
+
+	ui := newShortcutTestUI()
+	ui.tabManager = NewTabManager()
+	ui.viewRouter = ui.tabManager.Active().Router
+	ui.state = uiChat
+	ui.focus = uiFocusEditor
+
+	cmd := ui.handleNavigateToView(NavigateToViewMsg{View: "runs"})
+	require.NotNil(t, cmd)
+	require.Equal(t, 2, ui.tabManager.Len())
+	require.Equal(t, 1, ui.tabManager.ActiveIndex())
+	require.Equal(t, "view:runs", ui.tabManager.Active().ID)
+	require.Equal(t, uiSmithersView, ui.state)
+	require.Equal(t, uiFocusMain, ui.focus)
+	require.Same(t, ui.tabManager.Active().Router, ui.viewRouter)
+	require.True(t, ui.tabManager.Active().Router.HasViews())
+}
+
+func TestActivateTab_ChatTabReturnsToChatState(t *testing.T) {
+	t.Parallel()
+
+	ui := newShortcutTestUI()
+	ui.tabManager = NewTabManager()
+	ui.viewRouter = ui.tabManager.Active().Router
+	chatIdx := ui.tabManager.Add(&WorkspaceTab{
+		ID:          "chat:new",
+		Kind:        TabKindChat,
+		Label:       "Chat",
+		Closable:    true,
+		Router:      views.NewRouter(),
+		initialized: true,
+	})
+
+	cmd := ui.activateTab(chatIdx)
+
+	require.Nil(t, cmd)
+	require.Equal(t, chatIdx, ui.tabManager.ActiveIndex())
+	require.Equal(t, uiLanding, ui.state)
+	require.Equal(t, uiFocusEditor, ui.focus)
+	require.Same(t, ui.tabManager.Active().Router, ui.viewRouter)
+}
+
 func TestHandleNavigateToView_RunsView_IsHandled(t *testing.T) {
 	t.Parallel()
 
-	// Verify that the "runs" view name is handled by the runs-specific case
-	// (not falling through to the registry/coming-soon branch).
-	// We can't call handleNavigateToView directly here because it requires a
-	// fully wired UI (viewRouter, viewRegistry). Instead, verify the key-press
-	// path sends a NavigateToViewMsg with View="runs".
+	// Verify that the "runs" view name is handled by the keybinding path.
 	ui := newShortcutTestUI()
 	cmd := ui.handleKeyPressMsg(tea.KeyPressMsg{
 		Code: 'r',

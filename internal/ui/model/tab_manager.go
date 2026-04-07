@@ -9,6 +9,7 @@ type TabKind uint8
 
 const (
 	TabKindLauncher   TabKind = iota // tab 0, unclosable dashboard/launcher
+	TabKindChat                      // embedded chat home/composer
 	TabKindRunInspect                // a specific run inspection
 	TabKindLiveChat                  // live chat for a running agent
 	TabKindWorkspace                 // jjhub workspace detail
@@ -20,6 +21,8 @@ func (k TabKind) Icon() string {
 	switch k {
 	case TabKindLauncher:
 		return "◆"
+	case TabKindChat:
+		return "💬"
 	case TabKindRunInspect:
 		return "●"
 	case TabKindLiveChat:
