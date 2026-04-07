@@ -238,6 +238,18 @@ func (v *RunInspectView) Update(msg tea.Msg) (View, tea.Cmd) {
 				}
 			}
 
+		case key.Matches(msg, key.NewBinding(key.WithKeys("t"))):
+			if v.runID == "" {
+				break
+			}
+			runID := v.runID
+			return v, func() tea.Msg {
+				return OpenSnapshotsMsg{
+					RunID:  runID,
+					Source: SnapshotsOpenSourceRunInspect,
+				}
+			}
+
 		case key.Matches(msg, key.NewBinding(key.WithKeys("enter"))):
 			// Enter on a task row opens the detailed node inspector.
 			activeCursor := v.cursor
@@ -326,6 +338,7 @@ func (v *RunInspectView) ShortHelp() []key.Binding {
 		key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "dag view")),
 		key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "list view")),
 		key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "chat")),
+		key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "snapshots")),
 		key.NewBinding(key.WithKeys("h"), key.WithHelp("h", "hijack")),
 		key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
 		key.NewBinding(key.WithKeys("q", "esc"), key.WithHelp("q/esc", "back")),

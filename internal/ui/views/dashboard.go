@@ -185,7 +185,6 @@ func NewDashboardViewWithJJHub(client *smithers.Client, hasSmithers bool, jc *jj
 			{icon: "✅", label: "Approvals", desc: "Manage pending approval gates", action: func() tea.Msg { return DashboardNavigateMsg{View: "approvals"} }},
 			{icon: "🎫", label: "Tickets", desc: "Browse project tickets", action: func() tea.Msg { return DashboardNavigateMsg{View: "tickets"} }},
 			{icon: "🔍", label: "SQL Browser", desc: "Query the Smithers database", action: func() tea.Msg { return DashboardNavigateMsg{View: "sql"} }},
-			{icon: "⏱", label: "Timeline", desc: "Time-travel debugging", action: func() tea.Msg { return DashboardNavigateMsg{View: "timeline"} }},
 		}
 	} else {
 		d.menuItems = []menuItem{
@@ -1143,7 +1142,7 @@ func (d *DashboardView) fetchLandings() tea.Cmd {
 		return nil
 	}
 	return func() tea.Msg {
-		landings, err := jc.ListLandings("open", 30)
+		landings, err := jc.ListLandings(context.Background(), "open", 30)
 		return dashLandingsFetchedMsg{landings: landings, err: err}
 	}
 }
@@ -1154,7 +1153,7 @@ func (d *DashboardView) fetchIssues() tea.Cmd {
 		return nil
 	}
 	return func() tea.Msg {
-		issues, err := jc.ListIssues("open", 30)
+		issues, err := jc.ListIssues(context.Background(), "open", 30)
 		return dashIssuesFetchedMsg{issues: issues, err: err}
 	}
 }
@@ -1165,7 +1164,7 @@ func (d *DashboardView) fetchWorkspaces() tea.Cmd {
 		return nil
 	}
 	return func() tea.Msg {
-		workspaces, err := jc.ListWorkspaces(20)
+		workspaces, err := jc.ListWorkspaces(context.Background(), 20)
 		return dashWorkspacesFetchedMsg{workspaces: workspaces, err: err}
 	}
 }
@@ -1182,7 +1181,7 @@ func (d *DashboardView) fetchRepoName() tea.Cmd {
 		return nil
 	}
 	return func() tea.Msg {
-		repo, err := jc.GetCurrentRepo()
+		repo, err := jc.GetCurrentRepo(context.Background())
 		if err != nil {
 			return dashRepoNameFetchedMsg{err: err}
 		}

@@ -488,9 +488,9 @@ func (m *UI) Init() tea.Cmd {
 // loadInitialSession loads the initial session if one was specified on startup.
 func (m *UI) loadInitialSession() tea.Cmd {
 	switch {
-	case m.state != uiLanding && m.state != uiChat:
-		// Only load if we're in landing or chat state (i.e., fully configured).
-		// In Smithers mode, we start in uiChat instead of uiLanding.
+	case m.state == uiOnboarding || m.state == uiInitialize:
+		// Wait until configuration and initialization flows are complete before
+		// attempting to load an existing session.
 		return nil
 	case m.initialSessionID != "":
 		return m.loadSession(m.initialSessionID)
@@ -1120,6 +1120,7 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.textarea.MoveToEnd()
 		cmds = append(cmds, m.updateTextareaWithPrevHeight(msg, prevHeight))
 	case views.OpenChatMsg:
+		m.viewRouter.Reset()
 		m.setState(uiLanding, uiFocusEditor)
 		return m, tea.Batch(cmds...)
 	case views.InitSmithersMsg:
@@ -1862,10 +1863,8 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		cmds = append(cmds, cmd)
 
 	case views.PopViewMsg:
-		if cmd := m.viewRouter.Pop(); cmd != nil {
-			cmds = append(cmds, cmd)
-		}
-		if !m.viewRouter.HasViews() {
+		if m.viewRouter.Depth() <= 1 {
+			m.viewRouter.Reset()
 			// Return to dashboard in Smithers mode, chat otherwise
 			if m.dashboard != nil {
 				m.setState(uiSmithersDashboard, uiFocusMain)
@@ -1874,6 +1873,10 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 			} else {
 				m.setState(uiLanding, uiFocusEditor)
 			}
+			break
+		}
+		if cmd := m.viewRouter.Pop(); cmd != nil {
+			cmds = append(cmds, cmd)
 		}
 
 	case dialog.ActionSelectModel:
@@ -2196,7 +2199,7 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 	// Only active when the editor is not focused to avoid capturing text input.
 	// TODO: inline approval — wire smithersClient.ApproveGate(approvalID) directly
 	// from the toast key handler for < 3-keystroke approval (notifications-approval-inline).
-	if key.Matches(msg, m.keyMap.ViewApprovalsShort) && m.focus != uiFocusEditor {
+	if key.Matches(msg, m.keyMap.ViewApprovalsShort) && m.focus != uiFocusEditor && m.state != uiSmithersView {
 		cmds = append(cmds, m.navigateToView("approvals"))
 		return tea.Batch(cmds...)
 	}
@@ -3536,10 +3539,8 @@ func (m *UI) handleViewResult(result tea.Msg) []tea.Cmd {
 	var cmds []tea.Cmd
 	switch msg := result.(type) {
 	case views.PopViewMsg:
-		if c := m.viewRouter.Pop(); c != nil {
-			cmds = append(cmds, c)
-		}
-		if !m.viewRouter.HasViews() {
+		if m.viewRouter.Depth() <= 1 {
+			m.viewRouter.Reset()
 			if m.dashboard != nil {
 				m.setState(uiSmithersDashboard, uiFocusMain)
 			} else if m.hasSession() {
@@ -3547,8 +3548,13 @@ func (m *UI) handleViewResult(result tea.Msg) []tea.Cmd {
 			} else {
 				m.setState(uiLanding, uiFocusEditor)
 			}
+			break
+		}
+		if c := m.viewRouter.Pop(); c != nil {
+			cmds = append(cmds, c)
 		}
 	case views.OpenChatMsg:
+		m.viewRouter.Reset()
 		m.setState(uiLanding, uiFocusEditor)
 	case views.DashboardNavigateMsg:
 		if cmd := m.handleNavigateToView(NavigateToViewMsg{View: msg.View}); cmd != nil {

@@ -837,6 +837,19 @@ func (v *RunsView) Update(msg tea.Msg) (View, tea.Cmd) {
 					AgentName: "",
 				}
 			}
+
+		case key.Matches(msg, key.NewBinding(key.WithKeys("t"))):
+			run, ok := v.selectedRun()
+			if !ok {
+				break
+			}
+			runID := run.RunID
+			return v, func() tea.Msg {
+				return OpenSnapshotsMsg{
+					RunID:  runID,
+					Source: SnapshotsOpenSourceRuns,
+				}
+			}
 		}
 	}
 	return v, nil
@@ -1053,6 +1066,7 @@ func (v *RunsView) ShortHelp() []key.Binding {
 		key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "deny")),
 		key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "cancel run")),
 		key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "chat")),
+		key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "snapshots")),
 		key.NewBinding(key.WithKeys("h"), key.WithHelp("h", "hijack")),
 		key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "search")),
 		key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),

@@ -1,6 +1,7 @@
 package views
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -15,11 +16,11 @@ import (
 var _ View = (*ChangesView)(nil)
 
 type changeManager interface {
-	GetCurrentRepo() (*jjhub.Repo, error)
-	ListChanges(limit int) ([]jjhub.Change, error)
-	ViewChange(changeID string) (*jjhub.Change, error)
-	ChangeDiff(changeID string) (string, error)
-	Status() (string, error)
+	GetCurrentRepo(ctx context.Context) (*jjhub.Repo, error)
+	ListChanges(ctx context.Context, limit int) ([]jjhub.Change, error)
+	ViewChange(ctx context.Context, changeID string) (*jjhub.Change, error)
+	ChangeDiff(ctx context.Context, changeID string) (string, error)
+	Status(ctx context.Context) (string, error)
 }
 
 type changesViewMode uint8
@@ -114,7 +115,31 @@ func newJJHubChangeClient() changeManager {
 	if !jjhubAvailable() {
 		return nil
 	}
-	return jjhub.NewClient("")
+	return jjhubChangeAdapter{client: jjhub.NewClient("")}
+}
+
+type jjhubChangeAdapter struct {
+	client *jjhub.Client
+}
+
+func (a jjhubChangeAdapter) GetCurrentRepo(ctx context.Context) (*jjhub.Repo, error) {
+	return a.client.GetCurrentRepo(ctx)
+}
+
+func (a jjhubChangeAdapter) ListChanges(ctx context.Context, limit int) ([]jjhub.Change, error) {
+	return a.client.ListChanges(ctx, limit)
+}
+
+func (a jjhubChangeAdapter) ViewChange(ctx context.Context, changeID string) (*jjhub.Change, error) {
+	return a.client.ViewChange(ctx, changeID)
+}
+
+func (a jjhubChangeAdapter) ChangeDiff(ctx context.Context, changeID string) (string, error) {
+	return a.client.ChangeDiff(ctx, changeID)
+}
+
+func (a jjhubChangeAdapter) Status(ctx context.Context) (string, error) {
+	return a.client.Status(ctx)
 }
 
 func newChangesViewWithClient(routeName string, mode changesViewMode, client changeManager) *ChangesView {
@@ -155,7 +180,7 @@ func (v *ChangesView) Init() tea.Cmd {
 func (v *ChangesView) loadRepoCmd() tea.Cmd {
 	client := v.client
 	return func() tea.Msg {
-		repo, err := client.GetCurrentRepo()
+		repo, err := client.GetCurrentRepo(context.Background())
 		if err != nil {
 			return nil
 		}
@@ -166,7 +191,7 @@ func (v *ChangesView) loadRepoCmd() tea.Cmd {
 func (v *ChangesView) loadChangesCmd() tea.Cmd {
 	client := v.client
 	return func() tea.Msg {
-		changes, err := client.ListChanges(100)
+		changes, err := client.ListChanges(context.Background(), 100)
 		if err != nil {
 			return changesErrorMsg{err: err}
 		}
@@ -190,7 +215,7 @@ func (v *ChangesView) loadSelectedDetailCmd() tea.Cmd {
 	changeID := change.ChangeID
 	client := v.client
 	return func() tea.Msg {
-		loaded, err := client.ViewChange(changeID)
+		loaded, err := client.ViewChange(context.Background(), changeID)
 		if err != nil {
 			return changeDetailErrorMsg{changeID: key, err: err}
 		}
@@ -214,7 +239,7 @@ func (v *ChangesView) loadSelectedDiffCmd() tea.Cmd {
 	changeID := change.ChangeID
 	client := v.client
 	return func() tea.Msg {
-		diff, err := client.ChangeDiff(changeID)
+		diff, err := client.ChangeDiff(context.Background(), changeID)
 		if err != nil {
 			return changeDiffErrorMsg{changeID: key, err: err}
 		}
@@ -225,8 +250,8 @@ func (v *ChangesView) loadSelectedDiffCmd() tea.Cmd {
 func (v *ChangesView) loadWorkingCopyCmd() tea.Cmd {
 	client := v.client
 	return func() tea.Msg {
-		status, statusErr := client.Status()
-		diff, diffErr := client.ChangeDiff("")
+		status, statusErr := client.Status(context.Background())
+		diff, diffErr := client.ChangeDiff(context.Background(), "")
 		return workingCopyLoadedMsg{
 			status:    status,
 			statusErr: statusErr,

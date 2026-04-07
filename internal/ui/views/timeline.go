@@ -10,8 +10,10 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/crush/internal/observability"
 	"github.com/charmbracelet/crush/internal/smithers"
 	"github.com/charmbracelet/crush/internal/ui/components"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // --- Snapshot kind ---
@@ -218,7 +220,13 @@ func (v *TimelineView) fetchSnapshots() tea.Cmd {
 	runID := v.runID
 	client := v.client
 	return func() tea.Msg {
+		start := time.Now()
 		snaps, err := client.ListSnapshots(context.Background(), runID)
+		attrs := []attribute.KeyValue{attribute.String("crush.run_id", runID)}
+		if err == nil {
+			attrs = append(attrs, attribute.Int("crush.snapshot.count", len(snaps)))
+		}
+		observability.RecordSnapshotOperation("load", time.Since(start), err, attrs...)
 		if err != nil {
 			return timelineErrorMsg{err: err}
 		}
@@ -231,7 +239,13 @@ func (v *TimelineView) fetchDiff(fromSnap, toSnap smithers.Snapshot) tea.Cmd {
 	diffKey := fromSnap.ID + ":" + toSnap.ID
 	client := v.client
 	return func() tea.Msg {
+		start := time.Now()
 		diff, err := client.DiffSnapshots(context.Background(), fromSnap.ID, toSnap.ID)
+		observability.RecordSnapshotOperation("diff", time.Since(start), err,
+			attribute.String("crush.run_id", toSnap.RunID),
+			attribute.String("crush.snapshot.from_id", fromSnap.ID),
+			attribute.String("crush.snapshot.to_id", toSnap.ID),
+		)
 		if err != nil {
 			return timelineDiffErrorMsg{key: diffKey, err: err}
 		}
@@ -463,9 +477,18 @@ func (v *TimelineView) dispatchAction(action pendingActionKind) tea.Cmd {
 	case pendingFork:
 		label := fmt.Sprintf("fork from snap %d", snap.SnapshotNo)
 		return func() tea.Msg {
+			start := time.Now()
 			run, err := client.ForkRun(context.Background(), snap.ID, smithers.ForkOptions{
 				Label: label,
 			})
+			attrs := []attribute.KeyValue{
+				attribute.String("crush.run_id", snap.RunID),
+				attribute.String("crush.snapshot.id", snap.ID),
+			}
+			if err == nil && run != nil {
+				attrs = append(attrs, attribute.String("crush.snapshot.result_run_id", run.ID))
+			}
+			observability.RecordSnapshotOperation("fork", time.Since(start), err, attrs...)
 			if err != nil {
 				return timelineActionErrorMsg{err: err}
 			}
@@ -475,9 +498,18 @@ func (v *TimelineView) dispatchAction(action pendingActionKind) tea.Cmd {
 	case pendingReplay:
 		label := fmt.Sprintf("replay from snap %d", snap.SnapshotNo)
 		return func() tea.Msg {
+			start := time.Now()
 			run, err := client.ReplayRun(context.Background(), snap.ID, smithers.ReplayOptions{
 				Label: label,
 			})
+			attrs := []attribute.KeyValue{
+				attribute.String("crush.run_id", snap.RunID),
+				attribute.String("crush.snapshot.id", snap.ID),
+			}
+			if err == nil && run != nil {
+				attrs = append(attrs, attribute.String("crush.snapshot.result_run_id", run.ID))
+			}
+			observability.RecordSnapshotOperation("replay", time.Since(start), err, attrs...)
 			if err != nil {
 				return timelineActionErrorMsg{err: err}
 			}
@@ -584,7 +616,7 @@ func (v *TimelineView) renderHeader() string {
 		runPart = runPart[:8]
 	}
 
-	title := "SMITHERS › Timeline › " + runPart
+	title := "SMITHERS › Snapshots › " + runPart
 	header := titleStyle.Render(title)
 	hint := hintStyle.Render("[Esc] Back")
 
@@ -637,15 +669,23 @@ func (v *TimelineView) renderRail() string {
 	var slots []slot
 
 	total := len(v.snapshots)
-	shown := total
-	if shown > maxVisible {
-		shown = maxVisible
+	shown := min(total, maxVisible)
+	start := 0
+	if total > shown {
+		start = v.cursor - shown/2
+		if start < 0 {
+			start = 0
+		}
+		if maxStart := total - shown; start > maxStart {
+			start = maxStart
+		}
 	}
+	end := start + shown
 
 	connector := faint.Render("──")
 	connectorWidth := lipgloss.Width(connector)
 
-	for i := 0; i < shown; i++ {
+	for i := start; i < end; i++ {
 		snap := v.snapshots[i]
 		marker := snapshotMarker(snap.SnapshotNo)
 		kind := classifySnapshot(snap)
@@ -673,21 +713,28 @@ func (v *TimelineView) renderRail() string {
 	}
 	rail := "  " + strings.Join(railParts, connector)
 
-	if total > shown {
-		rail += faint.Render(fmt.Sprintf("──...+%d", total-shown))
+	if start > 0 {
+		rail = "  " + faint.Render(fmt.Sprintf("...+%d──", start)) + strings.Join(railParts, connector)
+	}
+	if end < total {
+		rail += faint.Render(fmt.Sprintf("──...+%d", total-end))
 	}
 
 	// Build the arrow line: a ▲ positioned under the selected marker.
 	// Compute the offset of the cursor slot in the rail string.
 	arrowLine := ""
-	if v.cursor < shown {
+	cursorSlot := v.cursor - start
+	if cursorSlot >= 0 && cursorSlot < len(slots) {
 		// 2 spaces prefix + (slot_index * (connectorWidth + slotWidth_of_each_prior_slot))
 		offset := 2 // leading "  "
-		for i := 0; i < v.cursor; i++ {
+		if start > 0 {
+			offset += lipgloss.Width(faint.Render(fmt.Sprintf("...+%d──", start)))
+		}
+		for i := 0; i < cursorSlot; i++ {
 			offset += slots[i].width + connectorWidth
 		}
 		// Center the ▲ under the selected marker.
-		arrowOffset := offset + slots[v.cursor].width/2
+		arrowOffset := offset + slots[cursorSlot].width/2
 		if arrowOffset < 0 {
 			arrowOffset = 0
 		}

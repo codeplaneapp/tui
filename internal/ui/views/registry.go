@@ -51,6 +51,7 @@ func DefaultRegistry() *Registry {
 	r.Register("agents", func(c *smithers.Client) View { return NewAgentsView(c) })
 	r.Register("approvals", func(c *smithers.Client) View { return NewApprovalsView(c) })
 	r.Register("changes", func(c *smithers.Client) View { return NewChangesView(c) })
+	r.Register("chat", func(c *smithers.Client) View { return NewChatView(c) })
 	r.Register("issues", func(c *smithers.Client) View { return NewIssuesView(c) })
 	r.Register("landings", func(c *smithers.Client) View { return NewLandingsView(c) })
 	r.Register("memory", func(c *smithers.Client) View { return NewMemoryView(c) })
@@ -60,7 +61,7 @@ func DefaultRegistry() *Registry {
 	r.Register("status", func(c *smithers.Client) View { return NewStatusView(c) })
 	r.Register("tickets", func(c *smithers.Client) View { return NewTicketsView(c) })
 	r.Register("triggers", func(c *smithers.Client) View { return NewTriggersView(c) })
-	r.Register("workflows", func(c *smithers.Client) View { return NewWorkflowsView(c) })
 	r.Register("workspaces", func(c *smithers.Client) View { return NewWorkspacesView(c) })
+	r.Register("workflows", func(c *smithers.Client) View { return NewWorkflowsView(c) })
 	return r
 }
