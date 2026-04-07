@@ -19,9 +19,9 @@ import (
 )
 
 // DummyHost is used to satisfy the http.Client's requirement for a URL.
-const DummyHost = "api.crush.localhost"
+const DummyHost = "api.codeplane.localhost"
 
-// Client represents an RPC client connected to a Crush server.
+// Client represents an RPC client connected to a Codeplane server.
 type Client struct {
 	h       *http.Client
 	path    string
