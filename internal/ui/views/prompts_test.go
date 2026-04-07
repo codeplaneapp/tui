@@ -226,7 +226,7 @@ func TestPromptsView_View_HeaderText(t *testing.T) {
 	v.height = 24
 	v.loading = false
 	out := v.View()
-	assert.Contains(t, out, "SMITHERS")
+	assert.Contains(t, out, "CODEPLANE")
 	assert.Contains(t, out, "Prompts")
 }
 

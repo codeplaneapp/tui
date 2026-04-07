@@ -334,7 +334,7 @@ func (v *TicketDetailView) renderHeader() string {
 		rightSide = scrollInfo + "  " + rightSide
 	}
 
-	return ViewHeader(packageCom.Styles, "SMITHERS", viewName, v.width, rightSide)
+	return ViewHeader(packageCom.Styles, "CODEPLANE", viewName, v.width, rightSide)
 }
 
 // renderHelpBar renders the bottom key-binding help bar.

@@ -732,7 +732,7 @@ func (v *SQLBrowserView) View() string {
 	var b strings.Builder
 
 	// Header
-	b.WriteString(ViewHeader(packageCom.Styles, "SMITHERS", "SQL Browser", v.width, "[Esc] Back") + "\n\n")
+	b.WriteString(ViewHeader(packageCom.Styles, "CODEPLANE", "SQL Browser", v.width, "[Esc] Back") + "\n\n")
 
 	if v.loading {
 		b.WriteString("  Loading tables...\n")

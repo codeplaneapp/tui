@@ -745,7 +745,7 @@ func (v *LiveChatView) renderHeader() string {
 		viewName += " (" + v.run.WorkflowName + ")"
 	}
 
-	return ViewHeader(packageCom.Styles, "SMITHERS", viewName, v.width, "[Esc] Back")
+	return ViewHeader(packageCom.Styles, "CODEPLANE", viewName, v.width, "[Esc] Back")
 }
 
 func (v *LiveChatView) renderSubHeader() string {

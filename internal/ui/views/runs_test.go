@@ -384,7 +384,7 @@ func TestRunsView_View_LoadingState(t *testing.T) {
 	v.width = 120
 	v.height = 40
 	out := v.View()
-	assert.Contains(t, out, "SMITHERS")
+	assert.Contains(t, out, "CODEPLANE")
 	assert.Contains(t, out, "Runs")
 	assert.Contains(t, out, "Loading runs...")
 }
@@ -415,7 +415,7 @@ func TestRunsView_View_HeaderWithEscHint(t *testing.T) {
 	v.height = 40
 	v.loading = false
 	out := v.View()
-	assert.Contains(t, out, "SMITHERS")
+	assert.Contains(t, out, "CODEPLANE")
 	assert.Contains(t, out, "Runs")
 	assert.Contains(t, out, "[Esc] Back")
 }

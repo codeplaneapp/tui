@@ -120,7 +120,7 @@ func (v *NodeInspectView) renderHeader() string {
 	}
 
 	viewName := "Runs › " + runPart + " › " + label
-	return ViewHeader(packageCom.Styles, "SMITHERS", viewName, v.width, "[Esc] Back")
+	return ViewHeader(packageCom.Styles, "CODEPLANE", viewName, v.width, "[Esc] Back")
 }
 
 func (v *NodeInspectView) renderNodeDetail() string {

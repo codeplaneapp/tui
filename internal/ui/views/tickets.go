@@ -379,7 +379,7 @@ func (v *TicketsView) View() string {
 	if !v.loading && v.err == nil {
 		viewTitle = fmt.Sprintf("Tickets (%d)", len(v.tickets))
 	}
-	b.WriteString(ViewHeader(packageCom.Styles, "SMITHERS", viewTitle, v.width, "[Esc] Back"))
+	b.WriteString(ViewHeader(packageCom.Styles, "CODEPLANE", viewTitle, v.width, "[Esc] Back"))
 	b.WriteString("\n\n")
 
 	if v.loading {

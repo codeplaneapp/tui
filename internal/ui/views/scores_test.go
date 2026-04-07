@@ -98,7 +98,7 @@ func TestScoresView_ViewLoadingState(t *testing.T) {
 	v := NewScoresView(smithers.NewClient())
 	v.loading = true
 	out := v.View()
-	assert.Contains(t, ansi.Strip(out), "SMITHERS › Scores")
+	assert.Contains(t, ansi.Strip(out), "CODEPLANE › Scores")
 	assert.Contains(t, out, "Loading scores")
 }
 

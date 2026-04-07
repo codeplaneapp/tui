@@ -548,7 +548,7 @@ func (v *IssuesView) View() string {
 		jjhubRepoLabel(v.repo),
 		"[Esc] Back",
 	)
-	b.WriteString(ViewHeader(packageCom.Styles, "SMITHERS", "Issues", v.width, rightSide))
+	b.WriteString(ViewHeader(packageCom.Styles, "CODEPLANE", "Issues", v.width, rightSide))
 	b.WriteString("\n\n")
 
 	if v.prompt.active {

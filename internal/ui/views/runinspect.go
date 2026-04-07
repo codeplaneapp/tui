@@ -456,7 +456,7 @@ func (v *RunInspectView) renderHeader() string {
 		viewName += " (" + v.inspection.WorkflowName + ")"
 	}
 
-	return ViewHeader(packageCom.Styles, "SMITHERS", viewName, v.width, "[Esc] Back")
+	return ViewHeader(packageCom.Styles, "CODEPLANE", viewName, v.width, "[Esc] Back")
 }
 
 func (v *RunInspectView) renderSubHeader() string {

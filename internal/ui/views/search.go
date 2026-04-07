@@ -350,7 +350,7 @@ func (v *SearchView) View() string {
 		jjhubRepoLabel(v.repo),
 		"[Esc] Back",
 	)
-	b.WriteString(ViewHeader(packageCom.Styles, "SMITHERS", "Search", v.width, rightSide))
+	b.WriteString(ViewHeader(packageCom.Styles, "CODEPLANE", "Search", v.width, rightSide))
 	b.WriteString("\n\n")
 	b.WriteString(v.renderTabBar())
 	b.WriteString("\n")

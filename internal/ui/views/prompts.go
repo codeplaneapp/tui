@@ -437,7 +437,7 @@ func (v *PromptsView) View() string {
 	var b strings.Builder
 
 	// Header
-	b.WriteString(ViewHeader(packageCom.Styles, "SMITHERS", "Prompts", v.width, "[Esc] Back"))
+	b.WriteString(ViewHeader(packageCom.Styles, "CODEPLANE", "Prompts", v.width, "[Esc] Back"))
 	b.WriteString("\n\n")
 
 	if v.loading {

@@ -332,7 +332,7 @@ func (v *MemoryView) renderList() string {
 	var b strings.Builder
 
 	// Header line with right-aligned [Esc] Back hint.
-	header := lipgloss.NewStyle().Bold(true).Render("SMITHERS \u203a Memory")
+	header := lipgloss.NewStyle().Bold(true).Render("CODEPLANE \u203a Memory")
 	nsTag := ""
 	if v.activeNamespace != "" {
 		nsTag = lipgloss.NewStyle().Faint(true).Render(" [" + v.activeNamespace + "]")
@@ -438,7 +438,7 @@ func (v *MemoryView) renderDetail() string {
 	}
 	fact := facts[v.cursor]
 
-	header := bold.Render("SMITHERS \u203a Memory \u203a Detail")
+	header := bold.Render("CODEPLANE \u203a Memory \u203a Detail")
 	helpHint := faint.Render("[Esc/q] Back  [s] Recall")
 	headerLine := header
 	if v.width > 0 {
@@ -484,7 +484,7 @@ func (v *MemoryView) renderRecallPrompt() string {
 	var b strings.Builder
 	faint := lipgloss.NewStyle().Faint(true)
 
-	b.WriteString(ViewHeader(packageCom.Styles, "SMITHERS", "Memory › Recall", v.width, "[Enter] Search  [Esc] Cancel") + "\n\n")
+	b.WriteString(ViewHeader(packageCom.Styles, "CODEPLANE", "Memory › Recall", v.width, "[Enter] Search  [Esc] Cancel") + "\n\n")
 
 	nsLabel := "all namespaces"
 	if v.activeNamespace != "" {
@@ -502,7 +502,7 @@ func (v *MemoryView) renderRecallResults() string {
 	bold := lipgloss.NewStyle().Bold(true)
 	faint := lipgloss.NewStyle().Faint(true)
 
-	header := bold.Render("SMITHERS \u203a Memory \u203a Recall Results")
+	header := bold.Render("CODEPLANE \u203a Memory \u203a Recall Results")
 	helpHint := faint.Render("[Esc/q] Back  [s] New query")
 	headerLine := header
 	if v.width > 0 {

@@ -239,7 +239,7 @@ func TestMemoryView_View_HeaderText(t *testing.T) {
 	v.width = 80
 	v.height = 24
 	out := v.View()
-	assert.Contains(t, out, "SMITHERS")
+	assert.Contains(t, out, "CODEPLANE")
 	assert.Contains(t, out, "Memory")
 }
 

@@ -613,7 +613,7 @@ func (v *TimelineView) renderHeader() string {
 		runPart = runPart[:8]
 	}
 	viewName := "Snapshots › " + runPart
-	return ViewHeader(packageCom.Styles, "SMITHERS", viewName, v.width, "[Esc] Back")
+	return ViewHeader(packageCom.Styles, "CODEPLANE", viewName, v.width, "[Esc] Back")
 }
 
 func (v *TimelineView) renderDivider() string {

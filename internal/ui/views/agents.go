@@ -172,7 +172,7 @@ func (v *AgentsView) View() string {
 	var b strings.Builder
 
 	// Header
-	b.WriteString(ViewHeader(v.com.Styles, "SMITHERS", "Agents", v.width, "[Esc] Back"))
+	b.WriteString(ViewHeader(v.com.Styles, "CODEPLANE", "Agents", v.width, "[Esc] Back"))
 	b.WriteString("\n\n")
 
 	if v.loading {

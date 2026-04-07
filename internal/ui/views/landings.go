@@ -846,7 +846,7 @@ func (v *LandingsView) View() string {
 		jjhubRepoLabel(v.repo),
 		"[Esc] Back",
 	)
-	b.WriteString(ViewHeader(v.com.Styles, "SMITHERS", "Landings", v.width, rightSide))
+	b.WriteString(ViewHeader(v.com.Styles, "CODEPLANE", "Landings", v.width, rightSide))
 	b.WriteString("\n\n")
 
 	if v.prompt.active {

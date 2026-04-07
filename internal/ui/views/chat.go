@@ -364,7 +364,7 @@ func (v *ChatView) Update(msg tea.Msg) (View, tea.Cmd) {
 func (v *ChatView) View() string {
 	var b strings.Builder
 
-	b.WriteString(ViewHeader(packageCom.Styles, "SMITHERS", "Start Chat", v.width, "[Enter] Open  [Esc] Back"))
+	b.WriteString(ViewHeader(packageCom.Styles, "CODEPLANE", "Start Chat", v.width, "[Enter] Open  [Esc] Back"))
 	b.WriteString("\n\n")
 	b.WriteString("  Choose how you want to chat in this workspace.\n\n")
 

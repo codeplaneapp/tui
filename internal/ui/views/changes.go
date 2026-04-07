@@ -593,7 +593,7 @@ func (v *ChangesView) renderList() string {
 	t := v.com.Styles
 
 	// Header
-	header := jjhubHeader(t, "SMITHERS › JJHub Changes", v.width, jjhubRepoLabel(t, v.repo))
+	header := jjhubHeader(t, "CODEPLANE › JJHub Changes", v.width, jjhubRepoLabel(t, v.repo))
 	b.WriteString(header + "\n\n")
 
 	if v.loading && len(v.changes) == 0 {
@@ -711,7 +711,7 @@ func (v *ChangesView) renderDiff(changeID string, width int) []string {
 func (v *ChangesView) renderStatus() string {
 	var b strings.Builder
 	t := v.com.Styles
-	header := jjhubHeader(t, "SMITHERS › JJHub Status", v.width, jjhubRepoLabel(t, v.repo))
+	header := jjhubHeader(t, "CODEPLANE › JJHub Status", v.width, jjhubRepoLabel(t, v.repo))
 	b.WriteString(header + "\n\n")
 
 	if v.statusLoading {

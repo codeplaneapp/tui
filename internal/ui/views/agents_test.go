@@ -250,7 +250,7 @@ func TestAgentsView_View_HeaderText(t *testing.T) {
 	v.width = 80
 	v.height = 24
 	out := v.View()
-	assert.Contains(t, ansi.Strip(out), "SMITHERS › Agents")
+	assert.Contains(t, ansi.Strip(out), "CODEPLANE › Agents")
 }
 
 func TestAgentsView_View_LoadingState(t *testing.T) {

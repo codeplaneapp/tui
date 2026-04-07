@@ -848,7 +848,7 @@ func (v *WorkspacesView) View() string {
 		jjhubRepoLabel(v.repo),
 		"[Esc] Back",
 	}
-	b.WriteString(ViewHeader(packageCom.Styles, "SMITHERS", "Workspaces", v.width, jjhubJoinNonEmpty("  ", right...)))
+	b.WriteString(ViewHeader(packageCom.Styles, "CODEPLANE", "Workspaces", v.width, jjhubJoinNonEmpty("  ", right...)))
 	b.WriteString("\n\n")
 
 	if v.connectingID != "" {

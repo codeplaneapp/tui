@@ -175,7 +175,7 @@ func TestWorkflowsView_View_HeaderText(t *testing.T) {
 	v.width = 80
 	v.height = 24
 	out := v.View()
-	assert.Contains(t, ansi.Strip(out), "SMITHERS \u203a Workflows")
+	assert.Contains(t, ansi.Strip(out), "CODEPLANE \u203a Workflows")
 }
 
 // --- 11. View shows workflow names ---

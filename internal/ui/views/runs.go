@@ -909,7 +909,7 @@ func (v *RunsView) View() string {
 		rightSide = "[Esc] Back"
 	}
 
-	b.WriteString(ViewHeader(packageCom.Styles, "SMITHERS", viewName, v.width, rightSide))
+	b.WriteString(ViewHeader(packageCom.Styles, "CODEPLANE", viewName, v.width, rightSide))
 	b.WriteString("\n\n")
 
 	// Search bar: shown when search is active.

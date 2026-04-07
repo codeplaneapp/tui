@@ -471,7 +471,7 @@ func (v *ApprovalsView) View() string {
 	if v.showRecent {
 		viewName = "Resolution History"
 	}
-	b.WriteString(ViewHeader(v.com.Styles, "SMITHERS", viewName, v.width, "[Tab] switch mode  [Esc] Back"))
+	b.WriteString(ViewHeader(v.com.Styles, "CODEPLANE", viewName, v.width, "[Tab] switch mode  [Esc] Back"))
 	b.WriteString("\n\n")
 
 	if v.loading && len(v.approvals) == 0 {

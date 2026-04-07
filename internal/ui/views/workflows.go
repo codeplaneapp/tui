@@ -699,7 +699,7 @@ func (v *WorkflowsView) View() string {
 	var b strings.Builder
 
 	// Header
-	b.WriteString(ViewHeader(packageCom.Styles, "SMITHERS", "Workflows", v.width, "[Esc] Back"))
+	b.WriteString(ViewHeader(packageCom.Styles, "CODEPLANE", "Workflows", v.width, "[Esc] Back"))
 	b.WriteString("\n\n")
 
 	if v.loading {

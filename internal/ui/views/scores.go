@@ -175,13 +175,13 @@ func (v *ScoresView) Update(msg tea.Msg) (View, tea.Cmd) {
 func (v *ScoresView) View() string {
 	var b strings.Builder
 
-	// Header line: "SMITHERS › Scores" left, "[Esc] Back" right.
+	// Header line: "CODEPLANE › Scores" left, "[Esc] Back" right.
 	tabLabel := "[Summary]"
 	if v.activeTab == scoresTabDetail {
 		tabLabel = "[Details]"
 	}
 	viewName := "Scores " + tabLabel
-	b.WriteString(ViewHeader(packageCom.Styles, "SMITHERS", viewName, v.width, "[Tab] Switch  [Esc] Back") + "\n\n")
+	b.WriteString(ViewHeader(packageCom.Styles, "CODEPLANE", viewName, v.width, "[Tab] Switch  [Esc] Back") + "\n\n")
 
 	if v.loading {
 		b.WriteString("  Loading scores...\n")
