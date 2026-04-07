@@ -310,8 +310,8 @@ func TestDashboardView_DataLoadingStates(t *testing.T) {
 			{RunID: "run-def67890", WorkflowName: "deploy", Status: smithers.RunStatusFailed},
 		}
 
-		// Switch to the Runs tab
-		d.Update(tea.KeyPressMsg{Code: '2'})
+		// Switch to the Runs tab (tab key cycles through sections)
+		d.SetActiveTab(1) // DashTabRuns
 		output := d.View()
 		assert.Contains(t, output, "Recent Runs")
 		assert.Contains(t, output, "code-review")

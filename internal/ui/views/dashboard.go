@@ -146,6 +146,12 @@ type dashWorkspacesFetchedMsg struct {
 // InitSmithersMsg is returned when user selects "Init Smithers" from the dashboard.
 type InitSmithersMsg struct{}
 
+// TabAutoPopulateMsg is emitted when dashboard data loads, carrying active
+// items that should be auto-opened as workspace tabs.
+type TabAutoPopulateMsg struct {
+	ActiveRuns []smithers.RunSummary
+}
+
 func NewDashboardView(args ...any) *DashboardView {
 	com, client, offset := parseCommonAndClient(args)
 	hasSmithers := client != nil
@@ -164,7 +170,7 @@ func NewDashboardViewWithJJHub(com *common.Common, client *smithers.Client, hasS
 	t := com.Styles
 	brandingAnim := anim.New(anim.Settings{
 		Size:        10,
-		Label:       "SMITHERS",
+		Label:       "CODEPLANE",
 		GradColorA:  t.Primary,
 		GradColorB:  t.Secondary,
 		LabelColor:  t.Primary,
@@ -234,6 +240,18 @@ func (d *DashboardView) Update(msg tea.Msg) (View, tea.Cmd) {
 		d.runsErr = msg.err
 		if msg.err == nil {
 			d.runs = msg.runs
+			// Emit auto-populate for active runs.
+			var active []smithers.RunSummary
+			for _, r := range d.runs {
+				if r.Status == smithers.RunStatusRunning || r.Status == smithers.RunStatusWaitingApproval {
+					active = append(active, r)
+				}
+			}
+			if len(active) > 0 {
+				cmds = append(cmds, func() tea.Msg {
+					return TabAutoPopulateMsg{ActiveRuns: active}
+				})
+			}
 		}
 
 	case dashWorkflowsFetchedMsg:
@@ -276,12 +294,13 @@ func (d *DashboardView) Update(msg tea.Msg) (View, tea.Cmd) {
 
 	case tea.KeyPressMsg:
 		switch {
-		case key.Matches(msg, key.NewBinding(key.WithKeys("1", "2", "3", "4", "5", "6", "7"))):
-			idx := int(msg.String()[0] - '1')
-			if idx < len(d.tabs) {
-				d.activeTab = idx
-				d.clampCursor()
-			}
+		case key.Matches(msg, key.NewBinding(key.WithKeys("tab"))):
+			d.activeTab = (d.activeTab + 1) % len(d.tabs)
+			d.clampCursor()
+
+		case key.Matches(msg, key.NewBinding(key.WithKeys("shift+tab"))):
+			d.activeTab = (d.activeTab - 1 + len(d.tabs)) % len(d.tabs)
+			d.clampCursor()
 
 		case key.Matches(msg, key.NewBinding(key.WithKeys("up", "k"))):
 			if d.tabs[d.activeTab] == DashTabOverview {
@@ -326,7 +345,7 @@ func (d *DashboardView) renderHeader() string {
 	if d.isLoading() {
 		logoText = d.brandingAnim.Render()
 	} else {
-		logoText = styles.ApplyBoldForegroundGrad(d.com.Styles, "SMITHERS", d.com.Styles.Primary, d.com.Styles.Secondary)
+		logoText = styles.ApplyBoldForegroundGrad(d.com.Styles, "CODEPLANE", d.com.Styles.Primary, d.com.Styles.Secondary)
 	}
 	logo := "◆ " + logoText
 
@@ -384,28 +403,19 @@ func (d *DashboardView) renderHeader() string {
 		Render(line)
 }
 
-func (d *DashboardView) renderTabBar() string {
-	t := d.com.Styles
-	var tabs []string
-	for i, tabType := range d.tabs {
-		num := fmt.Sprintf("%d", i+1)
-		label := tabType.String()
-		if i == d.activeTab {
-			tab := lipgloss.NewStyle().Bold(true).Foreground(t.Primary).Render(num) +
-				" " + lipgloss.NewStyle().Bold(true).Underline(true).Render(label)
-			tabs = append(tabs, tab)
-		} else {
-			tab := lipgloss.NewStyle().Foreground(t.FgSubtle).Render(num) +
-				" " + lipgloss.NewStyle().Foreground(t.FgSubtle).Render(label)
-			tabs = append(tabs, tab)
-		}
+// ActiveTab returns the current active tab index. Used by the global nav sidebar.
+func (d *DashboardView) ActiveTab() int { return d.activeTab }
+
+// SetActiveTab sets the active tab index. Used by the global nav sidebar.
+func (d *DashboardView) SetActiveTab(idx int) {
+	if idx >= 0 && idx < len(d.tabs) {
+		d.activeTab = idx
+		d.clampCursor()
 	}
-	bar := " " + strings.Join(tabs, "   ")
-	return lipgloss.NewStyle().
-		Background(t.BgBase).
-		Width(d.width).
-		Render(bar)
 }
+
+// Tabs returns the dashboard's tab list. Used by the global nav sidebar.
+func (d *DashboardView) Tabs() []DashboardTab { return d.tabs }
 
 func (d *DashboardView) renderContent(height int) string {
 	switch d.tabs[d.activeTab] {
@@ -859,14 +869,9 @@ func (d *DashboardView) renderSessionsSummary(height int) string {
 func (d *DashboardView) renderFooter() string {
 	t := d.com.Styles
 	sep := t.Subtle.Render(" │ ")
-	numTabs := len(d.tabs)
-	tabNums := "1-4"
-	if numTabs > 4 {
-		tabNums = fmt.Sprintf("1-%d", numTabs)
-	}
 	parts := []string{
 		helpKV(t, "j/k", "nav"),
-		helpKV(t, tabNums, "tabs"),
+		helpKV(t, "tab", "section"),
 		helpKV(t, "enter", "select"),
 		helpKV(t, "c", "chat"),
 		helpKV(t, "r", "refresh"),
@@ -881,15 +886,13 @@ func (d *DashboardView) renderFooter() string {
 
 func (d *DashboardView) View() string {
 	header := d.renderHeader()
-	tabs := d.renderTabBar()
-	content := d.renderContent(d.height - 4)
+	content := d.renderContent(d.height - 3)
 	footer := d.renderFooter()
 
 	return lipgloss.JoinVertical(lipgloss.Left,
 		header,
-		tabs,
 		content,
-		lipgloss.NewStyle().Height(d.height-lipgloss.Height(header)-lipgloss.Height(tabs)-lipgloss.Height(content)-1).Render(""),
+		lipgloss.NewStyle().Height(d.height-lipgloss.Height(header)-lipgloss.Height(content)-1).Render(""),
 		footer,
 	)
 }
@@ -908,7 +911,7 @@ func (d *DashboardView) SetSize(width, height int) {
 // ShortHelp returns keybinding hints for the help bar.
 func (d *DashboardView) ShortHelp() []key.Binding {
 	return []key.Binding{
-		key.NewBinding(key.WithKeys("1-7"), key.WithHelp("1-7", "tabs")),
+		key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "section")),
 		key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
 		key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "new chat")),
 		key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "quit")),
