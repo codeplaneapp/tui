@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/crush/internal/observability"
 	"github.com/stretchr/testify/require"
 )
 
@@ -410,4 +411,40 @@ func TestBackgroundShell_CleanupOldJobs(t *testing.T) {
 
 	_, ok = manager.Get("recent")
 	require.True(t, ok, "recently completed job should still exist")
+}
+
+func TestBackgroundShellManager_KillAllRecordsObservabilitySpan(t *testing.T) {
+	t.Cleanup(func() {
+		require.NoError(t, observability.Shutdown(context.Background()))
+	})
+	require.NoError(t, observability.Configure(context.Background(), observability.Config{
+		ServiceName:      "test",
+		ServiceVersion:   "dev",
+		Mode:             observability.ModeLocal,
+		TraceBufferSize:  32,
+		TraceSampleRatio: 1,
+	}))
+
+	manager := newBackgroundShellManager()
+	ctx := observability.WithWorkspaceID(context.Background(), "ws-123")
+
+	bgShell, err := manager.Start(ctx, t.TempDir(), nil, "sleep 10", "")
+	require.NoError(t, err)
+
+	killCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	manager.KillAll(killCtx)
+
+	require.True(t, bgShell.IsDone())
+
+	spans := observability.RecentSpans(20)
+	var killAllSpanFound bool
+	for _, span := range spans {
+		if span.Name != "shell.background.kill_all" {
+			continue
+		}
+		killAllSpanFound = true
+		require.Equal(t, "ok", span.Attributes["background.kill_all.result"])
+	}
+	require.True(t, killAllSpanFound)
 }

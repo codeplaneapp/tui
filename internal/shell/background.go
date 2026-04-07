@@ -5,13 +5,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/charmbracelet/crush/internal/csync"
+	crushlog "github.com/charmbracelet/crush/internal/log"
 	"github.com/charmbracelet/crush/internal/observability"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -90,6 +94,10 @@ func GetBackgroundShellManager() *BackgroundShellManager {
 
 // Start creates and starts a new background shell with the given command.
 func (m *BackgroundShellManager) Start(ctx context.Context, workingDir string, blockFuncs []BlockFunc, command string, description string) (*BackgroundShell, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	// Check job limit
 	if m.shells.Len() >= MaxBackgroundJobs {
 		observability.RecordBackgroundJobLifecycle("rejected_limit")
@@ -97,13 +105,14 @@ func (m *BackgroundShellManager) Start(ctx context.Context, workingDir string, b
 	}
 
 	id := fmt.Sprintf("%03X", idCounter.Add(1))
+	jobCtx := observability.WithComponent(ctx, "background_shell")
+	jobCtx, span := observability.StartSpan(jobCtx, "shell.background", backgroundShellAttributes(jobCtx, id, workingDir, command)...)
+	shellCtx, cancel := context.WithCancel(jobCtx)
 
 	shell := NewShell(&Options{
 		WorkingDir: workingDir,
 		BlockFuncs: blockFuncs,
 	})
-
-	shellCtx, cancel := context.WithCancel(ctx)
 
 	bgShell := &BackgroundShell{
 		ID:          id,
@@ -123,23 +132,50 @@ func (m *BackgroundShellManager) Start(ctx context.Context, workingDir string, b
 	observability.RecordBackgroundJob(1)
 	observability.RecordBackgroundJobLifecycle("started")
 	observability.SetBackgroundTrackedJobs(m.shells.Len())
+	observability.LogAttrs(jobCtx, slog.LevelDebug, "Background shell started",
+		slog.String("job_id", id),
+		slog.String("working_dir", workingDir),
+		slog.Int("command_length", len(command)),
+	)
 
 	go func() {
+		var (
+			err    error
+			result = "completed"
+		)
+
 		defer close(bgShell.done)
 		defer observability.RecordBackgroundJob(-1)
+		defer func() {
+			bgShell.exitErr = err
+			bgShell.completedAt.Store(time.Now().Unix())
+			observability.RecordBackgroundJobLifecycle(result)
+			observability.RecordBackgroundJobDuration(result, time.Since(bgShell.startedAt))
+			observability.RecordError(span, err)
+			span.SetAttributes(
+				attribute.String("background.job.result", result),
+				attribute.Int("shell.exit_code", ExitCode(err)),
+			)
+			span.End()
+			observability.LogAttrs(jobCtx, slog.LevelDebug, "Background shell finished",
+				slog.String("job_id", id),
+				slog.String("result", result),
+				slog.Int("exit_code", ExitCode(err)),
+				slog.Duration("duration", time.Since(bgShell.startedAt)),
+				slog.Any("error", err),
+			)
+		}()
+		defer crushlog.RecoverPanic(jobCtx, "BackgroundShellManager.Start", func() {
+			result = "panic"
+			err = fmt.Errorf("background shell panic")
+		})
 
-		err := shell.ExecStream(shellCtx, command, bgShell.stdout, bgShell.stderr)
-
-		bgShell.exitErr = err
-		bgShell.completedAt.Store(time.Now().Unix())
-		result := "completed"
+		err = shell.ExecStream(shellCtx, command, bgShell.stdout, bgShell.stderr)
 		if errors.Is(err, context.Canceled) {
 			result = "canceled"
 		} else if err != nil {
 			result = "failed"
 		}
-		observability.RecordBackgroundJobLifecycle(result)
-		observability.RecordBackgroundJobDuration(result, time.Since(bgShell.startedAt))
 	}()
 
 	return bgShell, nil
@@ -170,6 +206,10 @@ func (m *BackgroundShellManager) Kill(id string) error {
 	}
 	observability.RecordBackgroundJobLifecycle("kill_requested")
 	observability.SetBackgroundTrackedJobs(m.shells.Len())
+	addBackgroundShellEvent(shell.ctx, "kill_requested")
+	observability.LogAttrs(shell.ctx, slog.LevelDebug, "Background shell cancel requested",
+		slog.String("job_id", id),
+	)
 
 	shell.cancel()
 	<-shell.done
@@ -220,13 +260,41 @@ func (m *BackgroundShellManager) Cleanup() int {
 // KillAll terminates all background shells. The provided context bounds how
 // long the function waits for each shell to exit.
 func (m *BackgroundShellManager) KillAll(ctx context.Context) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	shells := slices.Collect(m.shells.Seq())
 	m.shells.Reset(map[string]*BackgroundShell{})
 	observability.SetBackgroundTrackedJobs(0)
+	killCtx := observability.WithComponent(ctx, "background_shell_manager")
+	killCtx, span := observability.StartSpan(killCtx, "shell.background.kill_all",
+		attribute.Int("background.jobs.count", len(shells)),
+	)
+	start := time.Now()
+	result := "ok"
+	defer func() {
+		if ctx.Err() != nil {
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				result = "timeout"
+			} else {
+				result = "canceled"
+			}
+			observability.RecordError(span, ctx.Err())
+		}
+		span.SetAttributes(attribute.String("background.kill_all.result", result))
+		span.End()
+		observability.LogAttrs(killCtx, slog.LevelDebug, "Background shell manager kill-all finished",
+			slog.String("result", result),
+			slog.Int("jobs", len(shells)),
+			slog.Duration("duration", time.Since(start)),
+		)
+	}()
 
 	var wg sync.WaitGroup
 	for _, shell := range shells {
 		wg.Go(func() {
+			addBackgroundShellEvent(shell.ctx, "kill_all_requested")
 			shell.cancel()
 			select {
 			case <-shell.done:
@@ -235,6 +303,35 @@ func (m *BackgroundShellManager) KillAll(ctx context.Context) {
 		})
 	}
 	wg.Wait()
+}
+
+func backgroundShellAttributes(ctx context.Context, id, workingDir, command string) []attribute.KeyValue {
+	attrs := []attribute.KeyValue{
+		attribute.String("crush.background_job.id", id),
+		attribute.String("shell.cwd", workingDir),
+		attribute.Int("shell.command_length", len(command)),
+	}
+	if workspaceID := observability.WorkspaceIDFromContext(ctx); workspaceID != "" {
+		attrs = append(attrs, attribute.String("crush.workspace_id", workspaceID))
+	}
+	if sessionID := observability.SessionIDFromContext(ctx); sessionID != "" {
+		attrs = append(attrs, attribute.String("crush.session_id", sessionID))
+	}
+	if tool := observability.ToolFromContext(ctx); tool != "" {
+		attrs = append(attrs, attribute.String("crush.tool", tool))
+	}
+	if toolCallID := observability.ToolCallIDFromContext(ctx); toolCallID != "" {
+		attrs = append(attrs, attribute.String("crush.tool_call_id", toolCallID))
+	}
+	return attrs
+}
+
+func addBackgroundShellEvent(ctx context.Context, name string) {
+	span := trace.SpanFromContext(ctx)
+	if !span.SpanContext().IsValid() {
+		return
+	}
+	span.AddEvent(name)
 }
 
 // GetOutput returns the current output of a background shell.
