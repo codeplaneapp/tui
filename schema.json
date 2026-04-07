@@ -22,7 +22,7 @@
         },
         "generated_with": {
           "type": "boolean",
-          "description": "Add Generated with Crush line to commit messages and issues and PRs",
+          "description": "Add Generated with Smithers TUI line to commit messages and issues and PRs",
           "default": true
         }
       },
@@ -86,6 +86,10 @@
         "tools": {
           "$ref": "#/$defs/Tools",
           "description": "Tool configurations"
+        },
+        "smithers": {
+          "$ref": "#/$defs/SmithersConfig",
+          "description": "Smithers integration settings"
         }
       },
       "additionalProperties": false,
@@ -267,6 +271,56 @@
       "additionalProperties": false,
       "type": "object"
     },
+    "ObservabilityOptions": {
+      "properties": {
+        "address": {
+          "type": "string",
+          "description": "Address for the local observability server exposing metrics and debug endpoints",
+          "examples": [
+            "127.0.0.1:9464"
+          ]
+        },
+        "trace_buffer_size": {
+          "type": "integer",
+          "description": "Number of completed spans kept in the in-memory trace buffer",
+          "default": 512,
+          "examples": [
+            1024
+          ]
+        },
+        "trace_sample_ratio": {
+          "type": "number",
+          "maximum": 1,
+          "minimum": 0,
+          "description": "Fraction of traces to sample locally",
+          "default": 1,
+          "examples": [
+            1
+          ]
+        },
+        "otlp_endpoint": {
+          "type": "string",
+          "description": "OTLP/HTTP endpoint used to export traces",
+          "examples": [
+            "http://localhost:4318"
+          ]
+        },
+        "otlp_insecure": {
+          "type": "boolean",
+          "description": "Disable TLS certificate verification for OTLP trace exports",
+          "default": false
+        },
+        "otlp_headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object",
+          "description": "Additional HTTP headers sent with OTLP trace exports"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "Options": {
       "properties": {
         "context_paths": {
@@ -274,7 +328,7 @@
             "type": "string",
             "examples": [
               ".cursorrules",
-              "CRUSH.md"
+              "SMITHERS-TUI.md"
             ]
           },
           "type": "array",
@@ -284,7 +338,7 @@
           "items": {
             "type": "string",
             "examples": [
-              "~/.config/crush/skills",
+              "~/.config/smithers-tui/skills",
               "./skills"
             ]
           },
@@ -313,9 +367,9 @@
         "data_directory": {
           "type": "string",
           "description": "Directory for storing application data (relative to working directory)",
-          "default": ".crush",
+          "default": ".smithers-tui",
           "examples": [
-            ".crush"
+            ".smithers-tui"
           ]
         },
         "disabled_tools": {
@@ -354,7 +408,7 @@
           "default": "AGENTS.md",
           "examples": [
             "AGENTS.md",
-            "CRUSH.md",
+            "SMITHERS-TUI.md",
             "CLAUDE.md",
             "docs/LLMs.md"
           ]
@@ -383,6 +437,10 @@
           },
           "type": "array",
           "description": "List of skill names to disable and hide from the agent"
+        },
+        "observability": {
+          "$ref": "#/$defs/ObservabilityOptions",
+          "description": "Observability settings for tracing"
         }
       },
       "additionalProperties": false,
@@ -483,6 +541,37 @@
         "model",
         "provider"
       ]
+    },
+    "SmithersConfig": {
+      "properties": {
+        "dbPath": {
+          "type": "string",
+          "description": "Path to the Smithers SQLite database file",
+          "examples": [
+            ".smithers/smithers.db"
+          ]
+        },
+        "apiUrl": {
+          "type": "string",
+          "description": "Base URL for the Smithers HTTP API",
+          "examples": [
+            "http://localhost:7331"
+          ]
+        },
+        "apiToken": {
+          "type": "string",
+          "description": "Bearer token used for the Smithers HTTP API"
+        },
+        "workflowDir": {
+          "type": "string",
+          "description": "Path to Smithers workflow definitions",
+          "examples": [
+            ".smithers/workflows"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
     },
     "TUIOptions": {
       "properties": {

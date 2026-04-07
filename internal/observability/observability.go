@@ -197,6 +197,7 @@ type metrics struct {
 	workspaceLifecycleTotal    *prometheus.CounterVec
 	workspaceLifecycleDuration *prometheus.HistogramVec
 	droppedEventsTotal         *prometheus.CounterVec
+	startupFlowsTotal          *prometheus.CounterVec
 	uiNavigationTotal          *prometheus.CounterVec
 	snapshotOpsTotal           *prometheus.CounterVec
 	snapshotOpDuration         *prometheus.HistogramVec
@@ -389,6 +390,10 @@ func newMetrics() *metrics {
 			Name: "crush_dropped_events_total",
 			Help: "Dropped asynchronous events by subsystem.",
 		}, []string{"subsystem"}),
+		startupFlowsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "codeplane_startup_flows_total",
+			Help: "Codeplane startup and command flow events by source and outcome.",
+		}, []string{"flow", "source", "result"}),
 		uiNavigationTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "crush_ui_navigation_total",
 			Help: "UI navigation events by entrypoint, target, and result.",
@@ -457,6 +462,7 @@ func newMetrics() *metrics {
 		m.workspaceLifecycleTotal,
 		m.workspaceLifecycleDuration,
 		m.droppedEventsTotal,
+		m.startupFlowsTotal,
 		m.uiNavigationTotal,
 		m.snapshotOpsTotal,
 		m.snapshotOpDuration,
@@ -753,16 +759,32 @@ func WithWorkspaceID(ctx context.Context, workspaceID string) context.Context {
 	return context.WithValue(ctx, workspaceIDKey, workspaceID)
 }
 
+func WorkspaceIDFromContext(ctx context.Context) string {
+	return contextValue(ctx, workspaceIDKey)
+}
+
 func WithSessionID(ctx context.Context, sessionID string) context.Context {
 	return context.WithValue(ctx, sessionIDKey, sessionID)
+}
+
+func SessionIDFromContext(ctx context.Context) string {
+	return contextValue(ctx, sessionIDKey)
 }
 
 func WithMessageID(ctx context.Context, messageID string) context.Context {
 	return context.WithValue(ctx, messageIDKey, messageID)
 }
 
+func MessageIDFromContext(ctx context.Context) string {
+	return contextValue(ctx, messageIDKey)
+}
+
 func WithAgent(ctx context.Context, agent string) context.Context {
 	return context.WithValue(ctx, agentKey, agent)
+}
+
+func AgentFromContext(ctx context.Context) string {
+	return contextValue(ctx, agentKey)
 }
 
 func WithTool(ctx context.Context, toolName, toolCallID string) context.Context {
@@ -773,12 +795,28 @@ func WithTool(ctx context.Context, toolName, toolCallID string) context.Context 
 	return ctx
 }
 
+func ToolFromContext(ctx context.Context) string {
+	return contextValue(ctx, toolKey)
+}
+
+func ToolCallIDFromContext(ctx context.Context) string {
+	return contextValue(ctx, toolCallIDKey)
+}
+
 func WithLSP(ctx context.Context, name string) context.Context {
 	return context.WithValue(ctx, lspKey, name)
 }
 
+func LSPFromContext(ctx context.Context) string {
+	return contextValue(ctx, lspKey)
+}
+
 func WithComponent(ctx context.Context, component string) context.Context {
 	return context.WithValue(ctx, componentKey, component)
+}
+
+func ComponentFromContext(ctx context.Context) string {
+	return contextValue(ctx, componentKey)
 }
 
 func LogAttrs(ctx context.Context, level slog.Level, msg string, attrs ...slog.Attr) {
@@ -1202,6 +1240,28 @@ func RecordDroppedEvent(subsystem string) {
 	if st := getState(); st != nil {
 		st.metrics.droppedEventsTotal.WithLabelValues(defaultValue(subsystem, "unknown")).Inc()
 	}
+}
+
+func RecordStartupFlow(flow, source, result string, attrs ...attribute.KeyValue) {
+	flow = defaultValue(flow, "unknown")
+	source = defaultValue(source, "unknown")
+	result = defaultResult(result)
+
+	if st := getState(); st != nil {
+		st.metrics.startupFlowsTotal.WithLabelValues(flow, source, result).Inc()
+	}
+
+	ctx := WithComponent(context.Background(), "startup_flow")
+	attrs = append([]attribute.KeyValue{
+		attribute.String("codeplane.startup.flow", flow),
+		attribute.String("codeplane.startup.source", source),
+		attribute.String("codeplane.startup.result", result),
+	}, attrs...)
+	_, span := StartSpan(ctx, "codeplane.startup."+flow, attrs...)
+	if result != "ok" {
+		span.SetStatus(codes.Error, result)
+	}
+	span.End()
 }
 
 func RecordUINavigation(entrypoint, target, result string, attrs ...attribute.KeyValue) {

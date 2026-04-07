@@ -719,6 +719,55 @@ config:
 }
 ```
 
+For deep runtime debugging, Crush can also expose a local observability
+endpoint with Prometheus metrics, pprof, expvar, and an in-memory recent span
+buffer:
+
+```json
+{
+  "$schema": "https://charm.land/crush.json",
+  "options": {
+    "observability": {
+      "address": "127.0.0.1:9464",
+      "trace_buffer_size": 1024,
+      "trace_sample_ratio": 1
+    }
+  }
+}
+```
+
+When enabled, the process serves:
+
+- `/metrics`
+- `/debug/pprof/`
+- `/debug/vars`
+- `/debug/traces`
+- `/debug/observability`
+
+The recent-span buffer and HTTP debug logs redact common secrets (tokens,
+authorization headers, API keys, cookies, and sensitive query parameters) so
+they are safer to use during production debugging. The metrics surface also
+includes visibility into pubsub/SSE fanout, permission backlog and queueing,
+background job lifecycle, database connect/migration steps, retries, and
+workspace lifecycle events.
+
+You can also configure trace export to an OTLP/HTTP backend:
+
+```json
+{
+  "$schema": "https://charm.land/crush.json",
+  "options": {
+    "observability": {
+      "otlp_endpoint": "http://localhost:4318",
+      "otlp_insecure": true,
+      "otlp_headers": {
+        "Authorization": "Bearer example-token"
+      }
+    }
+  }
+}
+```
+
 ## Provider Auto-Updates
 
 By default, Crush automatically checks for the latest and greatest list of
