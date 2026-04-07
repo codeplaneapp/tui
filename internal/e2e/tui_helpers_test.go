@@ -738,15 +738,17 @@ func waitForSessionTitleState(t *testing.T, dataDir, title string, wantPresent b
 	t.Helper()
 
 	ctx := context.Background()
+	conn, err := db.Connect(ctx, dataDir)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, conn.Close())
+	}()
+
+	queries := db.New(conn)
+	sessionsSvc := session.NewService(queries, conn)
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		conn, err := db.Connect(ctx, dataDir)
-		require.NoError(t, err)
-
-		queries := db.New(conn)
-		sessionsSvc := session.NewService(queries, conn)
 		sessions, listErr := sessionsSvc.List(ctx)
-		require.NoError(t, conn.Close())
 		require.NoError(t, listErr)
 
 		found := false
