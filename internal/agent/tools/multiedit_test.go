@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -18,10 +19,17 @@ import (
 
 type mockPermissionService struct {
 	*pubsub.Broker[permission.PermissionRequest]
+	deny       bool
+	requestErr error
+	requests   []permission.CreatePermissionRequest
 }
 
 func (m *mockPermissionService) Request(ctx context.Context, req permission.CreatePermissionRequest) (bool, error) {
-	return true, nil
+	m.requests = append(m.requests, req)
+	if m.requestErr != nil {
+		return false, m.requestErr
+	}
+	return !m.deny, nil
 }
 
 func (m *mockPermissionService) Grant(req permission.PermissionRequest) {}
@@ -44,18 +52,57 @@ func (m *mockPermissionService) SubscribeNotifications(ctx context.Context) <-ch
 
 type mockHistoryService struct {
 	*pubsub.Broker[history.File]
+	getFile            history.File
+	getErr             error
+	createFile         history.File
+	createErr          error
+	createCalls        []string
+	createVersionCalls []string
+	createVersionErrs  map[int]error
+	callOrder          []string
 }
 
 func (m *mockHistoryService) Create(ctx context.Context, sessionID, path, content string) (history.File, error) {
-	return history.File{Path: path, Content: content}, nil
+	m.callOrder = append(m.callOrder, "create:"+content)
+	m.createCalls = append(m.createCalls, content)
+	if m.createErr != nil {
+		return history.File{}, m.createErr
+	}
+
+	file := m.createFile
+	if file.Path == "" {
+		file.Path = path
+	}
+	if file.Content == "" {
+		file.Content = content
+	}
+
+	return file, nil
 }
 
 func (m *mockHistoryService) CreateVersion(ctx context.Context, sessionID, path, content string) (history.File, error) {
-	return history.File{}, nil
+	m.callOrder = append(m.callOrder, "createVersion:"+content)
+	m.createVersionCalls = append(m.createVersionCalls, content)
+
+	if err, ok := m.createVersionErrs[len(m.createVersionCalls)]; ok {
+		return history.File{}, err
+	}
+
+	return history.File{Path: path, Content: content}, nil
 }
 
 func (m *mockHistoryService) GetByPathAndSession(ctx context.Context, path, sessionID string) (history.File, error) {
-	return history.File{Path: path, Content: ""}, nil
+	m.callOrder = append(m.callOrder, "get")
+	if m.getErr != nil {
+		return history.File{}, m.getErr
+	}
+
+	file := m.getFile
+	if file.Path == "" {
+		file.Path = path
+	}
+
+	return file, nil
 }
 
 func (m *mockHistoryService) Get(ctx context.Context, id string) (history.File, error) {
@@ -297,4 +344,156 @@ func TestMultiEditTool_AllEditsSucceed(t *testing.T) {
 	got, err := os.ReadFile(testFile)
 	require.NoError(t, err)
 	assert.Equal(t, "ALPHA\nBETA\nGAMMA\n", string(got))
+}
+
+func TestMultiEditTool_MissingHistoryRowDoesNotCreateDuplicateOldVersion(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "target.txt")
+	originalContent := "alpha\nbeta\ngamma\n"
+	require.NoError(t, os.WriteFile(testFile, []byte(originalContent), 0o644))
+
+	ft := newMockFiletrackerService()
+	ctx := context.WithValue(t.Context(), SessionIDContextKey, "test-session")
+	ft.RecordRead(ctx, "test-session", testFile)
+
+	historyService := &mockHistoryService{
+		getErr: errors.New("missing history row"),
+	}
+	tool := NewMultiEditTool(nil, &mockPermissionService{}, historyService, ft, tmpDir)
+
+	resp, err := tool.Run(ctx, fantasy.ToolCall{
+		ID:   "call-3",
+		Name: MultiEditToolName,
+		Input: `{
+			"file_path": "` + testFile + `",
+			"edits": [{"old_string": "alpha", "new_string": "ALPHA"}]
+		}`,
+	})
+
+	require.NoError(t, err)
+	assert.False(t, resp.IsError, "expected success, got: %s", resp.Content)
+	assert.Equal(t, []string{originalContent}, historyService.createCalls)
+	assert.Equal(t, []string{"ALPHA\nbeta\ngamma\n"}, historyService.createVersionCalls)
+	assert.Equal(t,
+		[]string{
+			"get",
+			"create:" + originalContent,
+			"createVersion:ALPHA\nbeta\ngamma\n",
+		},
+		historyService.callOrder,
+	)
+}
+
+func TestMultiEditTool_MissingHistoryRowCreateFailureReturnsError(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "target.txt")
+	originalContent := "alpha\nbeta\ngamma\n"
+	require.NoError(t, os.WriteFile(testFile, []byte(originalContent), 0o644))
+
+	ft := newMockFiletrackerService()
+	ctx := context.WithValue(t.Context(), SessionIDContextKey, "test-session")
+	ft.RecordRead(ctx, "test-session", testFile)
+
+	historyService := &mockHistoryService{
+		getErr:    errors.New("missing history row"),
+		createErr: errors.New("create failed"),
+	}
+	tool := NewMultiEditTool(nil, &mockPermissionService{}, historyService, ft, tmpDir)
+
+	_, err := tool.Run(ctx, fantasy.ToolCall{
+		ID:   "call-4",
+		Name: MultiEditToolName,
+		Input: `{
+			"file_path": "` + testFile + `",
+			"edits": [{"old_string": "alpha", "new_string": "ALPHA"}]
+		}`,
+	})
+
+	require.ErrorContains(t, err, "error creating file history: create failed")
+	assert.Equal(t, []string{"get", "create:" + originalContent}, historyService.callOrder)
+	assert.Empty(t, historyService.createVersionCalls)
+}
+
+func TestMultiEditTool_CreateVersionFailureDoesNotFailEdit(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "target.txt")
+	originalContent := "alpha\nbeta\ngamma\n"
+	require.NoError(t, os.WriteFile(testFile, []byte(originalContent), 0o644))
+
+	ft := newMockFiletrackerService()
+	ctx := context.WithValue(t.Context(), SessionIDContextKey, "test-session")
+	ft.RecordRead(ctx, "test-session", testFile)
+
+	historyService := &mockHistoryService{
+		getFile: history.File{
+			Path:    testFile,
+			Content: "stale history content",
+		},
+		createVersionErrs: map[int]error{
+			1: errors.New("create version failed"),
+		},
+	}
+	tool := NewMultiEditTool(nil, &mockPermissionService{}, historyService, ft, tmpDir)
+
+	resp, err := tool.Run(ctx, fantasy.ToolCall{
+		ID:   "call-5",
+		Name: MultiEditToolName,
+		Input: `{
+			"file_path": "` + testFile + `",
+			"edits": [{"old_string": "alpha", "new_string": "ALPHA"}]
+		}`,
+	})
+
+	require.NoError(t, err)
+	assert.False(t, resp.IsError, "expected success, got: %s", resp.Content)
+	assert.Equal(t, []string{originalContent, "ALPHA\nbeta\ngamma\n"}, historyService.createVersionCalls)
+	got, readErr := os.ReadFile(testFile)
+	require.NoError(t, readErr)
+	assert.Equal(t, "ALPHA\nbeta\ngamma\n", string(got))
+}
+
+func TestMultiEditTool_PermissionDeniedSkipsHistory(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "target.txt")
+	originalContent := "alpha\nbeta\ngamma\n"
+	require.NoError(t, os.WriteFile(testFile, []byte(originalContent), 0o644))
+
+	ft := newMockFiletrackerService()
+	ctx := context.WithValue(t.Context(), SessionIDContextKey, "test-session")
+	ft.RecordRead(ctx, "test-session", testFile)
+
+	permissionService := &mockPermissionService{deny: true}
+	historyService := &mockHistoryService{
+		getErr:    errors.New("history should not be called"),
+		createErr: errors.New("history should not be called"),
+		createVersionErrs: map[int]error{
+			1: errors.New("history should not be called"),
+		},
+	}
+	tool := NewMultiEditTool(nil, permissionService, historyService, ft, tmpDir)
+
+	_, err := tool.Run(ctx, fantasy.ToolCall{
+		ID:   "call-6",
+		Name: MultiEditToolName,
+		Input: `{
+			"file_path": "` + testFile + `",
+			"edits": [{"old_string": "alpha", "new_string": "ALPHA"}]
+		}`,
+	})
+
+	require.ErrorIs(t, err, permission.ErrorPermissionDenied)
+	assert.Len(t, permissionService.requests, 1)
+	assert.Empty(t, historyService.callOrder)
+
+	got, readErr := os.ReadFile(testFile)
+	require.NoError(t, readErr)
+	assert.Equal(t, originalContent, string(got))
 }
