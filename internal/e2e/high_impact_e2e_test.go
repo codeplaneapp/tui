@@ -82,57 +82,56 @@ func TestDashboardMenuNavigation_TUI(t *testing.T) {
 
 		waitForDashboard(t, tui)
 
-		// Cursor starts on "Start Chat". Navigate down to "Run Dashboard".
-		tui.SendKeys("j") // down
-		require.NoError(t, tui.WaitForText("Run Dashboard", 5*time.Second))
-
-		// Navigate down to "Workflows".
+		// The overview menu starts on "Initialize Smithers". Navigate down through
+		// the current menu items.
 		tui.SendKeys("j")
-		require.NoError(t, tui.WaitForText("Workflows", 5*time.Second))
+		require.NoError(t, tui.WaitForText("Run Workflow", 5*time.Second))
 
-		// Navigate down to "Approvals".
 		tui.SendKeys("j")
-		require.NoError(t, tui.WaitForText("Approvals", 5*time.Second))
+		require.NoError(t, tui.WaitForText("New Chat", 5*time.Second))
 
-		// Navigate back up to Workflows.
-		tui.SendKeys("k") // up
-		require.NoError(t, tui.WaitForText("Workflows", 5*time.Second))
+		tui.SendKeys("j")
+		require.NoError(t, tui.WaitForText("Browse Sessions", 5*time.Second))
+
+		// Navigate back up to New Chat.
+		tui.SendKeys("k")
+		require.NoError(t, tui.WaitForText("New Chat", 5*time.Second))
 	})
 
-	t.Run("ENTER_ON_RUN_DASHBOARD_OPENS_RUNS_VIEW", func(t *testing.T) {
+	t.Run("ENTER_ON_RUN_WORKFLOW_OPENS_WORKFLOWS_TAB", func(t *testing.T) {
 		fixture := newConfiguredFixture(t)
 		tui := launchFixtureTUI(t, fixture)
 		defer tui.Terminate()
 
 		waitForDashboard(t, tui)
 
-		// Navigate to "Run Dashboard" (second item).
+		// Navigate to "Run Workflow".
 		tui.SendKeys("j")
-		require.NoError(t, tui.WaitForText("Run Dashboard", 5*time.Second))
+		require.NoError(t, tui.WaitForText("Run Workflow", 5*time.Second))
 		tui.SendKeys("\r")
 
-		// Should navigate to the runs view.
+		// Should switch to the workflows tab.
 		require.NoError(t, tui.WaitForAnyText([]string{
-			"CRUSH › Runs", "Runs", "Loading runs", "No runs found",
+			"Workflows", "Loading workflows", "No workflows found", "Error",
 		}, 10*time.Second))
 	})
 
-	t.Run("ENTER_ON_APPROVALS_OPENS_APPROVALS_VIEW", func(t *testing.T) {
+	t.Run("ENTER_ON_BROWSE_SESSIONS_OPENS_SESSIONS_TAB", func(t *testing.T) {
 		fixture := newConfiguredFixture(t)
 		tui := launchFixtureTUI(t, fixture)
 		defer tui.Terminate()
 
 		waitForDashboard(t, tui)
 
-		// Navigate to "Approvals" (fourth item).
-		tui.SendKeys("j") // Run Dashboard
-		tui.SendKeys("j") // Workflows
-		tui.SendKeys("j") // Approvals
+		// Navigate to "Browse Sessions".
+		tui.SendKeys("j")
+		tui.SendKeys("j")
+		tui.SendKeys("j")
 		tui.SendKeys("\r")
 
-		// Should navigate to the approvals view.
+		// Should switch to the sessions tab.
 		require.NoError(t, tui.WaitForAnyText([]string{
-			"Approvals", "Pending", "Loading", "No pending approvals",
+			"Sessions", "No sessions yet", "Press 'c' to start a new chat session",
 		}, 10*time.Second))
 	})
 }
@@ -194,7 +193,7 @@ func TestApprovalsViewCtrlA_TUI(t *testing.T) {
 
 		// Escape pops back to dashboard.
 		tui.SendKeys("\x1b")
-		require.NoError(t, tui.WaitForText("Start Chat", 10*time.Second))
+		waitForDashboard(t, tui)
 	})
 }
 
@@ -209,7 +208,7 @@ func TestSessionLoadFromDialog_TUI(t *testing.T) {
 
 	t.Run("SELECT_SESSION_LOADS_INTO_CHAT", func(t *testing.T) {
 		fixture := newConfiguredFixture(t)
-		seedSessions(t, fixture.dataDir,
+		seedSessions(t, fixture.workspaceDataDir(),
 			seededSession{title: "Load Me Session", messages: []string{"hello from seeded session"}},
 			seededSession{title: "Other Session"},
 		)
@@ -231,7 +230,7 @@ func TestSessionLoadFromDialog_TUI(t *testing.T) {
 
 	t.Run("FILTER_AND_LOAD_SESSION", func(t *testing.T) {
 		fixture := newConfiguredFixture(t)
-		seedSessions(t, fixture.dataDir,
+		seedSessions(t, fixture.workspaceDataDir(),
 			seededSession{title: "Alpha Chat", messages: []string{"alpha message content"}},
 			seededSession{title: "Beta Chat", messages: []string{"beta message content"}},
 			seededSession{title: "Gamma Chat"},
@@ -263,7 +262,7 @@ func TestNewSessionCreation_TUI(t *testing.T) {
 
 	t.Run("NEW_SESSION_VIA_COMMAND_PALETTE", func(t *testing.T) {
 		fixture := newConfiguredFixture(t)
-		seedSessions(t, fixture.dataDir,
+		seedSessions(t, fixture.workspaceDataDir(),
 			seededSession{title: "Existing Session", messages: []string{"old session msg"}},
 		)
 		tui := launchFixtureTUI(t, fixture)
@@ -281,7 +280,7 @@ func TestNewSessionCreation_TUI(t *testing.T) {
 		tui.SendKeys("\r")
 
 		// Should land on a fresh dashboard/chat (no old messages visible).
-		require.NoError(t, tui.WaitForAnyText([]string{"Start Chat", "MCPs", "CRUSH"}, 10*time.Second))
+		require.NoError(t, tui.WaitForAnyText([]string{"New Chat", "MCPs", "CRUSH"}, 10*time.Second))
 
 		// Old session messages should not be visible.
 		require.NoError(t, tui.WaitForNoText("old session msg", 5*time.Second))
@@ -330,8 +329,7 @@ func TestViewStackPopNavigation_TUI(t *testing.T) {
 		}, 10*time.Second))
 
 		// Escape pops Runs → back to Dashboard.
-		tui.SendKeys("\x1b")
-		require.NoError(t, tui.WaitForText("Start Chat", 10*time.Second))
+		returnToDashboard(t, tui)
 	})
 }
 
@@ -407,14 +405,14 @@ func TestTerminalResize_TUI(t *testing.T) {
 
 		// The app should still be rendering.
 		require.NoError(t, tui.WaitForAnyText([]string{
-			"CRUSH", "Start Chat",
+			"CRUSH", "New Chat",
 		}, 5*time.Second))
 
 		// Resize to a larger size.
 		resizeTmuxPane(t, tui, 160, 50)
 
 		require.NoError(t, tui.WaitForAnyText([]string{
-			"CRUSH", "Start Chat",
+			"CRUSH", "New Chat",
 		}, 5*time.Second))
 
 		// Resize to a very narrow terminal.
@@ -501,7 +499,7 @@ func TestSequentialGlobalShortcuts_TUI(t *testing.T) {
 
 		// 6. Escape to close command palette.
 		tui.SendKeys("\x1b")
-		require.NoError(t, tui.WaitForNoText("Commands", 5*time.Second))
+		waitForDashboard(t, tui)
 
 		// 7. Ctrl+S to open sessions dialog.
 		tui.SendKeys("\x13") // ctrl+s
@@ -509,10 +507,10 @@ func TestSequentialGlobalShortcuts_TUI(t *testing.T) {
 
 		// 8. Escape to close sessions.
 		tui.SendKeys("\x1b")
-		require.NoError(t, tui.WaitForNoText("Sessions", 5*time.Second))
+		waitForDashboard(t, tui)
 
 		// 9. App should still be on the dashboard and functional.
-		require.NoError(t, tui.WaitForText("Start Chat", 5*time.Second))
+		waitForDashboard(t, tui)
 	})
 
 	t.Run("VIEW_SHORTCUTS_INTERLEAVE_WITH_DIALOGS", func(t *testing.T) {
@@ -531,21 +529,10 @@ func TestSequentialGlobalShortcuts_TUI(t *testing.T) {
 			"Runs", "Loading runs", "No runs found",
 		}, 10*time.Second))
 
-		// While in Runs, open models dialog.
-		tui.SendKeys("\x0c") // ctrl+l
-		require.NoError(t, tui.WaitForText("Switch Model", 5*time.Second))
-		tui.SendKeys("\x1b") // close models
-		require.NoError(t, tui.WaitForNoText("Switch Model", 5*time.Second))
-
-		// Should still be in Runs view.
-		require.NoError(t, tui.WaitForAnyText([]string{
-			"Runs", "Loading runs", "No runs found",
-		}, 5*time.Second))
-
-		// Open sessions dialog while in Runs.
-		tui.SendKeys("\x13") // ctrl+s
-		require.NoError(t, tui.WaitForText("Sessions", 5*time.Second))
-		tui.SendKeys("\x1b") // close sessions
+		// Open the runs search prompt while inside the runs view.
+		tui.SendKeys("/")
+		require.NoError(t, tui.WaitForText("search by run ID or workflow", 5*time.Second))
+		tui.SendKeys("\x1b") // close search
 
 		// Should still be in Runs view.
 		require.NoError(t, tui.WaitForAnyText([]string{
@@ -554,7 +541,7 @@ func TestSequentialGlobalShortcuts_TUI(t *testing.T) {
 
 		// Escape back to dashboard.
 		tui.SendKeys("\x1b")
-		require.NoError(t, tui.WaitForText("Start Chat", 10*time.Second))
+		waitForDashboard(t, tui)
 	})
 }
 

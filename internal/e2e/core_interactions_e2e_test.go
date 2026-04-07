@@ -147,7 +147,7 @@ func TestOnboardingAndGlobalDialogs_TUI(t *testing.T) {
 		openQuitDialog(t, tui)
 		tui.SendKeys("\x1b")
 		require.NoError(t, tui.WaitForNoText("Are you sure you want to quit?", 5*time.Second))
-		require.NoError(t, tui.WaitForText("Start Chat", 5*time.Second))
+		waitForDashboard(t, tui)
 	})
 
 	t.Run("QUIT_DIALOG_CONFIRMS_EXIT", func(t *testing.T) {

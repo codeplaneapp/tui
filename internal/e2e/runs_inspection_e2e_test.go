@@ -21,8 +21,10 @@ func openRunsDashboardWithFallback(t *testing.T, s *TmuxSession) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	s.WaitForAnyText([]string{"Run Dashboard", "Start Chat"}, 10*time.Second)
-	s.SendKeys("Down")
+	s.SendKeys("C-p")
+	s.WaitForAnyText([]string{"Commands", "command"}, 10*time.Second)
+	s.SendText("Run Dashboard")
+	s.WaitForText("Run Dashboard", 5*time.Second)
 	s.SendKeys("Enter")
 }
 
@@ -61,7 +63,7 @@ func TestRunsAndInspection(t *testing.T) {
 
 		// Open runs view with Ctrl+R.
 		s.SendKeys("C-r")
-		s.WaitForAnyText([]string{"Runs", "Loading runs"}, 10*time.Second)
+		s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
 
 		// Verify the runs breadcrumb is visible.
 		s.WaitForAnyText([]string{"CRUSH › Runs", "Runs"}, 5*time.Second)
@@ -75,7 +77,7 @@ func TestRunsAndInspection(t *testing.T) {
 		s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
 		s.SendKeys("C-r")
-		s.WaitForAnyText([]string{"Runs", "Loading runs"}, 10*time.Second)
+		s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
 
 		// The view renders with a filter label that shows status sections.
 		// With no data, it should show [All] filter indicator or "No runs found."
@@ -90,7 +92,7 @@ func TestRunsAndInspection(t *testing.T) {
 		s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
 		s.SendKeys("C-r")
-		s.WaitForAnyText([]string{"Runs", "Loading runs"}, 10*time.Second)
+		s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
 
 		// Without a server, the view falls back to polling mode.
 		// Either "Live" or "Polling" indicator should appear, or the view renders without one.
@@ -108,7 +110,7 @@ func TestRunsAndInspection(t *testing.T) {
 		s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
 		s.SendKeys("C-r")
-		s.WaitForAnyText([]string{"Runs", "Loading runs"}, 10*time.Second)
+		s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
 
 		// The help bar should indicate Enter toggles details.
 		s.WaitForAnyText([]string{"toggle details", "enter", "No runs found", "Loading runs"}, 10*time.Second)
@@ -122,7 +124,7 @@ func TestRunsAndInspection(t *testing.T) {
 		s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
 		s.SendKeys("C-r")
-		s.WaitForAnyText([]string{"Runs", "Loading runs"}, 10*time.Second)
+		s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
 
 		// The loading state itself is a progress indicator.
 		// After load completes, either runs or "No runs found" appears.
@@ -144,10 +146,7 @@ func TestRunsAndInspection(t *testing.T) {
 			s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
 			s.SendKeys("C-r")
-			s.WaitForAnyText([]string{"Runs", "Loading runs"}, 10*time.Second)
-
-			// Wait for the view to finish initial load.
-			s.WaitForAnyText([]string{"All", "No runs found", "filter status"}, 10*time.Second)
+			s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
 
 			// Press 'f' to cycle to Running.
 			s.SendKeys("f")
@@ -171,7 +170,7 @@ func TestRunsAndInspection(t *testing.T) {
 
 			// Verify Escape exits the runs view.
 			s.SendKeys("Escape")
-			s.WaitForNoText("Runs", 10*time.Second)
+			s.WaitForAnyText([]string{"At a Glance", "Run Workflow", "New Chat"}, 10*time.Second)
 		})
 
 		// -------------------------------------------------------
@@ -182,7 +181,7 @@ func TestRunsAndInspection(t *testing.T) {
 			s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
 			s.SendKeys("C-r")
-			s.WaitForAnyText([]string{"Runs", "Loading runs"}, 10*time.Second)
+			s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
 			s.WaitForAnyText([]string{"All", "No runs found"}, 10*time.Second)
 
 			// The help bar should mention the workflow filter key.
@@ -191,11 +190,11 @@ func TestRunsAndInspection(t *testing.T) {
 			// Press 'w' to cycle workflow filter (with no data, it stays on All).
 			s.SendKeys("w")
 			// Should still be in runs view (no crash).
-			s.WaitForAnyText([]string{"Runs", "All", "No runs found"}, 5*time.Second)
+			s.WaitForAnyText([]string{"All", "No runs found", "filter status", "toggle details"}, 5*time.Second)
 
 			// Exit.
 			s.SendKeys("Escape")
-			s.WaitForNoText("Runs", 10*time.Second)
+			s.WaitForAnyText([]string{"At a Glance", "Run Workflow", "New Chat"}, 10*time.Second)
 		})
 
 		// -------------------------------------------------------
@@ -206,7 +205,7 @@ func TestRunsAndInspection(t *testing.T) {
 			s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
 			s.SendKeys("C-r")
-			s.WaitForAnyText([]string{"Runs", "Loading runs"}, 10*time.Second)
+			s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
 			s.WaitForAnyText([]string{"All", "No runs found"}, 10*time.Second)
 
 			// The help bar should show the date filter key.
@@ -230,7 +229,7 @@ func TestRunsAndInspection(t *testing.T) {
 			s.WaitForNoText("Month", 5*time.Second)
 
 			s.SendKeys("Escape")
-			s.WaitForNoText("Runs", 10*time.Second)
+			s.WaitForAnyText([]string{"At a Glance", "Run Workflow", "New Chat"}, 10*time.Second)
 		})
 	})
 
@@ -242,7 +241,7 @@ func TestRunsAndInspection(t *testing.T) {
 		s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
 		s.SendKeys("C-r")
-		s.WaitForAnyText([]string{"Runs", "Loading runs"}, 10*time.Second)
+		s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
 		s.WaitForAnyText([]string{"All", "No runs found"}, 10*time.Second)
 
 		// Press '/' to activate search mode.
@@ -259,10 +258,10 @@ func TestRunsAndInspection(t *testing.T) {
 		// First Escape clears query, second exits search mode.
 		s.SendKeys("Escape")
 		// Should still be in runs view.
-		s.WaitForAnyText([]string{"Runs", "All"}, 5*time.Second)
+		s.WaitForAnyText([]string{"All", "filter status", "toggle details"}, 5*time.Second)
 
 		s.SendKeys("Escape")
-		s.WaitForNoText("Runs", 10*time.Second)
+		s.WaitForAnyText([]string{"At a Glance", "Run Workflow", "New Chat"}, 10*time.Second)
 	})
 
 	// ---------------------------------------------------------------
@@ -283,7 +282,7 @@ func TestRunsAndInspection(t *testing.T) {
 			s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
 			s.SendKeys("C-r")
-			s.WaitForAnyText([]string{"Runs", "Loading runs"}, 10*time.Second)
+			s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
 			s.WaitForAnyText([]string{"All", "No runs found"}, 10*time.Second)
 
 			// Help bar should show approve binding.
@@ -304,7 +303,7 @@ func TestRunsAndInspection(t *testing.T) {
 			s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
 			s.SendKeys("C-r")
-			s.WaitForAnyText([]string{"Runs", "Loading runs"}, 10*time.Second)
+			s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
 			s.WaitForAnyText([]string{"All", "No runs found"}, 10*time.Second)
 
 			// Help bar should show deny binding.
@@ -325,7 +324,7 @@ func TestRunsAndInspection(t *testing.T) {
 			s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
 			s.SendKeys("C-r")
-			s.WaitForAnyText([]string{"Runs", "Loading runs"}, 10*time.Second)
+			s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
 			s.WaitForAnyText([]string{"All", "No runs found"}, 10*time.Second)
 
 			// Help bar should show cancel run binding.
@@ -346,7 +345,7 @@ func TestRunsAndInspection(t *testing.T) {
 			s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
 			s.SendKeys("C-r")
-			s.WaitForAnyText([]string{"Runs", "Loading runs"}, 10*time.Second)
+			s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
 			s.WaitForAnyText([]string{"All", "No runs found"}, 10*time.Second)
 
 			// Help bar should show hijack binding.
@@ -367,7 +366,7 @@ func TestRunsAndInspection(t *testing.T) {
 			s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
 			s.SendKeys("C-r")
-			s.WaitForAnyText([]string{"Runs", "Loading runs"}, 10*time.Second)
+			s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
 			s.WaitForAnyText([]string{"All", "No runs found"}, 10*time.Second)
 
 			// Help bar should show chat binding.
@@ -454,7 +453,7 @@ func TestRunsAndInspection(t *testing.T) {
 			s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
 			s.SendKeys("C-r")
-			s.WaitForAnyText([]string{"Runs", "Loading runs"}, 10*time.Second)
+			s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
 			s.WaitForAnyText([]string{"All", "No runs found"}, 10*time.Second)
 
 			// The help bar shows "toggle details" for Enter.
@@ -475,7 +474,7 @@ func TestRunsAndInspection(t *testing.T) {
 			s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
 			s.SendKeys("C-r")
-			s.WaitForAnyText([]string{"Runs", "Loading runs"}, 10*time.Second)
+			s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
 			s.WaitForAnyText([]string{"All", "No runs found"}, 10*time.Second)
 
 			// The runs view loads, which contains the DAG rendering infrastructure.
@@ -483,7 +482,7 @@ func TestRunsAndInspection(t *testing.T) {
 			s.AssertVisible("Runs")
 
 			s.SendKeys("Escape")
-			s.WaitForNoText("Runs", 10*time.Second)
+			s.WaitForAnyText([]string{"At a Glance", "Run Workflow", "New Chat"}, 10*time.Second)
 		})
 
 		// -------------------------------------------------------
@@ -494,7 +493,7 @@ func TestRunsAndInspection(t *testing.T) {
 			s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
 			s.SendKeys("C-r")
-			s.WaitForAnyText([]string{"Runs", "Loading runs"}, 10*time.Second)
+			s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
 			s.WaitForAnyText([]string{"All", "No runs found"}, 10*time.Second)
 
 			// The runs view is the gateway to node inspection.
@@ -519,7 +518,7 @@ func TestRunsAndInspection(t *testing.T) {
 			s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
 			s.SendKeys("C-r")
-			s.WaitForAnyText([]string{"Runs", "Loading runs"}, 10*time.Second)
+			s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
 			s.WaitForAnyText([]string{"All", "No runs found"}, 10*time.Second)
 
 			// Verify the runs view infrastructure loads (task tabs require data).
@@ -536,7 +535,7 @@ func TestRunsAndInspection(t *testing.T) {
 			s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
 			s.SendKeys("C-r")
-			s.WaitForAnyText([]string{"Runs", "Loading runs"}, 10*time.Second)
+			s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
 			s.WaitForAnyText([]string{"All", "No runs found"}, 10*time.Second)
 
 			s.AssertVisible("Runs")

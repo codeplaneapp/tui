@@ -27,9 +27,9 @@ func TestChatDefaultConsole(t *testing.T) {
 	defer tui.Terminate()
 
 	require.NoError(t, tui.WaitForAnyText([]string{"CRUSH", "SMITHERS"}, 15*time.Second))
-	require.NoError(t, tui.WaitForText("Start Chat", 10*time.Second))
+	require.NoError(t, tui.WaitForText("New Chat", 10*time.Second))
 	require.NoError(t, tui.WaitForText("At a Glance", 10*time.Second))
-	require.NoError(t, tui.WaitForText("Run Dashboard", 10*time.Second))
+	require.NoError(t, tui.WaitForText("Run Workflow", 10*time.Second))
 }
 
 // TestEscReturnsToChat verifies that Esc from a pushed view returns to chat.

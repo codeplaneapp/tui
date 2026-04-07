@@ -18,7 +18,7 @@ func TestQuickApprovalsFromChat_TUI(t *testing.T) {
 
 	t.Run("A_KEY_NAVIGATES_TO_APPROVALS_FROM_MAIN_FOCUS", func(t *testing.T) {
 		fixture := newConfiguredFixture(t)
-		seedSessions(t, fixture.dataDir, seededSession{
+		seedSessions(t, fixture.workspaceDataDir(), seededSession{
 			title:    "Approvals Nav Session",
 			messages: []string{"some message"},
 		})

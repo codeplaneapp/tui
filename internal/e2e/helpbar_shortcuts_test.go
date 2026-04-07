@@ -43,5 +43,9 @@ func TestHelpbarShortcuts_TUI(t *testing.T) {
 
 	require.NoError(t, tuiApprovals.WaitForAnyText([]string{"CRUSH", "SMITHERS"}, 15*time.Second))
 	tuiApprovals.SendKeys("\x01") // ctrl+a
-	require.NoError(t, tuiApprovals.WaitForAnyText([]string{"CRUSH › Approvals", "SMITHERS › Approvals"}, 10*time.Second))
+	require.NoError(t, tuiApprovals.WaitForAnyText([]string{
+		"CRUSH › Approvals",
+		"SMITHERS › Approvals",
+		"SMITHERS › Pending Approvals",
+	}, 10*time.Second))
 }

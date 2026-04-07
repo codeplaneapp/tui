@@ -391,10 +391,10 @@ func (s *TmuxSession) Snapshot() string {
 
 func openChatTargetPickerViaDashboard(t *testing.T, s *TmuxSession) {
 	t.Helper()
-	s.SendKeys("Enter")
+	s.SendKeys("c")
 	s.WaitForAnyText([]string{
 		"Choose how you want to chat in this workspace.",
-		"Start Chat",
+		"SMITHERS › Start Chat",
 	}, 10*time.Second)
 }
 
@@ -509,14 +509,27 @@ func waitForMetricAtLeast(t *testing.T, addr, metricName string, labels map[stri
 			return err
 		}
 
-		for _, sample := range samples {
-			if sample.name == metricName && metricLabelsMatchMap(sample.labels, labels) && sample.value >= minValue {
-				return nil
+		for _, alias := range metricNameAliases(metricName) {
+			for _, sample := range samples {
+				if sample.name == alias && metricLabelsMatchMap(sample.labels, labels) && sample.value >= minValue {
+					return nil
+				}
 			}
 		}
 
 		return fmt.Errorf("metric %s with labels %v below %.2f", metricName, labels, minValue)
 	})
+}
+
+func metricNameAliases(name string) []string {
+	aliases := []string{name}
+	switch {
+	case strings.HasPrefix(name, "crush_"):
+		aliases = append(aliases, "codeplane_"+strings.TrimPrefix(name, "crush_"))
+	case strings.HasPrefix(name, "codeplane_"):
+		aliases = append(aliases, "crush_"+strings.TrimPrefix(name, "codeplane_"))
+	}
+	return aliases
 }
 
 func waitForHTTP(t *testing.T, url string, timeout time.Duration, predicate func(*http.Response) error) {

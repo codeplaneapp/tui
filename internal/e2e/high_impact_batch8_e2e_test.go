@@ -85,7 +85,9 @@ func TestDashboardEnterFromRunsTab_TUI(t *testing.T) {
 
 		// Escape back to dashboard.
 		tui.SendKeys("\x1b")
-		require.NoError(t, tui.WaitForText("Start Chat", 10*time.Second))
+		require.NoError(t, tui.WaitForAnyText([]string{
+			"Recent Runs", "No runs yet",
+		}, 10*time.Second))
 	})
 }
 
@@ -120,7 +122,9 @@ func TestDashboardEnterFromWorkflowsTab_TUI(t *testing.T) {
 		}, 10*time.Second))
 
 		tui.SendKeys("\x1b")
-		require.NoError(t, tui.WaitForText("Start Chat", 10*time.Second))
+		require.NoError(t, tui.WaitForAnyText([]string{
+			"Available Workflows", "No workflows found",
+		}, 10*time.Second))
 	})
 }
 
@@ -432,7 +436,7 @@ func TestWorkflowsSchemaToggle_TUI(t *testing.T) {
 		// Close overlays.
 		tui.SendKeys("\x1b")
 		require.NoError(t, tui.WaitForAnyText([]string{
-			"Workflows", "No workflows found", "Error", "Start Chat",
+			"Workflows", "No workflows found", "Error", "New Chat",
 		}, 10*time.Second))
 	})
 }

@@ -21,7 +21,7 @@ func TestSessionCLIShow_TUI(t *testing.T) {
 
 	t.Run("SESSION_SHOW_JSON_BY_ID", func(t *testing.T) {
 		fixture := newConfiguredFixture(t)
-		sessions := seedSessions(t, fixture.dataDir,
+		sessions := seedSessions(t, fixture.workspaceDataDir(),
 			seededSession{title: "Show Me Session", messages: []string{"show me content"}},
 		)
 
@@ -62,7 +62,7 @@ func TestSessionCLIDelete_TUI(t *testing.T) {
 
 	t.Run("SESSION_DELETE_REMOVES_FROM_LIST", func(t *testing.T) {
 		fixture := newConfiguredFixture(t)
-		sessions := seedSessions(t, fixture.dataDir,
+		sessions := seedSessions(t, fixture.workspaceDataDir(),
 			seededSession{title: "Keep Session"},
 			seededSession{title: "Delete Session"},
 		)
@@ -111,7 +111,7 @@ func TestSessionCLIRename_TUI(t *testing.T) {
 
 	t.Run("SESSION_RENAME_PERSISTS", func(t *testing.T) {
 		fixture := newConfiguredFixture(t)
-		sessions := seedSessions(t, fixture.dataDir,
+		sessions := seedSessions(t, fixture.workspaceDataDir(),
 			seededSession{title: "Original Title"},
 		)
 

@@ -46,8 +46,8 @@ func TestPlatformAndNavigation(t *testing.T) {
 		s.WaitForText("SMITHERS", 20*time.Second)
 
 		// The default landing should include chat-related content such as
-		// "Start Chat" or the dashboard widgets.
-		s.WaitForAnyText([]string{"Start Chat", "At a Glance", "chat"}, 10*time.Second)
+		// "New Chat" or the dashboard widgets.
+		s.WaitForAnyText([]string{"New Chat", "At a Glance", "chat"}, 10*time.Second)
 	})
 
 	// PLATFORM_VIEW_STACK_ROUTER
@@ -104,9 +104,9 @@ func TestPlatformAndNavigation(t *testing.T) {
 
 		// Ctrl+A -> Approvals view
 		s.SendKeys("C-a")
-		s.WaitForAnyText([]string{"SMITHERS › Approvals", "Loading"}, 10*time.Second)
+		s.WaitForAnyText([]string{"SMITHERS › Approvals", "SMITHERS › Pending Approvals", "Loading"}, 10*time.Second)
 		s.SendKeys("Escape")
-		s.WaitForNoText("SMITHERS › Approvals", 10*time.Second)
+		s.WaitForNoText("Pending Approvals", 10*time.Second)
 
 		// Ctrl+P -> Command palette
 		s.SendKeys("C-p")
@@ -129,23 +129,20 @@ func TestPlatformAndNavigation(t *testing.T) {
 
 		// Open the command palette.
 		s.SendKeys("C-p")
-		s.WaitForAnyText([]string{"Commands", "command"}, 10*time.Second)
+		s.WaitForAnyText([]string{"Commands", "Switch Model", "Type to filter"}, 10*time.Second)
 
 		// Capture the palette content and verify smithers-specific commands
 		// are present. We check for at least a few of the expected entries.
 		pane := s.CapturePane()
 		found := 0
-		smithersCommands := []string{"agent", "workflow", "ticket", "sql", "trigger"}
+		smithersCommands := []string{"Agents", "Workflows", "Work Items", "JJHub", "Approval Queue"}
 		for _, cmd := range smithersCommands {
 			if containsNormalized(pane, cmd) {
 				found++
 			}
 		}
 		if found == 0 {
-			// None of the smithers commands appeared -- that's a failure.
-			// But the palette might need scrolling or the commands might use
-			// different casing. Try searching for individual ones.
-			s.WaitForAnyText(smithersCommands, 10*time.Second)
+			t.Fatalf("expected smithers-specific commands in palette\nPane:\n%s", pane)
 		}
 
 		s.SendKeys("Escape")
@@ -161,7 +158,7 @@ func TestPlatformAndNavigation(t *testing.T) {
 
 		// Dashboard loads data via transports. Loading/error states prove
 		// the transport layer initialised and attempted a fetch.
-		s.WaitForAnyText([]string{"At a Glance", "Loading", "Start Chat"}, 10*time.Second)
+		s.WaitForAnyText([]string{"At a Glance", "Loading", "New Chat"}, 10*time.Second)
 	})
 
 	// PLATFORM_HTTP_API_CLIENT
@@ -172,7 +169,7 @@ func TestPlatformAndNavigation(t *testing.T) {
 		s.WaitForText("SMITHERS", 20*time.Second)
 
 		// The dashboard should attempt HTTP fetches and show error/loading state.
-		s.WaitForAnyText([]string{"At a Glance", "Loading", "Error", "Start Chat"}, 15*time.Second)
+		s.WaitForAnyText([]string{"At a Glance", "Loading", "Error", "New Chat"}, 15*time.Second)
 	})
 
 	// PLATFORM_SSE_EVENT_STREAMING
@@ -215,7 +212,7 @@ func TestPlatformAndNavigation(t *testing.T) {
 		s.WaitForText("SMITHERS", 20*time.Second)
 
 		// App boots without crashing even when all transports fail.
-		s.WaitForAnyText([]string{"Start Chat", "Overview", "At a Glance"}, 10*time.Second)
+		s.WaitForAnyText([]string{"New Chat", "Overview", "At a Glance"}, 10*time.Second)
 	})
 
 	// PLATFORM_TUI_HANDOFF_TRANSPORT
@@ -244,7 +241,7 @@ func TestPlatformAndNavigation(t *testing.T) {
 		s.WaitForText("SMITHERS", 20*time.Second)
 
 		// Dashboard menu items prove the workspace view model is active.
-		s.WaitForAnyText([]string{"Run Dashboard", "Workflows", "Approvals"}, 10*time.Second)
+		s.WaitForAnyText([]string{"Run Workflow", "Workflows", "Approvals"}, 10*time.Second)
 	})
 
 	// PLATFORM_SPLIT_PANE_LAYOUTS

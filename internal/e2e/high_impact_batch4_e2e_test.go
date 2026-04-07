@@ -18,7 +18,7 @@ func TestChatScrollNavigation_TUI(t *testing.T) {
 
 	t.Run("JK_SCROLLS_MESSAGES_IN_MAIN_FOCUS", func(t *testing.T) {
 		fixture := newConfiguredFixture(t)
-		seedSessions(t, fixture.dataDir, seededSession{
+		seedSessions(t, fixture.workspaceDataDir(), seededSession{
 			title: "Scroll Test",
 			messages: []string{
 				"scroll message one",
@@ -71,7 +71,7 @@ func TestChatHomeEndNavigation_TUI(t *testing.T) {
 
 	t.Run("G_HOME_END_NAVIGATION", func(t *testing.T) {
 		fixture := newConfiguredFixture(t)
-		seedSessions(t, fixture.dataDir, seededSession{
+		seedSessions(t, fixture.workspaceDataDir(), seededSession{
 			title: "HomeEnd Test",
 			messages: []string{
 				"first message at top",
@@ -118,7 +118,7 @@ func TestChatExpandCollapse_TUI(t *testing.T) {
 
 	t.Run("SPACE_TOGGLES_EXPANSION_WITHOUT_CRASH", func(t *testing.T) {
 		fixture := newConfiguredFixture(t)
-		seedSessions(t, fixture.dataDir, seededSession{
+		seedSessions(t, fixture.workspaceDataDir(), seededSession{
 			title: "Expand Test",
 			messages: []string{
 				"message to expand",
@@ -195,7 +195,7 @@ func TestPromptsViewNavigation_TUI(t *testing.T) {
 		}, 5*time.Second))
 
 		tui.SendKeys("\x1b")
-		require.NoError(t, tui.WaitForText("Start Chat", 10*time.Second))
+		waitForDashboard(t, tui)
 	})
 }
 
@@ -449,7 +449,7 @@ func TestMultipleNewSessions_TUI(t *testing.T) {
 
 		// Should land on a fresh view — old text cleared.
 		require.NoError(t, tui.WaitForAnyText([]string{
-			"Start Chat", "MCPs", "CRUSH",
+			"New Chat", "MCPs", "CRUSH",
 		}, 10*time.Second))
 
 		// Navigate to chat again.
@@ -463,7 +463,7 @@ func TestMultipleNewSessions_TUI(t *testing.T) {
 		tui.SendKeys("\x0e") // ctrl+n
 
 		require.NoError(t, tui.WaitForAnyText([]string{
-			"Start Chat", "MCPs", "CRUSH",
+			"New Chat", "MCPs", "CRUSH",
 		}, 10*time.Second))
 
 		// Verify sessions list now has entries.
@@ -486,7 +486,7 @@ func TestHeaderSessionTitle_TUI(t *testing.T) {
 
 	t.Run("HEADER_SHOWS_SESSION_TITLE", func(t *testing.T) {
 		fixture := newConfiguredFixture(t)
-		seedSessions(t, fixture.dataDir,
+		seedSessions(t, fixture.workspaceDataDir(),
 			seededSession{title: "My Named Session", messages: []string{"named session content"}},
 		)
 		tui := launchFixtureTUI(t, fixture, "--continue")
@@ -506,7 +506,7 @@ func TestHeaderSessionTitle_TUI(t *testing.T) {
 
 	t.Run("HEADER_UPDATES_AFTER_SESSION_SWITCH", func(t *testing.T) {
 		fixture := newConfiguredFixture(t)
-		seedSessions(t, fixture.dataDir,
+		seedSessions(t, fixture.workspaceDataDir(),
 			seededSession{title: "First Session Title", messages: []string{"first session body"}},
 			seededSession{title: "Second Session Title", messages: []string{"second session body"}},
 		)

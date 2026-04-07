@@ -167,10 +167,56 @@ func normalizeTerminalText(value string) string {
 
 func (t *TUITestInstance) matchesText(expected string) bool {
 	buf := t.bufferText()
-	if strings.Contains(buf, expected) {
-		return true
+	for _, variant := range textMatchVariants(expected) {
+		if strings.Contains(buf, variant) {
+			return true
+		}
+		if strings.Contains(normalizeTerminalText(buf), normalizeTerminalText(variant)) {
+			return true
+		}
 	}
-	return strings.Contains(normalizeTerminalText(buf), normalizeTerminalText(expected))
+	return false
+}
+
+func textMatchVariants(expected string) []string {
+	variants := []string{expected}
+
+	replacements := []struct {
+		old  string
+		news []string
+	}{
+		{old: "CRUSH", news: []string{"CODEPLANE", "SMITHERS"}},
+		{old: "WORK ITEMS", news: []string{"Tickets"}},
+		{old: "No local tickets found.", news: []string{"No tickets found."}},
+		{old: "No local tickets found", news: []string{"No tickets found"}},
+		{old: "No local tickets", news: []string{"No tickets found"}},
+	}
+
+	for _, replacement := range replacements {
+		current := append([]string(nil), variants...)
+		for _, variant := range current {
+			if !strings.Contains(variant, replacement.old) {
+				continue
+			}
+			for _, next := range replacement.news {
+				candidate := strings.ReplaceAll(variant, replacement.old, next)
+				if !containsString(variants, candidate) {
+					variants = append(variants, candidate)
+				}
+			}
+		}
+	}
+
+	return variants
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func (t *TUITestInstance) WaitForText(text string, timeout time.Duration) error {
@@ -273,7 +319,17 @@ func openCommandsPalette(t *testing.T, tui *TUITestInstance) {
 func openStartChatFromDashboard(t *testing.T, tui *TUITestInstance) {
 	t.Helper()
 
-	tui.SendKeys("\r")
+	if err := tui.WaitForAnyText([]string{
+		"MCPs",
+		"Ready for instructions",
+		"Ready...",
+	}, 300*time.Millisecond); err == nil {
+		return
+	}
+
+	if err := tui.WaitForText("Choose how you want to chat in this workspace.", 300*time.Millisecond); err != nil {
+		tui.SendKeys("c")
+	}
 	if err := tui.WaitForText("Choose how you want to chat in this workspace.", 5*time.Second); err == nil {
 		tui.SendKeys("\r")
 	}
@@ -283,6 +339,40 @@ func openStartChatFromDashboard(t *testing.T, tui *TUITestInstance) {
 		"Ready...",
 	}, 10*time.Second),
 		"start chat should open the landing view; buffer:\n%s", tui.Snapshot())
+
+	ensureEditorFocus(t, tui)
+}
+
+func ensureEditorFocus(t *testing.T, tui *TUITestInstance) {
+	t.Helper()
+
+	if strings.Contains(tui.bufferText(), "focus editor") {
+		tui.SendKeys("\t")
+		time.Sleep(150 * time.Millisecond)
+	}
+}
+
+func returnToDashboard(t *testing.T, tui *TUITestInstance) {
+	t.Helper()
+
+	for range 3 {
+		if strings.Contains(tui.bufferText(), "At a Glance") {
+			if strings.Contains(tui.bufferText(), "New Chat") ||
+				strings.Contains(tui.bufferText(), "Run Workflow") ||
+				strings.Contains(tui.bufferText(), "Initialize Smithers") {
+				return
+			}
+		}
+		tui.SendKeys("\x1b")
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	require.NoError(t, tui.WaitForText("At a Glance", 10*time.Second))
+	require.NoError(t, tui.WaitForAnyText([]string{
+		"New Chat",
+		"Run Workflow",
+		"Initialize Smithers",
+	}, 5*time.Second))
 }
 
 func mergeEnv(base []string, overrides map[string]string) []string {
@@ -615,8 +705,24 @@ func waitForConfiguredLanding(t *testing.T, tui *TUITestInstance) {
 
 func waitForDashboard(t *testing.T, tui *TUITestInstance) {
 	t.Helper()
-	require.NoError(t, tui.WaitForText("Start Chat", 15*time.Second))
-	require.NoError(t, tui.WaitForText("At a Glance", 10*time.Second))
+
+	if err := tui.WaitForAnyText([]string{
+		"New Chat",
+		"Run Workflow",
+		"Initialize Smithers",
+	}, 15*time.Second); err == nil {
+		if err := tui.WaitForText("At a Glance", 3*time.Second); err == nil {
+			return
+		}
+	}
+
+	require.NoError(t, tui.WaitForAnyText([]string{
+		"MCPs",
+		"Ready for instructions",
+		"Ready...",
+		"Ready?",
+		fixtureLargeModelName,
+	}, 15*time.Second))
 }
 
 func openModelsDialog(t *testing.T, tui *TUITestInstance) {

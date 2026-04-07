@@ -90,10 +90,9 @@ func TestThinkingModeToggle_TUI(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// 43. Initialize Project Prompt
-//     Verifies the initialization prompt ("Would you like to initialize this
-//     project?") can be launched via command palette, and the y/n/tab
-//     buttons work correctly.
+// 43. Initialize Project Command
+//     Verifies the command palette can launch project initialization and send
+//     the generated initialization prompt into chat.
 // ---------------------------------------------------------------------------
 
 func TestInitializeProjectPrompt_TUI(t *testing.T) {
@@ -113,17 +112,15 @@ func TestInitializeProjectPrompt_TUI(t *testing.T) {
 		require.NoError(t, tui.WaitForText("Initialize Project", 5*time.Second))
 		tui.SendKeys("\r")
 
-		// Should show the initialization prompt.
+		// The command now starts initialization immediately and sends the
+		// generated prompt into chat.
 		require.NoError(t, tui.WaitForAnyText([]string{
-			"initialize", "Initialize", "Yep!", "Nope",
+			"AGENTS.md", "Essential commands", "Provider Error", "Failed to initialize project",
 		}, 10*time.Second))
-
-		// Press 'n' to skip initialization.
-		tui.SendKeys("n")
 
 		// Should return to chat/landing view.
 		require.NoError(t, tui.WaitForAnyText([]string{
-			"CRUSH", "MCPs",
+			"Provider Error", "MCPs", "Ready",
 		}, 10*time.Second))
 	})
 }
@@ -139,7 +136,7 @@ func TestSessionCLIList_TUI(t *testing.T) {
 
 	t.Run("SESSION_LIST_JSON_OUTPUT", func(t *testing.T) {
 		fixture := newConfiguredFixture(t)
-		seedSessions(t, fixture.dataDir,
+		seedSessions(t, fixture.workspaceDataDir(),
 			seededSession{title: "CLI Session Alpha", messages: []string{"alpha content"}},
 			seededSession{title: "CLI Session Beta", messages: []string{"beta content"}},
 		)
@@ -179,7 +176,7 @@ func TestSessionCLILast_TUI(t *testing.T) {
 
 	t.Run("SESSION_LAST_JSON_OUTPUT", func(t *testing.T) {
 		fixture := newConfiguredFixture(t)
-		seedSessions(t, fixture.dataDir,
+		seedSessions(t, fixture.workspaceDataDir(),
 			seededSession{title: "Old Session", messages: []string{"old"}},
 			seededSession{title: "Latest Session", messages: []string{"latest"}},
 		)
@@ -366,7 +363,7 @@ func TestCtrlNFromMainFocus_TUI(t *testing.T) {
 
 	t.Run("CTRL_N_WORKS_FROM_MAIN_FOCUS", func(t *testing.T) {
 		fixture := newConfiguredFixture(t)
-		seedSessions(t, fixture.dataDir, seededSession{
+		seedSessions(t, fixture.workspaceDataDir(), seededSession{
 			title:    "Main Focus Session",
 			messages: []string{"main focus content"},
 		})
@@ -386,7 +383,7 @@ func TestCtrlNFromMainFocus_TUI(t *testing.T) {
 
 		// Should land on a fresh view.
 		require.NoError(t, tui.WaitForAnyText([]string{
-			"Start Chat", "MCPs", "CRUSH",
+			"New Chat", "MCPs", "CRUSH",
 		}, 10*time.Second))
 
 		// Old message should be gone.

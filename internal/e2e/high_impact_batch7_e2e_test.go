@@ -37,9 +37,13 @@ func TestProjectsCLI_TUI(t *testing.T) {
 		output, err := cmd.CombinedOutput()
 		require.NoError(t, err, "projects --json failed: %s", string(output))
 
+		lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+		require.NotEmpty(t, lines, "projects --json produced no output")
+		jsonLine := lines[len(lines)-1]
+
 		// Output should be valid JSON with a "projects" key.
 		var result map[string]interface{}
-		require.NoError(t, json.Unmarshal(output, &result), "invalid JSON: %s", string(output))
+		require.NoError(t, json.Unmarshal([]byte(jsonLine), &result), "invalid JSON: %s", string(output))
 		_, ok := result["projects"]
 		require.True(t, ok, "output should have 'projects' key")
 	})
@@ -133,7 +137,7 @@ func TestWorkflowsDoctorOverlay_TUI(t *testing.T) {
 		// Escape closes the overlay.
 		tui.SendKeys("\x1b")
 		require.NoError(t, tui.WaitForAnyText([]string{
-			"Workflows", "No workflows found", "Error", "Start Chat",
+			"Workflows", "No workflows found", "Error", "New Chat",
 		}, 10*time.Second))
 	})
 }
@@ -260,7 +264,7 @@ func TestMemoryRecallMode_TUI(t *testing.T) {
 
 		// Press 'r' to enter recall mode (semantic search).
 		// In list mode, 'r' triggers recall; help bar changes to search/cancel.
-		tui.SendKeys("r")
+		tui.SendKeys("s")
 		time.Sleep(500 * time.Millisecond)
 
 		// Help bar should now show recall-specific hints.
@@ -388,7 +392,7 @@ func TestTicketsRefresh_TUI(t *testing.T) {
 		tui.SendKeys("\r")
 
 		require.NoError(t, tui.WaitForAnyText([]string{
-			"WORK ITEMS", "Local", "Loading local tickets", "No local tickets",
+			"Tickets", "Loading tickets", "No tickets found",
 		}, 10*time.Second))
 
 		// Press 'r' to refresh.
@@ -397,7 +401,7 @@ func TestTicketsRefresh_TUI(t *testing.T) {
 
 		// Should still be in the tickets view, possibly reloading.
 		require.NoError(t, tui.WaitForAnyText([]string{
-			"WORK ITEMS", "Loading", "No local tickets", "Local",
+			"Tickets", "Loading", "No tickets found",
 		}, 10*time.Second))
 
 		tui.SendKeys("\x1b")
@@ -415,7 +419,7 @@ func TestDashboardSessionsTab_TUI(t *testing.T) {
 
 	t.Run("SESSIONS_TAB_LISTS_SEEDED_SESSIONS", func(t *testing.T) {
 		fixture := newConfiguredFixture(t)
-		seedSessions(t, fixture.dataDir,
+		seedSessions(t, fixture.workspaceDataDir(),
 			seededSession{title: "Dashboard Tab Session A", messages: []string{"msg a"}},
 			seededSession{title: "Dashboard Tab Session B", messages: []string{"msg b"}},
 		)
@@ -436,7 +440,7 @@ func TestDashboardSessionsTab_TUI(t *testing.T) {
 
 	t.Run("SESSIONS_TAB_SHOWS_SESSION_COUNT", func(t *testing.T) {
 		fixture := newConfiguredFixture(t)
-		seedSessions(t, fixture.dataDir,
+		seedSessions(t, fixture.workspaceDataDir(),
 			seededSession{title: "Count Session 1"},
 			seededSession{title: "Count Session 2"},
 			seededSession{title: "Count Session 3"},

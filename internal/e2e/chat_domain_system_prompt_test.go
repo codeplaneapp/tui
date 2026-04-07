@@ -34,7 +34,7 @@ func TestSmithersDomainSystemPrompt_TUI(t *testing.T) {
 	defer tui.Terminate()
 
 	require.NoError(t, tui.WaitForAnyText([]string{"CRUSH", "SMITHERS"}, 15*time.Second))
-	require.NoError(t, tui.WaitForText("Run Dashboard", 10*time.Second))
+	require.NoError(t, tui.WaitForText("Run Workflow", 10*time.Second))
 	require.NoError(t, tui.WaitForText("Workflows", 10*time.Second))
 	require.NoError(t, tui.WaitForNoText("Init Smithers", 5*time.Second))
 	require.NoError(t, tui.WaitForNoText("Init Crush", 5*time.Second))
@@ -57,9 +57,10 @@ func TestSmithersDomainSystemPrompt_CoderFallback_TUI(t *testing.T) {
 
 	require.NoError(t, tui.WaitForAnyText([]string{"CRUSH", "SMITHERS"}, 15*time.Second))
 	require.NoError(t, tui.WaitForAnyText([]string{
-		"Would you like to initialize this project?",
-		"Init Crush",
-		"Init Smithers",
+		"Initialize Smithers",
+		"Run Workflow",
+		"New Chat",
 	}, 10*time.Second))
+	require.NoError(t, tui.WaitForNoText("Init Smithers", 5*time.Second))
 	require.NoError(t, tui.WaitForNoText("Run Dashboard", 5*time.Second))
 }

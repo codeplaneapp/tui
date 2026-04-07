@@ -15,6 +15,7 @@ func writeFakeJJHub(t *testing.T) (string, map[string]string) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "state.json")
 	scriptPath := filepath.Join(dir, "jjhub")
+	sshPath := filepath.Join(dir, "ssh")
 
 	const state = `{
   "repo": {
@@ -290,6 +291,7 @@ raise SystemExit(1)
 
 	require.NoError(t, os.WriteFile(statePath, []byte(state), 0o644))
 	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o755))
+	require.NoError(t, os.WriteFile(sshPath, []byte("#!/bin/sh\nexit 0\n"), 0o755))
 
 	return dir, map[string]string{
 		"CRUSH_FAKE_JJHUB_STATE": statePath,
@@ -306,10 +308,10 @@ func TestWorkspacesLifecycleE2E(t *testing.T) {
 	})
 	t.Cleanup(tui.Terminate)
 
-	require.NoError(t, tui.WaitForAnyText([]string{"Overview", "Start Chat"}, 20*time.Second),
+	require.NoError(t, tui.WaitForAnyText([]string{"Overview", "New Chat"}, 20*time.Second),
 		"dashboard must render; buffer:\n%s", tui.Snapshot())
 
-	tui.SendKeys("jjjjjjjjjj\n")
+	tui.SendKeys("jjjjjjjjjjjjjjjjjjjj\n")
 	require.NoError(t, tui.WaitForText("JJHUB › Workspaces", 10*time.Second),
 		"workspaces view must open; buffer:\n%s", tui.Snapshot())
 	require.NoError(t, tui.WaitForText("alpha", 10*time.Second),
@@ -331,8 +333,8 @@ func TestWorkspacesLifecycleE2E(t *testing.T) {
 		"resume action must succeed; buffer:\n%s", tui.Snapshot())
 
 	tui.SendKeys("\n")
-	require.NoError(t, tui.WaitForText("Disconnected from ws-2", 10*time.Second),
-		"ssh handoff must return to TUI; buffer:\n%s", tui.Snapshot())
+	require.NoError(t, tui.WaitForText("Detached from ws-2", 10*time.Second),
+		"attach handoff must return to TUI; buffer:\n%s", tui.Snapshot())
 
 	tui.SendKeys("f")
 	require.NoError(t, tui.WaitForText("Fork Workspace", 5*time.Second))

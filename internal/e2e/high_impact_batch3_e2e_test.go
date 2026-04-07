@@ -18,7 +18,7 @@ func TestPromptHistoryNavigation_TUI(t *testing.T) {
 
 	t.Run("UP_ARROW_RECALLS_PREVIOUS_MESSAGES", func(t *testing.T) {
 		fixture := newConfiguredFixture(t)
-		seedSessions(t, fixture.dataDir, seededSession{
+		seedSessions(t, fixture.workspaceDataDir(), seededSession{
 			title:    "History Session",
 			messages: []string{"first prompt", "second prompt", "third prompt"},
 		})
@@ -43,7 +43,7 @@ func TestPromptHistoryNavigation_TUI(t *testing.T) {
 
 	t.Run("DOWN_ARROW_NAVIGATES_FORWARD", func(t *testing.T) {
 		fixture := newConfiguredFixture(t)
-		seedSessions(t, fixture.dataDir, seededSession{
+		seedSessions(t, fixture.workspaceDataDir(), seededSession{
 			title:    "History Session 2",
 			messages: []string{"alpha msg", "beta msg"},
 		})
@@ -110,7 +110,7 @@ func TestSessionFlag_TUI(t *testing.T) {
 
 	t.Run("SESSION_FLAG_LOADS_SPECIFIC_SESSION", func(t *testing.T) {
 		fixture := newConfiguredFixture(t)
-		sessions := seedSessions(t, fixture.dataDir,
+		sessions := seedSessions(t, fixture.workspaceDataDir(),
 			seededSession{title: "Target Session", messages: []string{"target session content"}},
 			seededSession{title: "Other Session", messages: []string{"other session content"}},
 		)
@@ -180,7 +180,7 @@ func TestDashboardRefresh_TUI(t *testing.T) {
 		tui.SendKeys("r")
 
 		// Dashboard should still be visible (refresh is in-place, not a navigation).
-		require.NoError(t, tui.WaitForText("Start Chat", 5*time.Second))
+		waitForDashboard(t, tui)
 		require.NoError(t, tui.WaitForText("At a Glance", 5*time.Second))
 	})
 }
@@ -261,7 +261,7 @@ func TestContextualHelpBar_TUI(t *testing.T) {
 
 		// Escape back.
 		tui.SendKeys("\x1b")
-		require.NoError(t, tui.WaitForText("Start Chat", 10*time.Second))
+		waitForDashboard(t, tui)
 
 		// Open Approvals view.
 		tui.SendKeys("\x01") // ctrl+a
@@ -315,7 +315,7 @@ func TestWorkflowsInfoOverlay_TUI(t *testing.T) {
 		// Escape closes the overlay (or stays in workflows if overlay wasn't shown).
 		tui.SendKeys("\x1b")
 		require.NoError(t, tui.WaitForAnyText([]string{
-			"Workflows", "No workflows found", "Error", "Start Chat",
+			"Workflows", "No workflows found", "Error", "New Chat",
 		}, 10*time.Second))
 	})
 }

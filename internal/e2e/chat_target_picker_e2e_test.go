@@ -36,12 +36,12 @@ func TestChatTargetPicker_TUI(t *testing.T) {
 
 		waitForTraceSpan(t, obsAddr, 10*time.Second, func(span debugTraceSpan) bool {
 			return span.Name == "ui.navigation" && spanHasAttrs(span, map[string]string{
-				"crush.ui.entrypoint": "dashboard",
-				"crush.ui.target":     "chat_picker",
-				"crush.ui.result":     "ok",
+				"codeplane.ui.entrypoint": "dashboard",
+				"codeplane.ui.target":     "chat_picker",
+				"codeplane.ui.result":     "ok",
 			})
 		})
-		waitForMetricAtLeast(t, obsAddr, "crush_ui_navigation_total", map[string]string{
+		waitForMetricAtLeast(t, obsAddr, "codeplane_ui_navigation_total", map[string]string{
 			"entrypoint": "dashboard",
 			"target":     "chat_picker",
 			"result":     "ok",
@@ -73,13 +73,13 @@ func TestChatTargetPicker_TUI(t *testing.T) {
 
 		waitForTraceSpan(t, obsAddr, 10*time.Second, func(span debugTraceSpan) bool {
 			return span.Name == "ui.navigation" && spanHasAttrs(span, map[string]string{
-				"crush.ui.entrypoint": "chat_picker",
-				"crush.ui.target":     "chat_target_select",
-				"crush.ui.result":     "ok",
-				"crush.chat.target":   "smithers",
+				"codeplane.ui.entrypoint": "chat_picker",
+				"codeplane.ui.target":     "chat_target_select",
+				"codeplane.ui.result":     "ok",
+				"crush.chat.target":       "smithers",
 			})
 		})
-		waitForMetricAtLeast(t, obsAddr, "crush_ui_navigation_total", map[string]string{
+		waitForMetricAtLeast(t, obsAddr, "codeplane_ui_navigation_total", map[string]string{
 			"entrypoint": "chat_picker",
 			"target":     "chat_target_select",
 			"result":     "ok",
@@ -113,13 +113,13 @@ func TestChatTargetPicker_TUI(t *testing.T) {
 
 		waitForTraceSpan(t, obsAddr, 10*time.Second, func(span debugTraceSpan) bool {
 			return span.Name == "ui.navigation" && spanHasAttrs(span, map[string]string{
-				"crush.ui.entrypoint": "chat_picker",
-				"crush.ui.target":     "chat_target_handoff",
-				"crush.ui.result":     "ok",
-				"crush.chat.target":   "opencode",
+				"codeplane.ui.entrypoint": "chat_picker",
+				"codeplane.ui.target":     "chat_target_handoff",
+				"codeplane.ui.result":     "ok",
+				"crush.chat.target":       "opencode",
 			})
 		})
-		waitForMetricAtLeast(t, obsAddr, "crush_ui_navigation_total", map[string]string{
+		waitForMetricAtLeast(t, obsAddr, "codeplane_ui_navigation_total", map[string]string{
 			"entrypoint": "chat_picker",
 			"target":     "chat_target_handoff",
 			"result":     "ok",

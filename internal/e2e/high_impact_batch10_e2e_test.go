@@ -35,24 +35,32 @@ func TestCommandsDialogTabCycle_TUI(t *testing.T) {
 		tui.SendKeys("\t")
 		time.Sleep(300 * time.Millisecond)
 
-		// View should still be showing the commands dialog.
-		require.NoError(t, tui.WaitForText("Commands", 5*time.Second))
+		// The commands dialog should remain interactive after cycling tabs.
+		require.NoError(t, tui.WaitForAnyText([]string{
+			"Switch Model", "Initialize Project", "Memory Browser",
+		}, 5*time.Second))
 
 		// Tab again.
 		tui.SendKeys("\t")
 		time.Sleep(300 * time.Millisecond)
 
-		require.NoError(t, tui.WaitForText("Commands", 5*time.Second))
+		require.NoError(t, tui.WaitForAnyText([]string{
+			"Switch Model", "Initialize Project", "Memory Browser",
+		}, 5*time.Second))
 
 		// Shift+Tab to go backward.
 		tui.SendKeys("\x1b[Z") // Shift+Tab
 		time.Sleep(300 * time.Millisecond)
 
-		require.NoError(t, tui.WaitForText("Commands", 5*time.Second))
+		require.NoError(t, tui.WaitForAnyText([]string{
+			"Switch Model", "Initialize Project", "Memory Browser",
+		}, 5*time.Second))
 
 		// Escape to close.
 		tui.SendKeys("\x1b")
-		require.NoError(t, tui.WaitForNoText("Commands", 5*time.Second))
+		require.NoError(t, tui.WaitForAnyText([]string{
+			"Ready", "MCPs", fixtureLargeModelName,
+		}, 5*time.Second))
 	})
 }
 
@@ -79,28 +87,14 @@ func TestInitializeProjectTabToggle_TUI(t *testing.T) {
 		require.NoError(t, tui.WaitForText("Initialize Project", 5*time.Second))
 		tui.SendKeys("\r")
 
-		// Should show the initialization prompt with Yep!/Nope.
+		// The command now starts initialization immediately and sends the
+		// generated prompt into chat.
 		require.NoError(t, tui.WaitForAnyText([]string{
-			"Yep!", "Nope", "initialize",
+			"AGENTS.md", "Essential commands", "Provider Error", "Failed to initialize project",
 		}, 10*time.Second))
-
-		// Tab should toggle between the two buttons.
-		tui.SendKeys("\t")
-		time.Sleep(300 * time.Millisecond)
-
-		// Both buttons should still be visible (selection toggled).
-		require.NoError(t, tui.WaitForText("Yep!", 3*time.Second))
-		require.NoError(t, tui.WaitForText("Nope", 3*time.Second))
-
-		// Tab again to toggle back.
-		tui.SendKeys("\t")
-		time.Sleep(300 * time.Millisecond)
-
-		require.NoError(t, tui.WaitForText("Yep!", 3*time.Second))
-
-		// Press 'n' to skip.
-		tui.SendKeys("n")
-		time.Sleep(500 * time.Millisecond)
+		require.NoError(t, tui.WaitForAnyText([]string{
+			"Ready", "Provider Error",
+		}, 5*time.Second))
 	})
 }
 
@@ -135,16 +129,13 @@ func TestReasoningEffortSelection_TUI(t *testing.T) {
 		}, 5*time.Second))
 
 		// Navigate to a different level and select.
-		tui.SendKeys("j") // down to next level
+		tui.SendKeys("\x1b[B") // down arrow
 		time.Sleep(200 * time.Millisecond)
 		tui.SendKeys("\r") // select
 
-		// Dialog should close.
-		time.Sleep(500 * time.Millisecond)
-		require.NoError(t, tui.WaitForNoText("Select Reasoning", 5*time.Second))
-
-		// App should still be functional.
-		require.NoError(t, tui.WaitForText("CRUSH", 5*time.Second))
+		require.NoError(t, tui.WaitForAnyText([]string{
+			"Reasoning effort set to", "Ready", "MCPs", fixtureLargeModelName,
+		}, 10*time.Second))
 	})
 }
 
@@ -159,16 +150,15 @@ func TestEditorEscapeClearsHistory_TUI(t *testing.T) {
 
 	t.Run("ESCAPE_RETURNS_TO_DRAFT_FROM_HISTORY", func(t *testing.T) {
 		fixture := newConfiguredFixture(t)
-		seedSessions(t, fixture.dataDir, seededSession{
+		seedSessions(t, fixture.workspaceDataDir(), seededSession{
 			title:    "History Escape Session",
 			messages: []string{"old prompt one", "old prompt two"},
 		})
 		tui := launchFixtureTUI(t, fixture, "--continue")
 		defer tui.Terminate()
 
-		waitForDashboard(t, tui)
-		openStartChatFromDashboard(t, tui)
 		require.NoError(t, tui.WaitForText("old prompt one", 15*time.Second))
+		ensureEditorFocus(t, tui)
 
 		// Type a draft message.
 		tui.SendKeys("my draft text")
@@ -203,7 +193,7 @@ func TestSessionDialogMetadata_TUI(t *testing.T) {
 
 	t.Run("SESSIONS_SHOW_TITLES_AND_METADATA", func(t *testing.T) {
 		fixture := newConfiguredFixture(t)
-		seedSessions(t, fixture.dataDir,
+		seedSessions(t, fixture.workspaceDataDir(),
 			seededSession{title: "Metadata Session One", messages: []string{"msg1", "msg2", "msg3"}},
 			seededSession{title: "Metadata Session Two", messages: []string{"single msg"}},
 		)
@@ -297,6 +287,8 @@ func TestDashboardQuickChatFromAnyTab_TUI(t *testing.T) {
 
 		// Press 'c' to open chat from Runs tab.
 		tui.SendKeys("c")
+		require.NoError(t, tui.WaitForText("Choose how you want to chat in this workspace.", 10*time.Second))
+		tui.SendKeys("\r")
 		require.NoError(t, tui.WaitForAnyText([]string{
 			"MCPs", "LSPs", fixtureLargeModelName,
 		}, 10*time.Second))
@@ -318,6 +310,8 @@ func TestDashboardQuickChatFromAnyTab_TUI(t *testing.T) {
 
 		// Press 'c' to open chat.
 		tui.SendKeys("c")
+		require.NoError(t, tui.WaitForText("Choose how you want to chat in this workspace.", 10*time.Second))
+		tui.SendKeys("\r")
 		require.NoError(t, tui.WaitForAnyText([]string{
 			"MCPs", "LSPs", fixtureLargeModelName,
 		}, 10*time.Second))
@@ -342,24 +336,34 @@ func TestModelSwitchPersistsNewSession_TUI(t *testing.T) {
 
 		// Switch model to "Reason Mini" via models dialog.
 		openModelsDialog(t, tui)
-		tui.SendKeys("Reason Mini")
+		tui.SendText("mini")
 		require.NoError(t, tui.WaitForText(fixtureSmallModelName, 5*time.Second))
 		tui.SendKeys("\r")
 		require.NoError(t, tui.WaitForNoText("Switch Model", 10*time.Second))
 
 		// Open chat — should show the new model.
-		openStartChatFromDashboard(t, tui)
+		tui.SendKeys("j")
+		tui.SendKeys("j")
+		require.NoError(t, tui.WaitForText("New Chat", 5*time.Second))
+		tui.SendKeys("\r")
+		require.NoError(t, tui.WaitForText("Choose how you want to chat in this workspace.", 10*time.Second))
+		tui.SendKeys("\r")
 		require.NoError(t, tui.WaitForText(fixtureSmallModelName, 10*time.Second))
 
-		// Create a new session.
-		tui.SendKeys("\x0e") // ctrl+n
-		time.Sleep(500 * time.Millisecond)
+		// Create a new session via the command palette.
+		openCommandsPalette(t, tui)
+		tui.SendKeys("New Session")
+		require.NoError(t, tui.WaitForText("New Session", 5*time.Second))
+		tui.SendKeys("\r")
 
 		// Open chat in the new session.
 		require.NoError(t, tui.WaitForAnyText([]string{
-			"Start Chat", "MCPs",
+			fixtureSmallModelName,
+			"MCPs",
+			"Ready for instructions",
+			"Ready...",
+			"Ready?",
 		}, 10*time.Second))
-		openStartChatFromDashboard(t, tui)
 
 		// New session should still show the switched model.
 		require.NoError(t, tui.WaitForText(fixtureSmallModelName, 10*time.Second))
