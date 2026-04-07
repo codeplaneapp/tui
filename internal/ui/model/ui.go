@@ -220,10 +220,16 @@ type UI struct {
 	sseEventCh <-chan interface{}
 
 	// Smithers view router, registry, workspace model, and client.
+	// viewRouter points to the active tab's Router instance. It is swapped
+	// whenever the active workspace tab changes.
 	viewRouter     *views.Router
 	viewRegistry   *views.Registry
 	smithersClient *smithers.Client
 	dashboard      *views.DashboardView
+
+	// tabManager manages the dynamic workspace tabs in the left sidebar.
+	tabManager       *TabManager
+	navSidebarHidden bool
 
 	// isCanceling tracks whether the user has pressed escape once to cancel.
 	isCanceling bool
@@ -383,7 +389,7 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 		smithersClient:      buildSmithersClient(com.Config()),
 		systemAnim: anim.New(anim.Settings{
 			Size:        10,
-			Label:       "SMITHERS",
+			Label:       "CODEPLANE",
 			GradColorA:  com.Styles.Primary,
 			GradColorB:  com.Styles.Secondary,
 			LabelColor:  com.Styles.Primary,
@@ -395,6 +401,11 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 	hasSmithers := com.Config().Smithers != nil
 	jjhubClient := jjhub.NewClient("") // auto-detect repo from cwd
 	ui.dashboard = views.NewDashboardViewWithJJHub(ui.com, ui.smithersClient, hasSmithers, jjhubClient)
+
+	// Initialize the workspace tab manager. The launcher tab (tab 0) uses the
+	// dashboard's view. The viewRouter is set to the launcher's router.
+	ui.tabManager = NewTabManager()
+	ui.viewRouter = ui.tabManager.Active().Router
 
 	status := NewStatus(com, ui)
 
@@ -1140,17 +1151,57 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.textarea.MoveToEnd()
 		cmds = append(cmds, m.updateTextareaWithPrevHeight(msg, prevHeight))
 	case views.OpenChatMsg:
-		m.viewRouter.Reset()
+		// Open chat as a workspace tab.
+		if m.tabManager != nil {
+			tab := &WorkspaceTab{
+				ID:          "chat:new",
+				Kind:        TabKindView,
+				Label:       "Chat",
+				Closable:    true,
+				Router:      views.NewRouter(),
+				initialized: true, // no view to push — state handles it
+			}
+			idx := m.tabManager.Add(tab)
+			m.tabManager.Activate(idx)
+			activeTab := m.tabManager.Active()
+			m.viewRouter = activeTab.Router
+		}
 		m.setState(uiLanding, uiFocusEditor)
 		return m, tea.Batch(cmds...)
 	case views.InitSmithersMsg:
 		// User wants to init smithers — run `smithers init` via exec
 		m.setState(uiLanding, uiFocusEditor)
 		return m, tea.Batch(cmds...)
+	case views.TabAutoPopulateMsg:
+		// Auto-open tabs for active runs.
+		if m.tabManager != nil {
+			for _, run := range msg.ActiveRuns {
+				label := run.WorkflowName
+				if label == "" {
+					label = "Run"
+				}
+				if len(run.RunID) > 8 {
+					label += " " + run.RunID[:8]
+				}
+				tab := &WorkspaceTab{
+					ID:       "run:" + run.RunID,
+					Kind:     TabKindRunInspect,
+					Label:    label,
+					Closable: true,
+					RunID:    run.RunID,
+				}
+				m.tabManager.Add(tab)
+			}
+		}
 	case views.DashboardNavigateMsg:
-		// Dashboard requested navigation to a view
-		m.setState(uiSmithersView, uiFocusMain)
-		if cmd := m.handleNavigateToView(NavigateToViewMsg{View: msg.View}); cmd != nil {
+		// Dashboard requested navigation — open as a new workspace tab.
+		view := strings.TrimSpace(msg.View)
+		if view == "chat" {
+			// Chat opens via the OpenChatMsg path.
+			cmds = append(cmds, func() tea.Msg { return views.OpenChatMsg{} })
+			break
+		}
+		if cmd := m.openViewAsTab(view); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 	case NavigateToViewMsg:
@@ -1848,15 +1899,19 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 
 	case views.OpenRunInspectMsg:
 		inspectView := views.NewRunInspectView(m.smithersClient, msg.RunID)
-		cmd := m.viewRouter.PushView(inspectView)
-		m.setState(uiSmithersView, uiFocusMain)
-		cmds = append(cmds, cmd)
+		if cmd := m.openTabForView("run:"+msg.RunID, TabKindRunInspect, "Run "+msg.RunID[:8], inspectView); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 
 	case views.OpenLiveChatMsg:
 		chatView := views.NewLiveChatView(m.smithersClient, msg.RunID, msg.TaskID, msg.AgentName)
-		cmd := m.viewRouter.PushView(chatView)
-		m.setState(uiSmithersView, uiFocusMain)
-		cmds = append(cmds, cmd)
+		label := "Chat"
+		if msg.AgentName != "" {
+			label = msg.AgentName
+		}
+		if cmd := m.openTabForView("chat:"+msg.RunID, TabKindLiveChat, label, chatView); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 
 	case views.OpenSnapshotsMsg:
 		source := string(msg.Source)
@@ -1885,7 +1940,14 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 	case views.PopViewMsg:
 		if m.viewRouter.Depth() <= 1 {
 			m.viewRouter.Reset()
-			// Return to dashboard in Smithers mode, chat otherwise
+			// If this is a non-launcher tab, close it and go back to launcher.
+			if m.tabManager != nil && m.tabManager.ActiveIndex() > 0 {
+				if cmd := m.closeActiveTab(); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+				break
+			}
+			// Otherwise return to dashboard/chat/landing.
 			if m.dashboard != nil {
 				m.setState(uiSmithersDashboard, uiFocusMain)
 			} else if m.hasSession() {
@@ -2227,6 +2289,32 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 	// Route all messages to dialog if one is open.
 	if m.dialog.HasDialogs() {
 		return m.handleDialogMsg(msg)
+	}
+
+	// Global workspace tab switching via number keys.
+	// Only active when the editor is not focused and not in onboarding/init.
+	if m.focus != uiFocusEditor && m.state != uiOnboarding && m.state != uiInitialize {
+		if key.Matches(msg, key.NewBinding(key.WithKeys("1", "2", "3", "4", "5", "6", "7", "8", "9"))) {
+			idx := int(msg.String()[0] - '1')
+			if cmd := m.navigateToNavTab(idx); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+			return tea.Batch(cmds...)
+		}
+	}
+
+	// Toggle workspace sidebar visibility.
+	if key.Matches(msg, m.keyMap.NavSidebar) {
+		m.toggleNavSidebar()
+		return tea.Batch(cmds...)
+	}
+
+	// Close active workspace tab.
+	if key.Matches(msg, m.keyMap.CloseTab) && m.state != uiOnboarding && m.state != uiInitialize {
+		if cmd := m.closeActiveTab(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		return tea.Batch(cmds...)
 	}
 
 	// Handle cancel key when agent is busy.
@@ -2601,7 +2689,7 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 		main := uv.NewStyledString(m.landingView())
 		main.Draw(scr, layout.main)
 
-		editor := uv.NewStyledString(m.renderEditorView(scr.Bounds().Dx()))
+		editor := uv.NewStyledString(m.renderEditorView(layout.editor.Dx()))
 		editor.Draw(scr, layout.editor)
 
 	case uiChat:
@@ -2616,10 +2704,7 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 			uv.NewStyledString(m.pillsView).Draw(scr, layout.pills)
 		}
 
-		editorWidth := scr.Bounds().Dx()
-		if !m.isCompact {
-			editorWidth -= layout.sidebar.Dx()
-		}
+		editorWidth := layout.editor.Dx()
 		editor := uv.NewStyledString(m.renderEditorView(editorWidth))
 		editor.Draw(scr, layout.editor)
 
@@ -2636,11 +2721,28 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 		}
 
 	case uiSmithersDashboard:
+		m.drawHeader(scr, layout.header)
 		if m.dashboard != nil {
 			m.dashboard.SetSize(layout.main.Dx(), layout.main.Dy())
 			main := uv.NewStyledString(m.dashboard.View())
 			main.Draw(scr, layout.main)
 		}
+	}
+
+	// Draw the persistent nav sidebar when allocated.
+	if layout.navSidebar.Dx() > 0 && layout.navSidebar.Dy() > 0 {
+		t := m.com.Styles
+		navHeight := layout.navSidebar.Dy()
+
+		nav := uv.NewStyledString(m.renderNavSidebar(t, navHeight))
+		nav.Draw(scr, layout.navSidebar)
+
+		// Draw divider in the 1-col gap between nav sidebar and content.
+		divider := uv.NewStyledString(renderNavDivider(t, navHeight))
+		dividerRect := layout.navSidebar
+		dividerRect.Min.X = dividerRect.Max.X
+		dividerRect.Max.X = dividerRect.Min.X + 1
+		divider.Draw(scr, dividerRect)
 	}
 
 	isOnboarding := m.state == uiOnboarding
@@ -2705,7 +2807,7 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 
 		if m.textarea.Focused() {
 			cur := m.textarea.Cursor()
-			cur.X++                            // Adjust for app margins
+			cur.X += m.layout.editor.Min.X     // Offset for sidebar + app margins
 			cur.Y += m.layout.editor.Min.Y + 1 // Offset for attachments row
 			return cur
 		}
@@ -3183,45 +3285,42 @@ func (m *UI) generateLayout(w, h int) uiLayout {
 		uiLayout.main = mainRect
 
 	case uiLanding:
-		// Layout
-		//
-		// header
-		// ------
-		// main
-		// ------
-		// editor
-		// ------
-		// help
-		headerRect, mainRect := layout.SplitVertical(appRect, layout.Fixed(landingHeaderHeight))
+		// Split nav sidebar conditionally, then layout header/main/editor.
+		contentArea := appRect
+		if !m.navSidebarHidden {
+			navRect, rest := layout.SplitHorizontal(appRect, layout.Fixed(navSidebarWidth+1))
+			navRect.Max.X -= 1
+			uiLayout.navSidebar = navRect
+			contentArea = rest
+		}
+
+		headerRect, mainRect := layout.SplitVertical(contentArea, layout.Fixed(landingHeaderHeight))
 		mainRect, editorRect := layout.SplitVertical(mainRect, layout.Fixed(mainRect.Dy()-editorHeight))
-		// Remove extra padding from editor (but keep it for header and main)
-		editorRect.Min.X -= 1
 		editorRect.Max.X += 1
 		uiLayout.header = headerRect
 		uiLayout.main = mainRect
 		uiLayout.editor = editorRect
 
 	case uiChat:
+		// Split nav sidebar conditionally.
+		chatArea := appRect
+		if !m.navSidebarHidden {
+			navRect, rest := layout.SplitHorizontal(appRect, layout.Fixed(navSidebarWidth+1))
+			navRect.Max.X -= 1
+			uiLayout.navSidebar = navRect
+			chatArea = rest
+		}
+
 		if m.isCompact {
-			// Layout
-			//
-			// compact-header
-			// ------
-			// main
-			// ------
-			// editor
-			// ------
-			// help
 			const compactHeaderHeight = 1
-			headerRect, mainRect := layout.SplitVertical(appRect, layout.Fixed(compactHeaderHeight))
-			detailsHeight := min(sessionDetailsMaxHeight, area.Dy()-1) // One row for the header
-			sessionDetailsArea, _ := layout.SplitVertical(appRect, layout.Fixed(detailsHeight))
+			headerRect, mainRect := layout.SplitVertical(chatArea, layout.Fixed(compactHeaderHeight))
+			detailsHeight := min(sessionDetailsMaxHeight, area.Dy()-1)
+			sessionDetailsArea, _ := layout.SplitVertical(chatArea, layout.Fixed(detailsHeight))
 			uiLayout.sessionDetails = sessionDetailsArea
-			uiLayout.sessionDetails.Min.Y += compactHeaderHeight // adjust for header
-			// Add one line gap between header and main content
+			uiLayout.sessionDetails.Min.Y += compactHeaderHeight
 			mainRect.Min.Y += 1
 			mainRect, editorRect := layout.SplitVertical(mainRect, layout.Fixed(mainRect.Dy()-editorHeight))
-			mainRect.Max.X -= 1 // Add padding right
+			mainRect.Max.X -= 1
 			uiLayout.header = headerRect
 			pillsHeight := m.pillsAreaHeight()
 			if pillsHeight > 0 {
@@ -3232,24 +3331,13 @@ func (m *UI) generateLayout(w, h int) uiLayout {
 			} else {
 				uiLayout.main = mainRect
 			}
-			// Add bottom margin to main
 			uiLayout.main.Max.Y -= 1
 			uiLayout.editor = editorRect
 		} else {
-			// Layout
-			//
-			// ------|---
-			// main  |
-			// ------| side
-			// editor|
-			// ----------
-			// help
-
-			mainRect, sideRect := layout.SplitHorizontal(appRect, layout.Fixed(appRect.Dx()-sidebarWidth))
-			// Add padding left
+			mainRect, sideRect := layout.SplitHorizontal(chatArea, layout.Fixed(chatArea.Dx()-sidebarWidth))
 			sideRect.Min.X += 1
 			mainRect, editorRect := layout.SplitVertical(mainRect, layout.Fixed(mainRect.Dy()-editorHeight))
-			mainRect.Max.X -= 1 // Add padding right
+			mainRect.Max.X -= 1
 			uiLayout.sidebar = sideRect
 			pillsHeight := m.pillsAreaHeight()
 			if pillsHeight > 0 {
@@ -3260,24 +3348,24 @@ func (m *UI) generateLayout(w, h int) uiLayout {
 			} else {
 				uiLayout.main = mainRect
 			}
-			// Add bottom margin to main
 			uiLayout.main.Max.Y -= 1
 			uiLayout.editor = editorRect
 		}
 
-	case uiSmithersView:
-		// Layout:
-		//   header (1 row)
-		//   ─────────────
-		//   main (remaining)
+	case uiSmithersView, uiSmithersDashboard:
+		// Full-width header, then nav sidebar + content below.
 		const smithersHeaderHeight = 1
-		headerRect, mainRect := layout.SplitVertical(appRect, layout.Fixed(smithersHeaderHeight))
+		headerRect, belowHeader := layout.SplitVertical(appRect, layout.Fixed(smithersHeaderHeight))
 		uiLayout.header = headerRect
-		uiLayout.main = mainRect
 
-	case uiSmithersDashboard:
-		// Dashboard takes the full screen — it renders its own header/tabs/footer.
-		uiLayout.main = appRect
+		contentArea := belowHeader
+		if !m.navSidebarHidden {
+			navRect, rest := layout.SplitHorizontal(belowHeader, layout.Fixed(navSidebarWidth+1))
+			navRect.Max.X -= 1
+			uiLayout.navSidebar = navRect
+			contentArea = rest
+		}
+		uiLayout.main = contentArea
 	}
 
 	return uiLayout
@@ -3311,6 +3399,9 @@ type uiLayout struct {
 
 	// session details is the area for the session details overlay in compact mode.
 	sessionDetails uv.Rectangle
+
+	// navSidebar is the area for the persistent vertical navigation sidebar.
+	navSidebar uv.Rectangle
 }
 
 func (m *UI) openEditor(value string) tea.Cmd {

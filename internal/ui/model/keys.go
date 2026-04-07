@@ -71,6 +71,10 @@ type KeyMap struct {
 	// ViewApprovalsShort is a bare 'a' shortcut that navigates to the approvals
 	// view when the editor is not focused. Mirrors the [a] hint shown in approval toasts.
 	ViewApprovalsShort key.Binding
+	// NavSidebar toggles the workspace tab sidebar visibility.
+	NavSidebar key.Binding
+	// CloseTab closes the active workspace tab.
+	CloseTab key.Binding
 }
 
 func DefaultKeyMap() KeyMap {
@@ -110,6 +114,14 @@ func DefaultKeyMap() KeyMap {
 		Tab: key.NewBinding(
 			key.WithKeys("tab"),
 			key.WithHelp("tab", "change focus"),
+		),
+		NavSidebar: key.NewBinding(
+			key.WithKeys("ctrl+b"),
+			key.WithHelp("ctrl+b", "sidebar"),
+		),
+		CloseTab: key.NewBinding(
+			key.WithKeys("ctrl+w"),
+			key.WithHelp("ctrl+w", "close tab"),
 		),
 	}
 

@@ -29,7 +29,7 @@ func (m *UI) landingView() string {
 	logoView := logo.LargeRender(t, width)
 	var systemStatus string
 	if m.com.Workspace.AgentIsReady() {
-		systemStatus = styles.ApplyBoldForegroundGrad(t, "SMITHERS", t.Primary, t.Secondary)
+		systemStatus = styles.ApplyBoldForegroundGrad(t, "CODEPLANE", t.Primary, t.Secondary)
 	} else {
 		systemStatus = m.systemAnim.Render()
 	}

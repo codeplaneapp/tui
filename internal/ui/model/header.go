@@ -50,7 +50,7 @@ func newHeader(com *common.Common) *header {
 		com: com,
 	}
 	t := com.Styles
-	h.compactLogo = styles.ApplyBoldForegroundGrad(t, "SMITHERS", t.Secondary, t.Primary) + " "
+	h.compactLogo = styles.ApplyBoldForegroundGrad(t, "CODEPLANE", t.Secondary, t.Primary) + " "
 	return h
 }
 
