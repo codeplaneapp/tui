@@ -2,7 +2,9 @@
 package jjhub
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -165,8 +167,14 @@ type Client struct {
 	repo string
 }
 
+var errEmptyCLIResponse = errors.New("jjhub: empty response from CLI")
+
 func NewClient(repo string) *Client {
 	return &Client{repo: repo}
+}
+
+func isEmptyCLIOutput(data []byte) bool {
+	return len(bytes.TrimSpace(data)) == 0
 }
 
 func parseCLIError(out []byte, err error) error {
@@ -190,6 +198,9 @@ func (c *Client) run(args ...string) ([]byte, error) {
 	if err := parseCLIError(out, err); err != nil {
 		return nil, err
 	}
+	if isEmptyCLIOutput(out) {
+		return nil, errEmptyCLIResponse
+	}
 	return out, nil
 }
 
@@ -204,8 +215,8 @@ func (c *Client) runRaw(args ...string) (string, error) {
 }
 
 func decodeJSON[T any](data []byte, label string) (*T, error) {
-	if strings.TrimSpace(string(data)) == "" {
-		return nil, nil
+	if isEmptyCLIOutput(data) {
+		return nil, errEmptyCLIResponse
 	}
 	var result T
 	if err := json.Unmarshal(data, &result); err != nil {
@@ -487,9 +498,6 @@ func (c *Client) CloseIssue(number int, comment string) (*Issue, error) {
 	out, err := c.run(args...)
 	if err != nil {
 		return nil, err
-	}
-	if strings.TrimSpace(string(out)) == "" {
-		return c.ViewIssue(number)
 	}
 	var issue Issue
 	if err := json.Unmarshal(out, &issue); err != nil {

@@ -2,6 +2,7 @@
 package github
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os/exec"
@@ -79,10 +80,13 @@ func NewClient(repo string) *Client {
 	return &Client{repo: repo}
 }
 
-func (c *Client) run(args ...string) ([]byte, error) {
-	cmd := exec.Command("gh", args...)
+func (c *Client) run(ctx context.Context, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, "gh", args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		msg := strings.TrimSpace(string(out))
 		if msg == "" {
 			msg = err.Error()
@@ -99,12 +103,12 @@ func (c *Client) repoArgs() []string {
 	return []string{"--repo", c.repo}
 }
 
-func (c *Client) resolveRepo() (string, error) {
+func (c *Client) resolveRepo(ctx context.Context) (string, error) {
 	if c.repo != "" {
 		return c.repo, nil
 	}
 
-	repo, err := c.GetCurrentRepo()
+	repo, err := c.GetCurrentRepo(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -114,7 +118,7 @@ func (c *Client) resolveRepo() (string, error) {
 	return repo.NameWithOwner, nil
 }
 
-func (c *Client) ListIssues(state string, limit int) ([]Issue, error) {
+func (c *Client) ListIssues(ctx context.Context, state string, limit int) ([]Issue, error) {
 	if state == "" {
 		state = "open"
 	}
@@ -130,7 +134,7 @@ func (c *Client) ListIssues(state string, limit int) ([]Issue, error) {
 	}
 	args = append(args, c.repoArgs()...)
 
-	out, err := c.run(args...)
+	out, err := c.run(ctx, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +146,7 @@ func (c *Client) ListIssues(state string, limit int) ([]Issue, error) {
 	return issues, nil
 }
 
-func (c *Client) ListPullRequests(state string, limit int) ([]PullRequest, error) {
+func (c *Client) ListPullRequests(ctx context.Context, state string, limit int) ([]PullRequest, error) {
 	if state == "" {
 		state = "open"
 	}
@@ -158,7 +162,7 @@ func (c *Client) ListPullRequests(state string, limit int) ([]PullRequest, error
 	}
 	args = append(args, c.repoArgs()...)
 
-	out, err := c.run(args...)
+	out, err := c.run(ctx, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -170,13 +174,13 @@ func (c *Client) ListPullRequests(state string, limit int) ([]PullRequest, error
 	return prs, nil
 }
 
-func (c *Client) CreateIssue(title, body string) (*Issue, error) {
+func (c *Client) CreateIssue(ctx context.Context, title, body string) (*Issue, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return nil, fmt.Errorf("title must not be empty")
 	}
 
-	repo, err := c.resolveRepo()
+	repo, err := c.resolveRepo(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +195,7 @@ func (c *Client) CreateIssue(title, body string) (*Issue, error) {
 		args = append(args, "-f", "body="+body)
 	}
 
-	out, err := c.run(args...)
+	out, err := c.run(ctx, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -213,14 +217,14 @@ func (c *Client) CreateIssue(title, body string) (*Issue, error) {
 	}, nil
 }
 
-func (c *Client) GetCurrentRepo() (*Repo, error) {
+func (c *Client) GetCurrentRepo(ctx context.Context) (*Repo, error) {
 	args := []string{"repo", "view"}
 	if c.repo != "" {
 		args = append(args, c.repo)
 	}
 	args = append(args, "--json", "nameWithOwner,description,url")
 
-	out, err := c.run(args...)
+	out, err := c.run(ctx, args...)
 	if err != nil {
 		return nil, err
 	}

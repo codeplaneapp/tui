@@ -3,6 +3,9 @@ package jjhub
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -182,14 +185,14 @@ func TestDecodeJSON_ValidData(t *testing.T) {
 
 func TestDecodeJSON_EmptyInput(t *testing.T) {
 	result, err := decodeJSON[User]([]byte(""), "user")
-	assert.NoError(t, err)
 	assert.Nil(t, result)
+	require.ErrorIs(t, err, errEmptyCLIResponse)
 }
 
 func TestDecodeJSON_WhitespaceInput(t *testing.T) {
 	result, err := decodeJSON[User]([]byte("   \n  "), "user")
-	assert.NoError(t, err)
 	assert.Nil(t, result)
+	require.ErrorIs(t, err, errEmptyCLIResponse)
 }
 
 func TestDecodeJSON_InvalidJSON(t *testing.T) {
@@ -226,6 +229,24 @@ func TestDecodeJSON_NestedStruct(t *testing.T) {
 	assert.False(t, result.Conflicts.HasConflicts)
 }
 
+func TestClient_Run_EmptyOutput(t *testing.T) {
+	writeFakeJJHub(t, "#!/bin/sh\nexit 0\n")
+
+	c := NewClient("owner/repo")
+	out, err := c.run("repo", "view")
+	assert.Nil(t, out)
+	require.ErrorIs(t, err, errEmptyCLIResponse)
+}
+
+func TestClient_Run_WhitespaceOnlyOutput(t *testing.T) {
+	writeFakeJJHub(t, "#!/bin/sh\nprintf '   \\n'\n")
+
+	c := NewClient("owner/repo")
+	out, err := c.run("repo", "view")
+	assert.Nil(t, out)
+	require.ErrorIs(t, err, errEmptyCLIResponse)
+}
+
 func TestStructTypes(t *testing.T) {
 	// Ensure public types are zero-constructable.
 	var landing Landing
@@ -258,4 +279,17 @@ func TestStructTypes(t *testing.T) {
 	assert.False(t, notif.Unread)
 
 	_ = fmt.Sprintf("suppress unused import: %v", errors.New("ok"))
+}
+
+func writeFakeJJHub(t *testing.T, script string) {
+	t.Helper()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("Fake jjhub helper uses a POSIX shell script.")
+	}
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "jjhub")
+	require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
