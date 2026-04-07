@@ -187,7 +187,6 @@ func TestSessionsPersistence_TUI(t *testing.T) {
 			seededSession{title: "Rename Session"},
 		)
 		tui := launchFixtureTUI(t, fixture)
-		defer tui.Terminate()
 
 		waitForDashboard(t, tui)
 		openSessionsDialog(t, tui)
@@ -197,8 +196,13 @@ func TestSessionsPersistence_TUI(t *testing.T) {
 		tui.SendText("Retitled Session")
 		tui.SendKeys("\r")
 		require.NoError(t, tui.WaitForNoText("Rename this session?", 5*time.Second))
-		tui.SendKeys("\x1b")
-		require.NoError(t, tui.WaitForText("Start Chat", 5*time.Second))
+		waitForSessionTitleState(t, fixture.workspaceDataDir(), "Retitled Session", true, 5*time.Second)
+		tui.Terminate()
+
+		tui = launchFixtureTUI(t, fixture)
+		defer tui.Terminate()
+
+		waitForDashboard(t, tui)
 		openSessionsDialog(t, tui)
 		require.NoError(t, tui.WaitForText("Retitled Session", 5*time.Second))
 	})
@@ -210,7 +214,6 @@ func TestSessionsPersistence_TUI(t *testing.T) {
 			seededSession{title: "Delete Session"},
 		)
 		tui := launchFixtureTUI(t, fixture)
-		defer tui.Terminate()
 
 		waitForDashboard(t, tui)
 		openSessionsDialog(t, tui)
@@ -219,7 +222,13 @@ func TestSessionsPersistence_TUI(t *testing.T) {
 		require.NoError(t, tui.WaitForText("Delete this session?", 5*time.Second))
 		tui.SendKeys("y")
 		require.NoError(t, tui.WaitForNoText("Delete this session?", 5*time.Second))
-		tui.SendKeys("\x1b")
+		waitForSessionTitleState(t, fixture.workspaceDataDir(), "Delete Session", false, 5*time.Second)
+		tui.Terminate()
+
+		tui = launchFixtureTUI(t, fixture)
+		defer tui.Terminate()
+
+		waitForDashboard(t, tui)
 		openSessionsDialog(t, tui)
 		require.NoError(t, tui.WaitForText("Survivor Session", 5*time.Second))
 		require.NoError(t, tui.WaitForNoText("Delete Session", 5*time.Second))
@@ -234,8 +243,7 @@ func TestSessionsPersistence_TUI(t *testing.T) {
 		tui := launchFixtureTUI(t, fixture, "--continue")
 		defer tui.Terminate()
 
-		waitForDashboard(t, tui)
-		openStartChatFromDashboard(t, tui)
+		waitForConfiguredLanding(t, tui)
 		require.NoError(t, tui.WaitForText("seeded continue message", 15*time.Second))
 	})
 }
