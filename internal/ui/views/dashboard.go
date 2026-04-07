@@ -200,6 +200,8 @@ func NewDashboardViewWithJJHub(client *smithers.Client, hasSmithers bool, jc *jj
 			menuItem{icon: "≋", label: "Status", desc: "Inspect working copy status and diff", action: func() tea.Msg { return DashboardNavigateMsg{View: "status"} }},
 			menuItem{icon: "⬆", label: "Landings", desc: "Browse landing requests", action: func() tea.Msg { return DashboardNavigateMsg{View: "landings"} }},
 			menuItem{icon: "◉", label: "Issues", desc: "Browse issues", action: func() tea.Msg { return DashboardNavigateMsg{View: "issues"} }},
+			menuItem{icon: "⎇", label: "JJHub Workflows", desc: "Trigger remote workflows with a ref override", action: func() tea.Msg { return DashboardNavigateMsg{View: "jjhub-workflows"} }},
+			menuItem{icon: "⌕", label: "JJHub Search", desc: "Search repos, issues, and code", action: func() tea.Msg { return DashboardNavigateMsg{View: "search"} }},
 			menuItem{icon: "▣", label: "Workspaces", desc: "Manage cloud workspaces", action: func() tea.Msg { return DashboardNavigateMsg{View: "workspaces"} }},
 		)
 	}
