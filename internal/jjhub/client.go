@@ -148,6 +148,29 @@ type Workflow struct {
 	UpdatedAt    string `json:"updated_at"`
 }
 
+type WorkflowRun struct {
+	ID                   int      `json:"id"`
+	WorkflowDefinitionID int      `json:"workflow_definition_id"`
+	Status               string   `json:"status"`
+	TriggerEvent         string   `json:"trigger_event"`
+	TriggerRef           string   `json:"trigger_ref"`
+	TriggerCommitSHA     string   `json:"trigger_commit_sha"`
+	StartedAt            string   `json:"started_at"`
+	CompletedAt          *string  `json:"completed_at"`
+	SessionID            *string  `json:"session_id"`
+	Steps                []string `json:"steps"`
+}
+
+type WorkflowRunRerunResponse struct {
+	WorkflowRunID int                `json:"workflow_run_id"`
+	Steps         []WorkflowStepTask `json:"steps"`
+}
+
+type WorkflowStepTask struct {
+	StepID string `json:"step_id"`
+	TaskID string `json:"task_id"`
+}
+
 type Change struct {
 	ChangeID      string   `json:"change_id"`
 	CommitID      string   `json:"commit_id"`
@@ -162,6 +185,64 @@ type Change struct {
 type Author struct {
 	Name  string `json:"name"`
 	Email string `json:"email"`
+}
+
+type Bookmark struct {
+	Name             string `json:"name"`
+	TargetChangeID   string `json:"target_change_id"`
+	TargetCommitID   string `json:"target_commit_id"`
+	IsTrackingRemote bool   `json:"is_tracking_remote"`
+}
+
+type RepositorySearchPage struct {
+	Items      []RepositorySearchItem `json:"items"`
+	Page       int                    `json:"page"`
+	PerPage    int                    `json:"per_page"`
+	TotalCount int                    `json:"total_count"`
+}
+
+type RepositorySearchItem struct {
+	ID          int      `json:"id"`
+	Name        string   `json:"name"`
+	FullName    string   `json:"full_name"`
+	Owner       string   `json:"owner"`
+	Description string   `json:"description"`
+	IsPublic    bool     `json:"is_public"`
+	Topics      []string `json:"topics"`
+}
+
+type IssueSearchPage struct {
+	Items      []IssueSearchItem `json:"items"`
+	Page       int               `json:"page"`
+	PerPage    int               `json:"per_page"`
+	TotalCount int               `json:"total_count"`
+}
+
+type IssueSearchItem struct {
+	ID             int    `json:"id"`
+	Number         int    `json:"number"`
+	Title          string `json:"title"`
+	State          string `json:"state"`
+	RepositoryID   int    `json:"repository_id"`
+	RepositoryName string `json:"repository_name"`
+}
+
+type CodeSearchPage struct {
+	Items      []CodeSearchItem `json:"items"`
+	Page       int              `json:"page"`
+	PerPage    int              `json:"per_page"`
+	TotalCount int              `json:"total_count"`
+}
+
+type CodeSearchItem struct {
+	Repository  string            `json:"repository"`
+	FilePath    string            `json:"file_path"`
+	TextMatches []CodeTextMatch   `json:"text_matches"`
+}
+
+type CodeTextMatch struct {
+	Content    string `json:"content"`
+	LineNumber int    `json:"line_number"`
 }
 
 type Client struct {
@@ -245,6 +326,14 @@ func (c *Client) repoArgs() []string {
 		return []string{"-R", c.repo}
 	}
 	return nil
+}
+
+func (c *Client) apiArgs(endpoint string) []string {
+	return []string{"api", endpoint}
+}
+
+func (c *Client) apiContext(ctx context.Context, endpoint string) ([]byte, error) {
+	return c.runContext(ctx, c.apiArgs(endpoint)...)
 }
 
 func (c *Client) ListLandings(ctx context.Context, state string, limit int) ([]Landing, error) {
@@ -505,6 +594,55 @@ func (c *Client) ViewIssue(ctx context.Context, number int) (*Issue, error) {
 	return &issue, nil
 }
 
+func (c *Client) CreateLanding(ctx context.Context, title, body, target string, stack bool) (*Landing, error) {
+	args := []string{"land", "create"}
+	if strings.TrimSpace(title) != "" {
+		args = append(args, "-t", title)
+	}
+	if strings.TrimSpace(body) != "" {
+		args = append(args, "-b", body)
+	}
+	if strings.TrimSpace(target) != "" {
+		args = append(args, "--target", target)
+	}
+	if stack {
+		args = append(args, "--stack")
+	}
+	args = append(args, c.repoArgs()...)
+	out, err := c.runContext(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+	return decodeJSON[Landing](out, "landing")
+}
+
+func (c *Client) ReviewLanding(ctx context.Context, number int, action, body string) error {
+	args := []string{"land", "review", fmt.Sprint(number)}
+	switch strings.ToLower(strings.TrimSpace(action)) {
+	case "approve":
+		args = append(args, "-a")
+	case "request_changes":
+		args = append(args, "-r")
+	case "comment":
+		args = append(args, "-c")
+	default:
+		return fmt.Errorf("invalid landing review action: %s", action)
+	}
+	if strings.TrimSpace(body) != "" {
+		args = append(args, "-b", body)
+	}
+	args = append(args, c.repoArgs()...)
+	_, err := c.runRawContext(ctx, args...)
+	return err
+}
+
+func (c *Client) LandLanding(ctx context.Context, number int) error {
+	args := []string{"land", "land", fmt.Sprint(number)}
+	args = append(args, c.repoArgs()...)
+	_, err := c.runRawContext(ctx, args...)
+	return err
+}
+
 func (c *Client) CloseIssue(ctx context.Context, number int, comment string) (*Issue, error) {
 	args := []string{"issue", "close", fmt.Sprint(number)}
 	if strings.TrimSpace(comment) != "" {
@@ -554,6 +692,12 @@ func (c *Client) LandingDiff(ctx context.Context, number int) (string, error) {
 	return c.runRawContext(ctx, args...)
 }
 
+func (c *Client) LandingChecks(ctx context.Context, number int) (string, error) {
+	args := []string{"land", "checks", fmt.Sprint(number)}
+	args = append(args, c.repoArgs()...)
+	return c.runRawContext(ctx, args...)
+}
+
 func (c *Client) ChangeDiff(ctx context.Context, changeID string) (string, error) {
 	args := []string{"change", "diff"}
 	if strings.TrimSpace(changeID) != "" {
@@ -579,4 +723,97 @@ func (c *Client) Status(ctx context.Context) (string, error) {
 	args := []string{"status"}
 	args = append(args, c.repoArgs()...)
 	return c.runRawContext(ctx, args...)
+}
+
+func (c *Client) ListBookmarks(ctx context.Context) ([]Bookmark, error) {
+	args := []string{"bookmark", "list"}
+	args = append(args, c.repoArgs()...)
+	out, err := c.runContext(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+	var bookmarks []Bookmark
+	if err := json.Unmarshal(out, &bookmarks); err != nil {
+		return nil, fmt.Errorf("parse bookmarks: %w", err)
+	}
+	return bookmarks, nil
+}
+
+func (c *Client) CreateBookmark(ctx context.Context, name, changeID string, remote bool) (*Bookmark, error) {
+	args := []string{"bookmark", "create", name}
+	if strings.TrimSpace(changeID) != "" {
+		args = append(args, "--change-id", changeID)
+	}
+	if remote {
+		args = append(args, "-r")
+	}
+	args = append(args, c.repoArgs()...)
+	out, err := c.runContext(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+	return decodeJSON[Bookmark](out, "bookmark")
+}
+
+func (c *Client) DeleteBookmark(ctx context.Context, name string, remote bool) error {
+	args := []string{"bookmark", "delete", name}
+	if remote {
+		args = append(args, "-r")
+	}
+	args = append(args, c.repoArgs()...)
+	_, err := c.runRawContext(ctx, args...)
+	return err
+}
+
+func (c *Client) TriggerWorkflow(ctx context.Context, workflowID int, ref string) (*WorkflowRun, error) {
+	args := []string{"workflow", "run", fmt.Sprint(workflowID)}
+	if strings.TrimSpace(ref) != "" {
+		args = append(args, "--ref", ref)
+	}
+	args = append(args, c.repoArgs()...)
+	out, err := c.runContext(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+	return decodeJSON[WorkflowRun](out, "workflow run")
+}
+
+func (c *Client) RerunWorkflowRun(ctx context.Context, runID int) (*WorkflowRunRerunResponse, error) {
+	args := []string{"run", "rerun", fmt.Sprint(runID)}
+	args = append(args, c.repoArgs()...)
+	out, err := c.runContext(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+	return decodeJSON[WorkflowRunRerunResponse](out, "workflow rerun")
+}
+
+func (c *Client) SearchRepositories(ctx context.Context, query string, limit int) (*RepositorySearchPage, error) {
+	endpoint := fmt.Sprintf("/search/repositories?q=%s&limit=%d", query, limit)
+	out, err := c.apiContext(ctx, endpoint)
+	if err != nil {
+		return nil, err
+	}
+	return decodeJSON[RepositorySearchPage](out, "repository search results")
+}
+
+func (c *Client) SearchIssues(ctx context.Context, query, state string, limit int) (*IssueSearchPage, error) {
+	endpoint := fmt.Sprintf("/search/issues?q=%s&limit=%d", query, limit)
+	if strings.TrimSpace(state) != "" && !strings.EqualFold(state, "all") {
+		endpoint += "&state=" + state
+	}
+	out, err := c.apiContext(ctx, endpoint)
+	if err != nil {
+		return nil, err
+	}
+	return decodeJSON[IssueSearchPage](out, "issue search results")
+}
+
+func (c *Client) SearchCode(ctx context.Context, query string, limit int) (*CodeSearchPage, error) {
+	endpoint := fmt.Sprintf("/search/code?q=%s&limit=%d", query, limit)
+	out, err := c.apiContext(ctx, endpoint)
+	if err != nil {
+		return nil, err
+	}
+	return decodeJSON[CodeSearchPage](out, "code search results")
 }
