@@ -11,9 +11,7 @@ import (
 // TestChatDefaultConsole verifies that the Smithers dashboard is the default
 // startup view when Smithers config is present.
 func TestChatDefaultConsole(t *testing.T) {
-	if os.Getenv("CRUSH_TUI_E2E") != "1" {
-		t.Skip("set CRUSH_TUI_E2E=1 to run terminal E2E tests")
-	}
+	skipUnlessCrushTUIE2E(t)
 
 	configDir := t.TempDir()
 	dataDir := t.TempDir()
@@ -39,9 +37,7 @@ func TestChatDefaultConsole(t *testing.T) {
 // This test is minimal since it requires mock Smithers agents/data.
 // A full test would use VHS to record terminal interactions.
 func TestEscReturnsToChat(t *testing.T) {
-	if os.Getenv("CRUSH_TUI_E2E") != "1" {
-		t.Skip("set CRUSH_TUI_E2E=1 to run terminal E2E tests")
-	}
+	skipUnlessCrushTUIE2E(t)
 
 	// This test is a placeholder that would require:
 	// 1. Mocking Smithers client to return agents

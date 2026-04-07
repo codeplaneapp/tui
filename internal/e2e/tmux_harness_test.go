@@ -440,19 +440,8 @@ func normalizeForMatch(s string) string {
 	return strings.Join(strings.Fields(b.String()), " ")
 }
 
-// skipUnlessTmuxE2E skips the test unless SMITHERS_E2E=1 is set.
-func skipUnlessTmuxE2E(t *testing.T) {
-	t.Helper()
-	if os.Getenv("SMITHERS_E2E") != "1" {
-		t.Skip("set SMITHERS_E2E=1 to run tmux E2E tests")
-	}
-	// Verify tmux is available.
-	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("tmux not found in PATH")
-	}
-}
+// stripANSI removes ANSI escape sequences from text.
 
-type debugTraceSpan struct {
 	Name       string         `json:"name"`
 	Attributes map[string]any `json:"attributes"`
 }

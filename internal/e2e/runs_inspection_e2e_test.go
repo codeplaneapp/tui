@@ -9,7 +9,7 @@ import (
 // using the real compiled binary running inside a tmux session.
 // Enable with: SMITHERS_E2E=1 go test -v ./internal/e2e/ -run TestRunsAndInspection -timeout 300s
 func TestRunsAndInspection(t *testing.T) {
-	skipUnlessTmuxE2E(t)
+	skipUnlessCrushTUIE2E(t)
 	binary := buildBinary(t)
 
 	// ---------------------------------------------------------------

@@ -9,7 +9,7 @@ import (
 // for the Smithers TUI. Each subtest launches a fresh tmux session running the
 // real compiled binary -- no mocks, no API servers.
 func TestPlatformAndNavigation(t *testing.T) {
-	skipUnlessTmuxE2E(t)
+	skipUnlessCrushTUIE2E(t)
 	binary := buildBinary(t)
 
 	// PLATFORM_SMITHERS_REBRAND

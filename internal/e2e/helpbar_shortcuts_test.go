@@ -9,9 +9,7 @@ import (
 )
 
 func TestHelpbarShortcuts_TUI(t *testing.T) {
-	if os.Getenv("CRUSH_TUI_E2E") != "1" {
-		t.Skip("set CRUSH_TUI_E2E=1 to run terminal E2E tests")
-	}
+	skipUnlessCrushTUIE2E(t)
 
 	configDir := t.TempDir()
 	dataDir := t.TempDir()

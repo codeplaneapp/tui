@@ -297,7 +297,7 @@ raise SystemExit(1)
 }
 
 func TestWorkspacesLifecycleE2E(t *testing.T) {
-	skipUnlessTmuxE2E(t)
+	skipUnlessCrushTUIE2E(t)
 
 	fakeDir, env := writeFakeJJHub(t)
 	tui := launchTUIWithOptions(t, tuiLaunchOptions{

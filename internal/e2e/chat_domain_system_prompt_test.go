@@ -16,9 +16,7 @@ func writeGlobalConfig(t *testing.T, dir, body string) {
 }
 
 func TestSmithersDomainSystemPrompt_TUI(t *testing.T) {
-	if os.Getenv("SMITHERS_TUI_E2E") != "1" {
-		t.Skip("set SMITHERS_TUI_E2E=1 to run terminal E2E tests")
-	}
+	skipUnlessCrushTUIE2E(t)
 
 	configDir := t.TempDir()
 	dataDir := t.TempDir()
@@ -43,9 +41,7 @@ func TestSmithersDomainSystemPrompt_TUI(t *testing.T) {
 }
 
 func TestSmithersDomainSystemPrompt_CoderFallback_TUI(t *testing.T) {
-	if os.Getenv("SMITHERS_TUI_E2E") != "1" {
-		t.Skip("set SMITHERS_TUI_E2E=1 to run terminal E2E tests")
-	}
+	skipUnlessCrushTUIE2E(t)
 
 	configDir := t.TempDir()
 	dataDir := t.TempDir()

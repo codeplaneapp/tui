@@ -179,7 +179,7 @@ func NewDashboardViewWithJJHub(client *smithers.Client, hasSmithers bool, jc *jj
 
 	if hasSmithers {
 		d.menuItems = []menuItem{
-			{icon: "💬", label: "Start Chat", desc: "Open a new AI chat session", action: func() tea.Msg { return OpenChatMsg{} }},
+			{icon: "💬", label: "Start Chat", desc: "Choose how you want to chat", action: func() tea.Msg { return DashboardNavigateMsg{View: "chat"} }},
 			{icon: "📊", label: "Run Dashboard", desc: "View all workflow runs", action: func() tea.Msg { return DashboardNavigateMsg{View: "runs"} }},
 			{icon: "⚡", label: "Workflows", desc: "Browse and run workflows", action: func() tea.Msg { return DashboardNavigateMsg{View: "workflows"} }},
 			{icon: "✅", label: "Approvals", desc: "Manage pending approval gates", action: func() tea.Msg { return DashboardNavigateMsg{View: "approvals"} }},
@@ -189,7 +189,7 @@ func NewDashboardViewWithJJHub(client *smithers.Client, hasSmithers bool, jc *jj
 		}
 	} else {
 		d.menuItems = []menuItem{
-			{icon: "💬", label: "Start Chat", desc: "Open a new AI chat session", action: func() tea.Msg { return OpenChatMsg{} }},
+			{icon: "💬", label: "Start Chat", desc: "Choose how you want to chat", action: func() tea.Msg { return DashboardNavigateMsg{View: "chat"} }},
 			{icon: "🚀", label: "Init Smithers", desc: "Set up .smithers/ workflows in this project", action: func() tea.Msg { return InitSmithersMsg{} }},
 		}
 	}
@@ -353,7 +353,7 @@ func (d *DashboardView) Update(msg tea.Msg) (View, tea.Cmd) {
 
 		// c for quick chat
 		case key.Matches(msg, key.NewBinding(key.WithKeys("c"))):
-			return d, func() tea.Msg { return OpenChatMsg{} }
+			return d, func() tea.Msg { return DashboardNavigateMsg{View: "chat"} }
 
 		// r to refresh
 		case key.Matches(msg, key.NewBinding(key.WithKeys("r"))):
