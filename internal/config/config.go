@@ -272,7 +272,7 @@ func (Attribution) JSONSchemaExtend(schema *jsonschema.Schema) {
 }
 
 type Options struct {
-	ContextPaths              []string              `json:"context_paths,omitempty" jsonschema:"description=Paths to files containing context information for the AI,example=.cursorrules,example=SMITHERS-TUI.md"`
+	ContextPaths              []string              `json:"context_paths,omitempty" jsonschema:"description=Paths to files containing context information for the AI,example=.cursorrules,example=CODEPLANE.md"`
 	SkillsPaths               []string              `json:"skills_paths,omitempty" jsonschema:"description=Paths to directories containing Agent Skills (folders with SKILL.md files),example=~/.config/codeplane/skills,example=./skills"`
 	TUI                       *TUIOptions           `json:"tui,omitempty" jsonschema:"description=Terminal user interface options"`
 	Debug                     bool                  `json:"debug,omitempty" jsonschema:"description=Enable debug logging,default=false"`
@@ -284,7 +284,7 @@ type Options struct {
 	DisableDefaultProviders   bool                  `json:"disable_default_providers,omitempty" jsonschema:"description=Ignore all default/embedded providers. When enabled, providers must be fully specified in the config file with base_url, models, and api_key - no merging with defaults occurs,default=false"`
 	Attribution               *Attribution          `json:"attribution,omitempty" jsonschema:"description=Attribution settings for generated content"`
 	DisableMetrics            bool                  `json:"disable_metrics,omitempty" jsonschema:"description=Disable sending metrics,default=false"`
-	InitializeAs              string                `json:"initialize_as,omitempty" jsonschema:"description=Name of the context file to create/update during project initialization,default=AGENTS.md,example=AGENTS.md,example=SMITHERS-TUI.md,example=CLAUDE.md,example=docs/LLMs.md"`
+	InitializeAs              string                `json:"initialize_as,omitempty" jsonschema:"description=Name of the context file to create/update during project initialization,default=AGENTS.md,example=AGENTS.md,example=CODEPLANE.md,example=CLAUDE.md,example=docs/LLMs.md"`
 	AutoLSP                   *bool                 `json:"auto_lsp,omitempty" jsonschema:"description=Automatically setup LSPs based on root markers,default=true"`
 	Progress                  *bool                 `json:"progress,omitempty" jsonschema:"description=Show indeterminate progress updates during long operations,default=true"`
 	DisableNotifications      bool                  `json:"disable_notifications,omitempty" jsonschema:"description=Disable desktop notifications,default=false"`
