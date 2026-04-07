@@ -1,7 +1,10 @@
 package e2e_test
 
 import (
+	"encoding/json"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,6 +12,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/common/expfmt"
 )
 
 const (
@@ -56,6 +62,13 @@ func WithSmithersConfig(apiURL string) TmuxOpt {
 func WithSmithersDBPath(dbPath string) TmuxOpt {
 	return func(s *TmuxSession) {
 		writeSmithersConfig(s.t, s.configDir, "", dbPath)
+	}
+}
+
+// WithObservability enables the local observability debug server for the test.
+func WithObservability(addr string) TmuxOpt {
+	return func(s *TmuxSession) {
+		writeObservabilityConfig(s.t, s.configDir, addr)
 	}
 }
 
@@ -140,17 +153,106 @@ func NewTmuxSession(t *testing.T, binary string, opts ...TmuxOpt) *TmuxSession {
 func writeSmithersConfig(t *testing.T, configDir, apiURL, dbPath string) {
 	t.Helper()
 
-	cfg := `{
-  "smithers": {
-    "dbPath": ` + fmt.Sprintf("%q", dbPath) + `,
-    "workflowDir": ".smithers/workflows"`
-	if apiURL != "" {
-		cfg += fmt.Sprintf(",\n    \"apiUrl\": %q", apiURL)
+	cfg := loadSmithersConfig(t, configDir)
+	cfg.Smithers.DBPath = dbPath
+	cfg.Smithers.WorkflowDir = ".smithers/workflows"
+	cfg.Smithers.APIURL = apiURL
+	saveSmithersConfig(t, configDir, cfg)
+}
+
+func writeObservabilityConfig(t *testing.T, configDir, addr string) {
+	t.Helper()
+
+	cfg := loadSmithersConfig(t, configDir)
+	if strings.TrimSpace(addr) == "" {
+		if cfg.Options != nil {
+			cfg.Options.Observability = nil
+			if cfg.Options.isEmpty() {
+				cfg.Options = nil
+			}
+		}
+		saveSmithersConfig(t, configDir, cfg)
+		return
 	}
-	cfg += "\n  }\n}"
+
+	if cfg.Options == nil {
+		cfg.Options = &tmuxOptionsConfig{}
+	}
+	sampleRatio := 1.0
+	cfg.Options.Observability = &tmuxObservabilityConfig{
+		Address:          addr,
+		TraceBufferSize:  128,
+		TraceSampleRatio: &sampleRatio,
+	}
+	saveSmithersConfig(t, configDir, cfg)
+}
+
+type tmuxConfigFile struct {
+	Smithers tmuxSmithersConfig `json:"smithers"`
+	Options  *tmuxOptionsConfig `json:"options,omitempty"`
+}
+
+type tmuxSmithersConfig struct {
+	DBPath      string `json:"dbPath"`
+	WorkflowDir string `json:"workflowDir"`
+	APIURL      string `json:"apiUrl,omitempty"`
+}
+
+type tmuxOptionsConfig struct {
+	Observability *tmuxObservabilityConfig `json:"observability,omitempty"`
+}
+
+func (o *tmuxOptionsConfig) isEmpty() bool {
+	return o == nil || o.Observability == nil
+}
+
+type tmuxObservabilityConfig struct {
+	Address          string   `json:"address,omitempty"`
+	TraceBufferSize  int      `json:"trace_buffer_size,omitempty"`
+	TraceSampleRatio *float64 `json:"trace_sample_ratio,omitempty"`
+}
+
+func loadSmithersConfig(t *testing.T, configDir string) tmuxConfigFile {
+	t.Helper()
+
+	cfg := tmuxConfigFile{
+		Smithers: tmuxSmithersConfig{
+			DBPath:      ".smithers/smithers.db",
+			WorkflowDir: ".smithers/workflows",
+		},
+	}
 
 	path := filepath.Join(configDir, "smithers-tui.json")
-	if err := os.WriteFile(path, []byte(cfg), 0o644); err != nil {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return cfg
+		}
+		t.Fatalf("read smithers config: %v", err)
+	}
+
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("decode smithers config: %v", err)
+	}
+
+	if cfg.Smithers.DBPath == "" {
+		cfg.Smithers.DBPath = ".smithers/smithers.db"
+	}
+	if cfg.Smithers.WorkflowDir == "" {
+		cfg.Smithers.WorkflowDir = ".smithers/workflows"
+	}
+	return cfg
+}
+
+func saveSmithersConfig(t *testing.T, configDir string, cfg tmuxConfigFile) {
+	t.Helper()
+
+	path := filepath.Join(configDir, "smithers-tui.json")
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal smithers config: %v", err)
+	}
+	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
 		t.Fatalf("write smithers config: %v", err)
 	}
 }
@@ -268,7 +370,7 @@ func (s *TmuxSession) AssertVisible(text string) {
 	s.t.Helper()
 	capture := s.CapturePane()
 	if !containsNormalized(capture, text) {
-		s.t.Errorf("AssertVisible: %q not found\nPane content:\n%s", text, capture)
+		s.t.Fatalf("AssertVisible: %q not found\nPane content:\n%s", text, capture)
 	}
 }
 
@@ -277,7 +379,7 @@ func (s *TmuxSession) AssertNotVisible(text string) {
 	s.t.Helper()
 	capture := s.CapturePane()
 	if containsNormalized(capture, text) {
-		s.t.Errorf("AssertNotVisible: %q was found\nPane content:\n%s", text, capture)
+		s.t.Fatalf("AssertNotVisible: %q was found\nPane content:\n%s", text, capture)
 	}
 }
 
@@ -348,4 +450,156 @@ func skipUnlessTmuxE2E(t *testing.T) {
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux not found in PATH")
 	}
+}
+
+type debugTraceSpan struct {
+	Name       string         `json:"name"`
+	Attributes map[string]any `json:"attributes"`
+}
+
+func reserveObservabilityAddr(t *testing.T) string {
+	t.Helper()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve observability addr: %v", err)
+	}
+	addr := ln.Addr().String()
+	if err := ln.Close(); err != nil {
+		t.Fatalf("close reserved observability listener: %v", err)
+	}
+	return addr
+}
+
+func waitForObservabilityReady(t *testing.T, addr string, timeout time.Duration) {
+	t.Helper()
+
+	waitForHTTP(t, "http://"+addr+"/debug/observability", timeout, func(resp *http.Response) error {
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("status %d", resp.StatusCode)
+		}
+		return nil
+	})
+}
+
+func waitForTraceSpan(t *testing.T, addr string, timeout time.Duration, predicate func(debugTraceSpan) bool) debugTraceSpan {
+	t.Helper()
+
+	var matched debugTraceSpan
+	waitForHTTP(t, "http://"+addr+"/debug/traces?limit=200", timeout, func(resp *http.Response) error {
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("status %d", resp.StatusCode)
+		}
+
+		var spans []debugTraceSpan
+		if err := json.NewDecoder(resp.Body).Decode(&spans); err != nil {
+			return err
+		}
+
+		for _, span := range spans {
+			if predicate(span) {
+				matched = span
+				return nil
+			}
+		}
+		return fmt.Errorf("matching span not found yet")
+	})
+	return matched
+}
+
+func waitForMetricAtLeast(t *testing.T, addr, metricName string, labels map[string]string, minValue float64, timeout time.Duration) {
+	t.Helper()
+
+	waitForHTTP(t, "http://"+addr+"/metrics", timeout, func(resp *http.Response) error {
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("status %d", resp.StatusCode)
+		}
+
+		parser := expfmt.TextParser{}
+		families, err := parser.TextToMetricFamilies(resp.Body)
+		if err != nil {
+			return err
+		}
+
+		family := families[metricName]
+		if family == nil {
+			return fmt.Errorf("metric %s not found", metricName)
+		}
+
+		for _, metric := range family.GetMetric() {
+			if metricLabelsMatch(metric, labels) && metricNumericValue(metric) >= minValue {
+				return nil
+			}
+		}
+
+		return fmt.Errorf("metric %s with labels %v below %.2f", metricName, labels, minValue)
+	})
+}
+
+func waitForHTTP(t *testing.T, url string, timeout time.Duration, predicate func(*http.Response) error) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	client := &http.Client{Timeout: 2 * time.Second}
+	var lastErr error
+	for time.Now().Before(deadline) {
+		resp, err := client.Get(url)
+		if err != nil {
+			lastErr = err
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+
+		err = predicate(resp)
+		_ = resp.Body.Close()
+		if err == nil {
+			return
+		}
+		lastErr = err
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	t.Fatalf("wait for %s: %v", url, lastErr)
+}
+
+func metricLabelsMatch(metric *dto.Metric, labels map[string]string) bool {
+	for key, want := range labels {
+		found := false
+		for _, label := range metric.GetLabel() {
+			if label.GetName() == key && label.GetValue() == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
+func metricNumericValue(metric *dto.Metric) float64 {
+	switch {
+	case metric.Counter != nil:
+		return metric.GetCounter().GetValue()
+	case metric.Gauge != nil:
+		return metric.GetGauge().GetValue()
+	case metric.Histogram != nil:
+		return float64(metric.GetHistogram().GetSampleCount())
+	default:
+		return 0
+	}
+}
+
+func spanHasAttrs(span debugTraceSpan, attrs map[string]string) bool {
+	if span.Attributes == nil {
+		return false
+	}
+	for key, want := range attrs {
+		got, ok := span.Attributes[key]
+		if !ok || strings.TrimSpace(fmt.Sprint(got)) != want {
+			return false
+		}
+	}
+	return true
 }

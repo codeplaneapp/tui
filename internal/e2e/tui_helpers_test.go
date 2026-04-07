@@ -528,6 +528,7 @@ func newOnboardingFixture(t *testing.T) tuiFixture {
 		envVars:    offlineProviderEnv(),
 	}
 	writeGlobalConfig(t, fixture.configDir, onboardingFixtureConfig)
+	require.NoError(t, os.WriteFile(filepath.Join(fixture.workingDir, "AGENTS.md"), []byte("fixture context\n"), 0o644))
 	return fixture
 }
 

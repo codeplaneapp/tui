@@ -309,11 +309,7 @@ func TestWorkspacesLifecycleE2E(t *testing.T) {
 	require.NoError(t, tui.WaitForAnyText([]string{"Overview", "Start Chat"}, 20*time.Second),
 		"dashboard must render; buffer:\n%s", tui.Snapshot())
 
-	openCommandsPalette(t, tui)
-	time.Sleep(300 * time.Millisecond)
-	tui.SendText("workspaces")
-	time.Sleep(300 * time.Millisecond)
-	tui.SendKeys("\n")
+	tui.SendKeys("jjjjjjjjj\n")
 	require.NoError(t, tui.WaitForText("JJHUB › Workspaces", 10*time.Second),
 		"workspaces view must open; buffer:\n%s", tui.Snapshot())
 	require.NoError(t, tui.WaitForText("alpha", 10*time.Second),
