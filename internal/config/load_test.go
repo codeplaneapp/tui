@@ -104,15 +104,16 @@ func TestConfig_setDefaultsWithLegacyDataDirectory(t *testing.T) {
 }
 
 func TestConfig_setDefaultsWithSmithers(t *testing.T) {
+	workingDir := t.TempDir()
 	cfg := &Config{
 		Smithers: &SmithersConfig{},
 	}
 
-	cfg.setDefaults("/tmp", "")
+	cfg.setDefaults(workingDir, "")
 
 	require.NotNil(t, cfg.Smithers)
-	require.Equal(t, filepath.Join(".codeplane", "codeplane.db"), cfg.Smithers.DBPath)
-	require.Equal(t, filepath.Join(".codeplane", "workflows"), cfg.Smithers.WorkflowDir)
+	require.Equal(t, filepath.Join(workingDir, ".codeplane", "codeplane.db"), cfg.Smithers.DBPath)
+	require.Equal(t, filepath.Join(workingDir, ".codeplane", "workflows"), cfg.Smithers.WorkflowDir)
 }
 
 func TestConfig_configureProviders(t *testing.T) {
