@@ -153,3 +153,37 @@ func TestRenderDAGTasks_OutputContainsBoxDrawing(t *testing.T) {
 	assert.True(t, strings.Contains(out, "┌") || strings.Contains(out, "│"),
 		"expected box-drawing characters in output: %q", out)
 }
+
+func TestRenderDAGTasks_AllStateColors_NoPanic(t *testing.T) {
+	// Each TaskState produces a different lipgloss style color.
+	// This test ensures all states render without panicking and include the node label.
+	states := []smithers.TaskState{
+		smithers.TaskStatePending,
+		smithers.TaskStateRunning,
+		smithers.TaskStateFinished,
+		smithers.TaskStateFailed,
+		smithers.TaskStateCancelled,
+		smithers.TaskStateSkipped,
+		smithers.TaskStateBlocked,
+	}
+	for _, state := range states {
+		tasks := []smithers.RunTask{
+			{NodeID: "node-" + string(state), State: state},
+		}
+		out := components.RenderDAGTasks(tasks, 120)
+		assert.Contains(t, out, "node-"+string(state),
+			"rendered DAG for state %q should contain the node label", state)
+	}
+}
+
+func TestRenderDAGFields_VerticalLayout_ShowsTypeAnnotation(t *testing.T) {
+	// When forced into vertical layout (narrow width), type annotations are
+	// rendered inside the box rather than on a separate line below.
+	fields := []smithers.WorkflowTask{
+		{Key: "a", Label: "Alpha", Type: "number"},
+		{Key: "b", Label: "Beta", Type: "boolean"},
+	}
+	out := components.RenderDAGFields(fields, 20)
+	assert.Contains(t, out, "(number)", "vertical layout should show type annotation")
+	assert.Contains(t, out, "(boolean)", "vertical layout should show type annotation")
+}

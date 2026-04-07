@@ -231,6 +231,34 @@ func TestRenderHeaderDetails_NoPendingApprovals_NoBadge(t *testing.T) {
 	require.Contains(t, plain, "2 active")
 }
 
+func TestRenderHeaderDetails_LSPErrorCount(t *testing.T) {
+	t.Parallel()
+
+	com := newHeaderTestCommon(t)
+	sess := &session.Session{}
+	details := renderHeaderDetails(com, sess, 7, false, 220, nil)
+	plain := ansi.Strip(details)
+	require.Contains(t, plain, "E7", "LSP error count should render as icon + count")
+}
+
+func TestRenderHeaderDetails_DetailsOpenCloseKeystroke(t *testing.T) {
+	t.Parallel()
+
+	com := newHeaderTestCommon(t)
+	sess := &session.Session{}
+
+	openDetails := renderHeaderDetails(com, sess, 0, true, 220, nil)
+	closedDetails := renderHeaderDetails(com, sess, 0, false, 220, nil)
+
+	openPlain := ansi.Strip(openDetails)
+	closedPlain := ansi.Strip(closedDetails)
+
+	require.Contains(t, openPlain, "ctrl+d")
+	require.Contains(t, openPlain, "close", "when details are open, hint should say 'close'")
+	require.Contains(t, closedPlain, "ctrl+d")
+	require.Contains(t, closedPlain, "open", "when details are closed, hint should say 'open'")
+}
+
 func newHeaderTestCommon(t *testing.T) *common.Common {
 	t.Helper()
 

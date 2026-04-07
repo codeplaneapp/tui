@@ -26,3 +26,42 @@ func colorHex(c color.Color) string {
 	r, g, b, _ := c.RGBA()
 	return fmt.Sprintf("#%02x%02x%02x", uint8(r>>8), uint8(g>>8), uint8(b>>8))
 }
+
+func TestForegroundGrad_EmptyString(t *testing.T) {
+	t.Parallel()
+	s := DefaultStyles()
+	result := ForegroundGrad(&s, "", false, s.Primary, s.Secondary)
+	require.Len(t, result, 1)
+	require.Equal(t, "", result[0])
+}
+
+func TestForegroundGrad_SingleChar(t *testing.T) {
+	t.Parallel()
+	s := DefaultStyles()
+	result := ForegroundGrad(&s, "X", false, s.Primary, s.Secondary)
+	require.Len(t, result, 1)
+	require.Contains(t, result[0], "X")
+}
+
+func TestForegroundGrad_MultiChar_ProducesClusterPerGrapheme(t *testing.T) {
+	t.Parallel()
+	s := DefaultStyles()
+	result := ForegroundGrad(&s, "ABC", true, s.Primary, s.Secondary)
+	require.Len(t, result, 3, "should produce one styled cluster per grapheme")
+}
+
+func TestApplyForegroundGrad_NonEmpty(t *testing.T) {
+	t.Parallel()
+	s := DefaultStyles()
+	out := ApplyForegroundGrad(&s, "HELLO", s.Primary, s.Secondary)
+	require.NotEmpty(t, out)
+	require.Contains(t, out, "H")
+	require.Contains(t, out, "O")
+}
+
+func TestApplyBoldForegroundGrad_EmptyReturnsEmpty(t *testing.T) {
+	t.Parallel()
+	s := DefaultStyles()
+	out := ApplyBoldForegroundGrad(&s, "", s.Primary, s.Secondary)
+	require.Equal(t, "", out)
+}

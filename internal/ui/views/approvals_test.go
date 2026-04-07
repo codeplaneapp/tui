@@ -189,8 +189,8 @@ func TestApprovalsView_View_MixedStatuses_ShowsBothSections(t *testing.T) {
 		testApproval("a2", "r2", "n2", "Approved G", "approved"),
 	})
 	out := v.View()
-	assert.Contains(t, out, "PENDING")
-	assert.Contains(t, out, "RECENT")
+	assert.Contains(t, out, "Pending")
+	assert.Contains(t, out, "Recent")
 	assert.Contains(t, out, "Pending G")
 	assert.Contains(t, out, "Approved G")
 }
@@ -208,7 +208,7 @@ func TestApprovalsView_RenderDetail_ShowsAllFields(t *testing.T) {
 	assert.Contains(t, detail, "Deploy to staging")
 	assert.Contains(t, detail, "run-abc")
 	assert.Contains(t, detail, "deploy-node")
-	assert.Contains(t, detail, "PENDING")
+	assert.Contains(t, detail, "pending")
 }
 
 func TestApprovalsView_RenderDetail_EmptyWhenNoCursor(t *testing.T) {

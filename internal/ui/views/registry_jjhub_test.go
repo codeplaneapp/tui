@@ -13,7 +13,7 @@ func TestDefaultRegistry_ContainsJJHubChangeRoutes(t *testing.T) {
 	r := views.DefaultRegistry()
 	client := smithers.NewClient()
 
-	for _, name := range []string{"changes", "status", "issues", "landings", "workspaces"} {
+	for _, name := range []string{"changes", "status", "issues", "landings"} {
 		v, ok := r.Open(name, client)
 		if !ok {
 			t.Fatalf("expected default registry to contain %q", name)

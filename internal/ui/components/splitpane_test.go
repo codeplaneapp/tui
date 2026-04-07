@@ -270,3 +270,26 @@ func TestSplitPane_Accessors(t *testing.T) {
 	assert.Equal(t, 30, sp.Height())
 	assert.False(t, sp.IsCompact())
 }
+
+func TestSplitPane_Compact_RightFocused_ShowsOnlyRight(t *testing.T) {
+	sp, _, _ := newTestSplitPane()
+	sp.SetFocus(FocusRight)
+	sp.SetSize(70, 10) // compact
+
+	assert.True(t, sp.IsCompact())
+	out := sp.View()
+	assert.Contains(t, out, "RIGHT", "compact mode with right focused should show RIGHT")
+	assert.NotContains(t, out, "LEFT", "compact mode with right focused should NOT show LEFT")
+}
+
+func TestSplitPane_ClampLeftWidth_ExceedsHalf(t *testing.T) {
+	// LeftWidth=60, total width=82 (above compact breakpoint).
+	// 60 > 82/2 = 41, so left should be clamped to 41.
+	leftP := &mockPane{viewContent: "L"}
+	rightP := &mockPane{viewContent: "R"}
+	sp := NewSplitPane(leftP, rightP, SplitPaneOpts{LeftWidth: 60, CompactBreakpoint: 80})
+	sp.SetSize(82, 20)
+
+	// clamped left = 82/2 = 41, left pane gets 41-2 = 39
+	assert.Equal(t, 39, leftP.sizeW, "left pane width should be clamped to half minus border")
+}

@@ -8,10 +8,7 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
-	ghrepo "github.com/charmbracelet/crush/internal/github"
-	"github.com/charmbracelet/crush/internal/jjhub"
 	"github.com/charmbracelet/crush/internal/smithers"
-	"github.com/charmbracelet/crush/internal/ui/components"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -30,37 +27,6 @@ func sampleTickets(n int) []smithers.Ticket {
 	return tickets
 }
 
-func sampleGitHubIssue(number int, title string) ghrepo.Issue {
-	return ghrepo.Issue{
-		Number:    number,
-		Title:     title,
-		Body:      "Body for " + title,
-		State:     "OPEN",
-		Author:    ghrepo.User{Login: "octocat"},
-		CreatedAt: "2025-04-06T20:52:39Z",
-		UpdatedAt: "2025-04-06T20:52:47Z",
-		URL:       fmt.Sprintf("https://github.com/charmbracelet/crush/issues/%d", number),
-	}
-}
-
-func sampleGitHubPR(number int, title string) ghrepo.PullRequest {
-	return ghrepo.PullRequest{
-		Number:           number,
-		Title:            title,
-		Body:             "Body for " + title,
-		State:            "OPEN",
-		Author:           ghrepo.User{Login: "octocat"},
-		CreatedAt:        "2025-04-06T20:52:39Z",
-		UpdatedAt:        "2025-04-06T20:52:47Z",
-		URL:              fmt.Sprintf("https://github.com/charmbracelet/crush/pull/%d", number),
-		HeadRefName:      "feature/test",
-		BaseRefName:      "main",
-		ReviewDecision:   "APPROVED",
-		MergeStateStatus: "BLOCKED",
-		ChangedFiles:     7,
-	}
-}
-
 func localOnlyTicketsView() *TicketsView {
 	return NewTicketsViewWithSources(nil, nil, nil)
 }
@@ -70,15 +36,6 @@ func loadedLocalView(tickets []smithers.Ticket, width, height int) *TicketsView 
 	v.SetSize(width, height)
 	updated, _ := v.Update(ticketsLoadedMsg{tickets: tickets})
 	return updated.(*TicketsView)
-}
-
-func typeIntoFilterPrompt(t *testing.T, v *TicketsView, text string) *TicketsView {
-	t.Helper()
-	for _, ch := range text {
-		updated, _ := v.Update(tea.KeyPressMsg{Code: ch, Text: string(ch)})
-		v = updated.(*TicketsView)
-	}
-	return v
 }
 
 func helpKeys(bindings []key.Binding) []string {
@@ -126,7 +83,7 @@ func TestTicketsView_EmptyList(t *testing.T) {
 	t.Parallel()
 
 	v := loadedLocalView([]smithers.Ticket{}, 80, 40)
-	assert.Contains(t, v.View(), "No local tickets found")
+	assert.Contains(t, v.View(), "No tickets found.")
 }
 
 func TestTicketsView_CursorNavigation(t *testing.T) {
@@ -256,7 +213,7 @@ func TestTicketsView_HeaderCount(t *testing.T) {
 	assert.NotContains(t, v.View(), "(7)")
 
 	v2 := loadedLocalView(sampleTickets(7), 80, 40)
-	assert.Contains(t, v2.View(), "WORK ITEMS › Local (7)")
+	assert.Contains(t, v2.View(), "Tickets (7)")
 }
 
 func TestTicketsView_ScrollOffset(t *testing.T) {
@@ -273,57 +230,6 @@ func TestTicketsView_ScrollOffset(t *testing.T) {
 	v.View()
 	assert.LessOrEqual(t, v.listPane.scrollOffset, v.listPane.cursor)
 	assert.Greater(t, v.listPane.scrollOffset+ps, v.listPane.cursor)
-}
-
-func TestTicketsView_SourceToggle(t *testing.T) {
-	t.Parallel()
-
-	v := NewTicketsViewWithSources(nil, jjhub.NewClient(""), ghrepo.NewClient(""))
-	v.SetSize(100, 30)
-
-	updated, _ := v.Update(ticketsLoadedMsg{tickets: sampleTickets(1)})
-	v = updated.(*TicketsView)
-	updated, _ = v.Update(workItemsLoadedMsg{
-		source: workItemSourceJJHubIssues,
-		items: []workItem{
-			newJJHubIssueWorkItem(jjhub.Issue{
-				Number: 42,
-				Title:  "JJHub issue",
-				Body:   "JJHub body",
-				State:  "open",
-				Author: jjhub.User{Login: "will"},
-			}),
-		},
-	})
-	v = updated.(*TicketsView)
-	updated, _ = v.Update(workItemsLoadedMsg{
-		source: workItemSourceGitHubIssues,
-		items:  []workItem{newGitHubIssueWorkItem(sampleGitHubIssue(7, "GitHub issue"))},
-	})
-	v = updated.(*TicketsView)
-	updated, _ = v.Update(workItemsLoadedMsg{
-		source: workItemSourceGitHubPRs,
-		items:  []workItem{newGitHubPRWorkItem(sampleGitHubPR(9, "GitHub pr"))},
-	})
-	v = updated.(*TicketsView)
-
-	assert.Equal(t, workItemSourceLocal, v.currentSource())
-	assert.Contains(t, v.View(), "ticket-001")
-
-	updated, _ = v.Update(tea.KeyPressMsg{Code: 's'})
-	v = updated.(*TicketsView)
-	assert.Equal(t, workItemSourceJJHubIssues, v.currentSource())
-	assert.Contains(t, v.View(), "JJHub issue")
-
-	updated, _ = v.Update(tea.KeyPressMsg{Code: 's'})
-	v = updated.(*TicketsView)
-	assert.Equal(t, workItemSourceGitHubIssues, v.currentSource())
-	assert.Contains(t, v.View(), "GitHub issue")
-
-	updated, _ = v.Update(tea.KeyPressMsg{Code: 's'})
-	v = updated.(*TicketsView)
-	assert.Equal(t, workItemSourceGitHubPRs, v.currentSource())
-	assert.Contains(t, v.View(), "GitHub pr")
 }
 
 func TestTicketsView_EnterEmitsOpenDetail(t *testing.T) {
@@ -511,318 +417,6 @@ func TestTicketsView_ShortHelpHasEditAndNew(t *testing.T) {
 	keys := helpKeys(v.ShortHelp())
 	assert.Contains(t, keys, "e")
 	assert.Contains(t, keys, "n")
-	assert.Contains(t, keys, "/")
-	assert.Contains(t, keys, "s")
-}
-
-func TestTicketsView_ShortHelpHasPromoteWhenRemoteAvailable(t *testing.T) {
-	t.Parallel()
-
-	v := NewTicketsViewWithSources(nil, jjhub.NewClient(""), ghrepo.NewClient(""))
-	v.SetSize(80, 40)
-	updated, _ := v.Update(ticketsLoadedMsg{tickets: sampleTickets(1)})
-	v = updated.(*TicketsView)
-
-	keys := helpKeys(v.ShortHelp())
-	assert.Contains(t, keys, "p")
-}
-
-func TestTicketsView_RemoteShortHelpOmitsLocalOnlyActions(t *testing.T) {
-	t.Parallel()
-
-	v := NewTicketsViewWithSources(nil, nil, ghrepo.NewClient(""))
-	v.SetSize(80, 40)
-	updated, _ := v.Update(workItemsLoadedMsg{
-		source: workItemSourceGitHubIssues,
-		items:  []workItem{newGitHubIssueWorkItem(sampleGitHubIssue(7, "GitHub issue"))},
-	})
-	v = updated.(*TicketsView)
-	v.sourceIndex = 1
-	v.applyActiveSource(true)
-
-	keys := helpKeys(v.ShortHelp())
-	assert.NotContains(t, keys, "e")
-	assert.NotContains(t, keys, "n")
-	assert.Contains(t, keys, "/")
-	assert.Contains(t, keys, "o")
-}
-
-func TestTicketsView_PKeyWithoutRemoteShowsToast(t *testing.T) {
-	t.Parallel()
-
-	v := loadedLocalView(sampleTickets(1), 80, 40)
-
-	updated, cmd := v.Update(tea.KeyPressMsg{Code: 'p'})
-	v = updated.(*TicketsView)
-	require.NotNil(t, cmd)
-	assert.False(t, v.promotePrompt.active)
-
-	msg := cmd()
-	toast, ok := msg.(components.ShowToastMsg)
-	require.True(t, ok)
-	assert.Equal(t, "Promotion unavailable", toast.Title)
-	assert.Contains(t, toast.Body, "No GitHub or JJHub issue provider is configured")
-}
-
-func TestTicketsView_PKeyOpensPromotePrompt(t *testing.T) {
-	t.Parallel()
-
-	tickets := sampleTickets(1)
-	v := NewTicketsViewWithSources(nil, jjhub.NewClient(""), ghrepo.NewClient(""))
-	v.SetSize(100, 30)
-	v.jjhubRepo = &jjhub.Repo{FullName: "acme/repo"}
-	updated, _ := v.Update(ticketsLoadedMsg{tickets: tickets})
-	v = updated.(*TicketsView)
-
-	updated, cmd := v.Update(tea.KeyPressMsg{Code: 'p'})
-	v = updated.(*TicketsView)
-	require.NotNil(t, cmd)
-	assert.True(t, v.promotePrompt.active)
-	assert.Equal(t, tickets[0].ID, v.promotePrompt.ticket.ID)
-	assert.Equal(t, []workItemSource{workItemSourceJJHubIssues, workItemSourceGitHubIssues}, v.promotePrompt.targets)
-	assert.Equal(t, workItemSourceJJHubIssues, v.currentPromotionTarget())
-	assert.Equal(t, "Ticket 1", v.promotePrompt.input.Value())
-
-	out := v.View()
-	assert.Contains(t, out, "Promote ticket-001:")
-	assert.Contains(t, out, "Creates a JJHub issue in acme/repo using the local ticket body.")
-	assert.Contains(t, out, "[Enter] promote")
-}
-
-func TestTicketsView_PromotePromptCyclesTargets(t *testing.T) {
-	t.Parallel()
-
-	v := NewTicketsViewWithSources(nil, jjhub.NewClient(""), ghrepo.NewClient(""))
-	v.SetSize(100, 30)
-	v.githubRepo = &ghrepo.Repo{NameWithOwner: "charmbracelet/crush"}
-	updated, _ := v.Update(ticketsLoadedMsg{tickets: sampleTickets(1)})
-	v = updated.(*TicketsView)
-
-	updated, _ = v.Update(tea.KeyPressMsg{Code: 'p'})
-	v = updated.(*TicketsView)
-	require.True(t, v.promotePrompt.active)
-	assert.Equal(t, workItemSourceJJHubIssues, v.currentPromotionTarget())
-
-	updated, _ = v.Update(tea.KeyPressMsg{Code: tea.KeyTab})
-	v = updated.(*TicketsView)
-	assert.Equal(t, workItemSourceGitHubIssues, v.currentPromotionTarget())
-	assert.Contains(t, v.View(), "Creates a GitHub Issues issue in charmbracelet/crush using the local ticket body.")
-
-	updated, _ = v.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
-	v = updated.(*TicketsView)
-	assert.Equal(t, workItemSourceJJHubIssues, v.currentPromotionTarget())
-}
-
-func TestTicketsView_PromotePromptEnterEmptySetsError(t *testing.T) {
-	t.Parallel()
-
-	v := NewTicketsViewWithSources(nil, jjhub.NewClient(""), nil)
-	v.SetSize(80, 40)
-	updated, _ := v.Update(ticketsLoadedMsg{tickets: sampleTickets(1)})
-	v = updated.(*TicketsView)
-
-	updated, _ = v.Update(tea.KeyPressMsg{Code: 'p'})
-	v = updated.(*TicketsView)
-	require.True(t, v.promotePrompt.active)
-	v.promotePrompt.input.SetValue("")
-
-	updated, cmd := v.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	v = updated.(*TicketsView)
-	assert.Nil(t, cmd)
-	require.Error(t, v.promotePrompt.err)
-	assert.Contains(t, v.promotePrompt.err.Error(), "title must not be empty")
-}
-
-func TestTicketsView_PromotePromptShortHelp(t *testing.T) {
-	t.Parallel()
-
-	v := loadedLocalView(sampleTickets(1), 80, 40)
-	v.promotePrompt.active = true
-	v.promotePrompt.targets = []workItemSource{workItemSourceGitHubIssues}
-
-	keys := helpKeys(v.ShortHelp())
-	assert.Contains(t, keys, "tab")
-	assert.Contains(t, keys, "enter")
-	assert.Contains(t, keys, "esc")
-}
-
-func TestTicketsView_TicketPromotedMsgSwitchesSourceAndRestoresSelection(t *testing.T) {
-	t.Parallel()
-
-	tickets := sampleTickets(1)
-	v := NewTicketsViewWithSources(smithers.NewClient(), nil, ghrepo.NewClient(""))
-	v.SetSize(100, 30)
-	updated, _ := v.Update(ticketsLoadedMsg{tickets: tickets})
-	v = updated.(*TicketsView)
-	v.promotePrompt.active = true
-	v.promotePrompt.targets = []workItemSource{workItemSourceGitHubIssues}
-	v.promotePrompt.ticket = &tickets[0]
-	v.promotePrompt.input.SetValue("Ticket 1")
-
-	updated, cmd := v.Update(ticketPromotedMsg{
-		source:       workItemSourceGitHubIssues,
-		selectionKey: "github_issues:77",
-		title:        "Ticket 1",
-		url:          "https://github.com/charmbracelet/crush/issues/77",
-	})
-	v = updated.(*TicketsView)
-
-	assert.False(t, v.promotePrompt.active)
-	assert.Equal(t, workItemSourceGitHubIssues, v.currentSource())
-	assert.True(t, v.loading)
-	assert.True(t, v.sourceState[workItemSourceLocal].loading)
-	assert.Equal(t, workItemSourceGitHubIssues, v.pendingSelectionSource)
-	assert.Equal(t, "github_issues:77", v.pendingSelectionKey)
-	require.NotNil(t, cmd)
-
-	updated, _ = v.Update(workItemsLoadedMsg{
-		source: workItemSourceGitHubIssues,
-		items: []workItem{
-			newGitHubIssueWorkItem(sampleGitHubIssue(12, "Existing issue")),
-			newGitHubIssueWorkItem(sampleGitHubIssue(77, "Ticket 1")),
-		},
-	})
-	v = updated.(*TicketsView)
-
-	require.NotNil(t, v.selectedItem())
-	assert.False(t, v.loading)
-	assert.Equal(t, 77, v.selectedItem().number)
-	assert.Equal(t, workItemSource(""), v.pendingSelectionSource)
-	assert.Equal(t, "", v.pendingSelectionKey)
-}
-
-func TestTicketsView_FilterPromptFiltersActiveSource(t *testing.T) {
-	t.Parallel()
-
-	v := loadedLocalView(sampleTickets(3), 100, 30)
-
-	updated, cmd := v.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
-	v = updated.(*TicketsView)
-	assert.True(t, v.filterPrompt.active)
-	assert.NotNil(t, cmd)
-
-	v = typeIntoFilterPrompt(t, v, "003")
-	assert.Equal(t, "003", v.currentFilter())
-	assert.Len(t, v.activeItems(), 1)
-
-	out := v.View()
-	assert.Contains(t, out, "Filter Local:")
-	assert.Contains(t, out, "ticket-003")
-	assert.NotContains(t, out, "ticket-001")
-	assert.Contains(t, out, "WORK ITEMS › Local (1/3)")
-}
-
-func TestTicketsView_FilterPromptEscClearsThenCloses(t *testing.T) {
-	t.Parallel()
-
-	v := loadedLocalView(sampleTickets(3), 100, 30)
-	updated, _ := v.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
-	v = updated.(*TicketsView)
-	v = typeIntoFilterPrompt(t, v, "003")
-	require.Equal(t, "003", v.currentFilter())
-
-	updated, _ = v.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
-	v = updated.(*TicketsView)
-	assert.True(t, v.filterPrompt.active)
-	assert.Equal(t, "", v.currentFilter())
-	assert.Len(t, v.activeItems(), 3)
-
-	updated, _ = v.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
-	v = updated.(*TicketsView)
-	assert.False(t, v.filterPrompt.active)
-}
-
-func TestTicketsView_FilterPersistsPerSource(t *testing.T) {
-	t.Parallel()
-
-	v := NewTicketsViewWithSources(nil, jjhub.NewClient(""), ghrepo.NewClient(""))
-	v.SetSize(100, 30)
-
-	updated, _ := v.Update(ticketsLoadedMsg{tickets: sampleTickets(3)})
-	v = updated.(*TicketsView)
-	updated, _ = v.Update(workItemsLoadedMsg{
-		source: workItemSourceJJHubIssues,
-		items: []workItem{
-			newJJHubIssueWorkItem(jjhub.Issue{
-				Number: 42,
-				Title:  "JJHub issue",
-				Body:   "JJHub body",
-				State:  "open",
-				Author: jjhub.User{Login: "will"},
-			}),
-		},
-	})
-	v = updated.(*TicketsView)
-
-	updated, _ = v.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
-	v = updated.(*TicketsView)
-	v = typeIntoFilterPrompt(t, v, "003")
-	updated, _ = v.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	v = updated.(*TicketsView)
-	require.Equal(t, "003", v.currentFilter())
-
-	updated, _ = v.Update(tea.KeyPressMsg{Code: 's'})
-	v = updated.(*TicketsView)
-	assert.Equal(t, workItemSourceJJHubIssues, v.currentSource())
-	assert.Equal(t, "", v.currentFilter())
-
-	updated, _ = v.Update(tea.KeyPressMsg{Code: 's'})
-	v = updated.(*TicketsView)
-	assert.Equal(t, workItemSourceGitHubIssues, v.currentSource())
-
-	updated, _ = v.Update(tea.KeyPressMsg{Code: 's'})
-	v = updated.(*TicketsView)
-	assert.Equal(t, workItemSourceGitHubPRs, v.currentSource())
-
-	updated, _ = v.Update(tea.KeyPressMsg{Code: 's'})
-	v = updated.(*TicketsView)
-	assert.Equal(t, workItemSourceLocal, v.currentSource())
-	assert.Equal(t, "003", v.currentFilter())
-	assert.Len(t, v.activeItems(), 1)
-}
-
-func TestTicketsView_FilterPromptShortHelp(t *testing.T) {
-	t.Parallel()
-
-	v := loadedLocalView(sampleTickets(1), 80, 40)
-	v.filterPrompt.active = true
-
-	keys := helpKeys(v.ShortHelp())
-	assert.Contains(t, keys, "enter")
-	assert.Contains(t, keys, "esc")
-}
-
-func TestTicketsView_RenderPreviewIncludesGitHubPRMetadata(t *testing.T) {
-	t.Parallel()
-
-	v := NewTicketsViewWithSources(nil, nil, ghrepo.NewClient(""))
-	v.githubRepo = &ghrepo.Repo{NameWithOwner: "charmbracelet/crush"}
-
-	preview := v.renderPreview(newGitHubPRWorkItem(sampleGitHubPR(9, "GitHub pr")))
-	assert.Contains(t, preview, "Repo")
-	assert.Contains(t, preview, "charmbracelet/crush")
-	assert.Contains(t, preview, "Review")
-	assert.Contains(t, preview, "approved")
-	assert.Contains(t, preview, "Merge")
-	assert.Contains(t, preview, "blocked")
-	assert.Contains(t, preview, "Files")
-	assert.Contains(t, preview, "7 files")
-	assert.Contains(t, preview, "Branch")
-	assert.Contains(t, preview, "feature/test -> main")
-}
-
-func TestWorkItemMatchesFilter(t *testing.T) {
-	t.Parallel()
-
-	item := newGitHubPRWorkItem(sampleGitHubPR(9, "Searchable PR"))
-	item.labels = []workItemLabel{{name: "needs-review"}}
-	item.assignees = []string{"@octocat"}
-
-	assert.True(t, item.matchesFilter("searchable"))
-	assert.True(t, item.matchesFilter("needs-review"))
-	assert.True(t, item.matchesFilter("octocat"))
-	assert.True(t, item.matchesFilter("9 approved"))
-	assert.False(t, item.matchesFilter("does-not-match"))
 }
 
 func TestTicketSnippet(t *testing.T) {
@@ -912,28 +506,3 @@ func TestMetadataLine(t *testing.T) {
 	}
 }
 
-func TestTicketPromoteTitleAndBody(t *testing.T) {
-	t.Parallel()
-
-	ticket := smithers.Ticket{
-		ID: "feat-login-flow",
-		Content: strings.Join([]string{
-			"# Login Flow",
-			"",
-			"## Summary",
-			"",
-			"Fix the auth handoff and callback state handling.",
-		}, "\n"),
-	}
-
-	assert.Equal(t, "Login Flow", ticketPromoteTitle(ticket))
-
-	body := ticketPromoteBody(ticket)
-	assert.Contains(t, body, "_Promoted from local ticket `feat-login-flow`._")
-	assert.Contains(t, body, "## Summary")
-	assert.Contains(t, body, "Fix the auth handoff")
-	assert.NotContains(t, body, "# Login Flow")
-
-	fallback := smithers.Ticket{ID: "bug/auth-loop"}
-	assert.Equal(t, "Bug Auth Loop", ticketPromoteTitle(fallback))
-}

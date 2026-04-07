@@ -1027,3 +1027,116 @@ func TestRevertPrimaryKey_InMap(t *testing.T) {
 	assert.True(t, ok, "revert should be in smithersPrimaryKeys")
 	assert.Equal(t, "runId", key)
 }
+
+// ─── smithersToolName ─────────────────────────────────────────────────────────
+
+func TestSmithersToolName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"mcp_smithers_runs_list", "runs_list"},
+		{"mcp_smithers_inspect", "inspect"},
+		{"mcp_smithers_", ""},            // prefix with nothing after it
+		{"no_prefix_at_all", "no_prefix_at_all"}, // doesn't start with prefix, returned as-is
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, smithersToolName(tt.input))
+		})
+	}
+}
+
+// ─── mainParam ────────────────────────────────────────────────────────────────
+
+func TestMainParam_ExtractsKnownKey(t *testing.T) {
+	t.Parallel()
+
+	s := &SmithersToolRenderContext{}
+	opts := &ToolRenderOpts{
+		ToolCall: message.ToolCall{
+			Name:  smithersMCPPrefix + "inspect",
+			Input: `{"runId":"run-abc-123","extra":"ignored"}`,
+		},
+	}
+	got := s.mainParam(opts, "inspect")
+	assert.Equal(t, "run-abc-123", got)
+}
+
+func TestMainParam_UnknownTool(t *testing.T) {
+	t.Parallel()
+
+	s := &SmithersToolRenderContext{}
+	opts := &ToolRenderOpts{
+		ToolCall: message.ToolCall{
+			Name:  smithersMCPPrefix + "unknown_tool",
+			Input: `{"foo":"bar"}`,
+		},
+	}
+	got := s.mainParam(opts, "unknown_tool")
+	assert.Empty(t, got, "unknown tool with no primary key mapping should return empty string")
+}
+
+func TestMainParam_InvalidJSON(t *testing.T) {
+	t.Parallel()
+
+	s := &SmithersToolRenderContext{}
+	opts := &ToolRenderOpts{
+		ToolCall: message.ToolCall{
+			Name:  smithersMCPPrefix + "inspect",
+			Input: "not valid json",
+		},
+	}
+	got := s.mainParam(opts, "inspect")
+	assert.Empty(t, got, "invalid JSON input should return empty string")
+}
+
+// ─── nodeStatusIcon ───────────────────────────────────────────────────────────
+
+func TestNodeStatusIcon(t *testing.T) {
+	t.Parallel()
+
+	sty := smithersStyles()
+	s := &SmithersToolRenderContext{}
+
+	tests := []struct {
+		status   string
+		contains string
+	}{
+		{"running", "●"},
+		{"completed", "✓"},
+		{"done", "✓"},
+		{"failed", "×"},
+		{"error", "×"},
+		{"pending", "○"},   // default/unknown
+		{"unknown", "○"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.status, func(t *testing.T) {
+			t.Parallel()
+			icon := s.nodeStatusIcon(sty, tt.status)
+			assert.Contains(t, icon, tt.contains)
+		})
+	}
+}
+
+// ─── hijack card ──────────────────────────────────────────────────────────────
+
+func TestRenderHijackCard_ValidJSON(t *testing.T) {
+	t.Parallel()
+
+	sty := smithersStyles()
+	s := &SmithersToolRenderContext{}
+
+	content := `{"success":true,"runId":"r-hijack","agent":"planner","instructions":"take over planning"}`
+	opts := makeSmithersOpts("hijack", `{"runId":"r-hijack"}`, content, ToolStatusSuccess)
+
+	rendered := s.RenderTool(sty, 120, opts)
+	assert.Contains(t, rendered, "HIJACKED")
+	assert.Contains(t, rendered, "r-hijack")
+	assert.Contains(t, rendered, "planner")
+	assert.Contains(t, rendered, "take over planning")
+}

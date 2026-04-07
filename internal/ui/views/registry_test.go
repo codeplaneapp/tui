@@ -62,7 +62,7 @@ func TestDefaultRegistry_ContainsExpectedViews(t *testing.T) {
 	r := views.DefaultRegistry()
 	client := smithers.NewClient()
 
-	for _, name := range []string{"agents", "approvals", "chat", "issues", "landings", "tickets", "workspaces"} {
+	for _, name := range []string{"agents", "approvals", "changes", "chat", "issues", "landings", "status", "tickets"} {
 		v, ok := r.Open(name, client)
 		if !ok {
 			t.Errorf("expected default registry to contain %q", name)
@@ -77,7 +77,7 @@ func TestDefaultRegistry_ContainsExpectedViews(t *testing.T) {
 func TestDefaultRegistry_Names_HasThreeViews(t *testing.T) {
 	r := views.DefaultRegistry()
 	names := r.Names()
-	if len(names) < 6 {
-		t.Errorf("expected at least 6 views in default registry, got %d: %v", len(names), names)
+	if len(names) < 8 {
+		t.Errorf("expected at least 8 views in default registry, got %d: %v", len(names), names)
 	}
 }

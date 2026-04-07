@@ -484,3 +484,68 @@ func TestHandoff_CwdAbsolutePath(t *testing.T) {
 		t.Errorf("cmd.Dir = %q, want %q", cmd.Dir, nested)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// mergeEnv — malformed entries
+// ---------------------------------------------------------------------------
+
+func TestMergeEnv_MalformedOverride(t *testing.T) {
+	t.Parallel()
+
+	// An override without '=' should be appended as-is so the caller can debug.
+	base := []string{"FOO=1"}
+	result := mergeEnv(base, []string{"NOEQUALS"})
+
+	if len(result) != 2 {
+		t.Fatalf("len(result) = %d, want 2", len(result))
+	}
+	if result[1] != "NOEQUALS" {
+		t.Errorf("result[1] = %q, want %q", result[1], "NOEQUALS")
+	}
+}
+
+func TestMergeEnv_DuplicateOverrides(t *testing.T) {
+	t.Parallel()
+
+	// When the same key appears twice in overrides, the last one wins.
+	base := []string{"K=old"}
+	result := mergeEnv(base, []string{"K=first", "K=second"})
+
+	got := make(map[string]string)
+	for _, e := range result {
+		k, v, _ := splitEnvEntry(e)
+		got[k] = v
+	}
+	if got["K"] != "second" {
+		t.Errorf("K = %q, want %q", got["K"], "second")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// HandoffWithCallback — unknown binary
+// ---------------------------------------------------------------------------
+
+func TestHandoffWithCallback_UnknownBinary(t *testing.T) {
+	t.Parallel()
+
+	errReceived := make(chan error, 1)
+	cb := func(err error) tea.Msg {
+		errReceived <- err
+		return nil
+	}
+
+	cmd := HandoffWithCallback(Options{
+		Binary: "this-binary-certainly-does-not-exist",
+	}, cb)
+
+	_ = cmd()
+
+	select {
+	case err := <-errReceived:
+		if err == nil {
+			t.Error("expected non-nil error in callback for unknown binary")
+		}
+	default:
+		t.Error("callback was not called for unknown binary")
+	}
+}

@@ -329,3 +329,32 @@ func TestToastManager_PositionedInBottomQuarter(t *testing.T) {
 	assert.GreaterOrEqual(t, found, 3*H/4,
 		"toast should render in the bottom quarter of a tall screen")
 }
+
+// ---------------------------------------------------------------------------
+// FrontID
+// ---------------------------------------------------------------------------
+
+func TestToastManager_FrontID_Empty(t *testing.T) {
+	t.Parallel()
+	m := newManager()
+	assert.Equal(t, uint64(0), m.FrontID(), "FrontID on empty stack should be 0")
+}
+
+func TestToastManager_FrontID_ReturnsNewest(t *testing.T) {
+	t.Parallel()
+	m := newManager()
+	m.Update(components.ShowToastMsg{Title: "first"})
+	m.Update(components.ShowToastMsg{Title: "second"})
+	// IDs are 1-based and auto-increment. The newest toast (second) has ID 2.
+	assert.Equal(t, uint64(2), m.FrontID(), "FrontID should return ID of newest toast")
+}
+
+func TestToastManager_FrontID_AfterDismiss(t *testing.T) {
+	t.Parallel()
+	m := newManager()
+	m.Update(components.ShowToastMsg{Title: "first"})  // ID 1
+	m.Update(components.ShowToastMsg{Title: "second"}) // ID 2
+	m.Update(components.DismissToastMsg{ID: 2})
+	// After dismissing ID 2, the newest remaining toast is ID 1.
+	assert.Equal(t, uint64(1), m.FrontID(), "FrontID should return remaining toast ID")
+}

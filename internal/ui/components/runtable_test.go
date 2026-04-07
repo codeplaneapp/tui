@@ -715,3 +715,90 @@ func TestRunTable_View_NoProgressBarWhenNoSummary(t *testing.T) {
 	assert.NotContains(t, out, "█")
 	assert.NotContains(t, out, "%")
 }
+
+// --- partitionRuns divider sentinels ---
+
+func TestPartitionRuns_DividerBetweenSections(t *testing.T) {
+	// When multiple sections are present, divider sentinels (empty sectionLabel
+	// header rows) should appear between non-first sections.
+	runs := []smithers.RunSummary{
+		{RunID: "r1", Status: smithers.RunStatusRunning},
+		{RunID: "d1", Status: smithers.RunStatusFinished},
+		{RunID: "f1", Status: smithers.RunStatusFailed},
+	}
+	rows := partitionRuns(runs)
+
+	dividerCount := 0
+	for _, r := range rows {
+		if r.kind == runRowKindHeader && r.sectionLabel == "" {
+			dividerCount++
+		}
+	}
+	// 3 sections present → 2 divider sentinels (before COMPLETED and FAILED).
+	assert.Equal(t, 2, dividerCount, "should have 2 divider sentinels between 3 sections")
+}
+
+func TestPartitionRuns_AllSameStatus_NoDivider(t *testing.T) {
+	// When all runs share the same status, only one section exists and no
+	// divider sentinels should be emitted.
+	runs := []smithers.RunSummary{
+		{RunID: "r1", Status: smithers.RunStatusRunning},
+		{RunID: "r2", Status: smithers.RunStatusRunning},
+	}
+	rows := partitionRuns(runs)
+	for _, r := range rows {
+		if r.kind == runRowKindHeader && r.sectionLabel == "" {
+			t.Error("should not have divider sentinels when all runs share one section")
+		}
+	}
+}
+
+// --- statusPill ---
+
+func TestStatusPill_AllStatuses(t *testing.T) {
+	statuses := []smithers.RunStatus{
+		smithers.RunStatusRunning,
+		smithers.RunStatusWaitingApproval,
+		smithers.RunStatusWaitingEvent,
+		smithers.RunStatusFinished,
+		smithers.RunStatusFailed,
+		smithers.RunStatusCancelled,
+	}
+	for _, s := range statuses {
+		pill := statusPill(s)
+		assert.NotEmpty(t, pill, "statusPill should produce output for %q", s)
+		assert.Contains(t, pill, strings.ToUpper(string(s)),
+			"pill should contain uppercase status text for %q", s)
+	}
+}
+
+// --- fmtElapsed hour-range ---
+
+func TestFmtElapsed_HourRange(t *testing.T) {
+	startedAtMs := time.Now().Add(-2*time.Hour - 15*time.Minute).UnixMilli()
+	finishedAtMs := time.Now().UnixMilli()
+	run := smithers.RunSummary{
+		StartedAtMs:  &startedAtMs,
+		FinishedAtMs: &finishedAtMs,
+	}
+	result := fmtElapsed(run)
+	assert.Contains(t, result, "h", "hour-range elapsed should contain 'h'")
+	assert.Contains(t, result, "m", "hour-range elapsed should contain 'm'")
+	assert.Equal(t, "2h 15m", result)
+}
+
+// --- workflow name truncation ---
+
+func TestRunTable_View_LongWorkflowNameTruncated(t *testing.T) {
+	longName := strings.Repeat("a", 200)
+	run := smithers.RunSummary{
+		RunID:        "trunc-wf",
+		WorkflowName: longName,
+		Status:       smithers.RunStatusRunning,
+	}
+	table := RunTable{Runs: []smithers.RunSummary{run}, Width: 120}
+	out := table.View()
+	// The full 200-char name should not appear; it should be truncated with "...".
+	assert.NotContains(t, out, longName)
+	assert.Contains(t, out, "...", "truncated workflow name should end with ellipsis")
+}
