@@ -34,7 +34,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-const tracerName = "github.com/charmbracelet/crush"
+const tracerName = "github.com/charmbracelet/codeplane"
 
 const redactedValue = "[REDACTED]"
 
@@ -215,179 +215,179 @@ func newMetrics() *metrics {
 		registry: registry,
 
 		appStartTotal: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "crush_app_starts_total",
-			Help: "Total number of Crush process starts.",
+			Name: "codeplane_app_starts_total",
+			Help: "Total number of Codeplane process starts.",
 		}),
 		appShutdownTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "crush_app_shutdowns_total",
-			Help: "Total number of Crush process shutdowns by result.",
+			Name: "codeplane_app_shutdowns_total",
+			Help: "Total number of Codeplane process shutdowns by result.",
 		}, []string{"result"}),
 		agentRunsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "crush_agent_runs_total",
+			Name: "codeplane_agent_runs_total",
 			Help: "Total number of agent runs by outcome.",
 		}, []string{"agent", "provider", "model", "result"}),
 		agentRunDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "crush_agent_run_duration_seconds",
+			Name:    "codeplane_agent_run_duration_seconds",
 			Help:    "Duration of agent runs.",
 			Buckets: prometheus.DefBuckets,
 		}, []string{"agent", "provider", "model"}),
 		toolCallsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "crush_tool_calls_total",
+			Name: "codeplane_tool_calls_total",
 			Help: "Total number of tool calls by outcome.",
 		}, []string{"tool", "result"}),
 		toolCallDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "crush_tool_call_duration_seconds",
+			Name:    "codeplane_tool_call_duration_seconds",
 			Help:    "Duration of tool calls.",
 			Buckets: prometheus.DefBuckets,
 		}, []string{"tool"}),
 		shellCommandsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "crush_shell_commands_total",
+			Name: "codeplane_shell_commands_total",
 			Help: "Total number of shell commands by outcome.",
 		}, []string{"result"}),
 		shellDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "crush_shell_command_duration_seconds",
+			Name:    "codeplane_shell_command_duration_seconds",
 			Help:    "Duration of shell commands.",
 			Buckets: prometheus.DefBuckets,
 		}, []string{"result"}),
 		lspOpsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "crush_lsp_operations_total",
+			Name: "codeplane_lsp_operations_total",
 			Help: "Total number of LSP operations by outcome.",
 		}, []string{"lsp", "operation", "result"}),
 		lspOpDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "crush_lsp_operation_duration_seconds",
+			Name:    "codeplane_lsp_operation_duration_seconds",
 			Help:    "Duration of LSP operations.",
 			Buckets: prometheus.DefBuckets,
 		}, []string{"lsp", "operation"}),
 		sessionOpsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "crush_session_operations_total",
+			Name: "codeplane_session_operations_total",
 			Help: "Total number of session operations by outcome.",
 		}, []string{"operation", "result"}),
 		sessionOpDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "crush_session_operation_duration_seconds",
+			Name:    "codeplane_session_operation_duration_seconds",
 			Help:    "Duration of session operations.",
 			Buckets: prometheus.DefBuckets,
 		}, []string{"operation"}),
 		messageOpsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "crush_message_operations_total",
+			Name: "codeplane_message_operations_total",
 			Help: "Total number of message operations by outcome.",
 		}, []string{"operation", "role", "result"}),
 		messageOpDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "crush_message_operation_duration_seconds",
+			Name:    "codeplane_message_operation_duration_seconds",
 			Help:    "Duration of message operations.",
 			Buckets: prometheus.DefBuckets,
 		}, []string{"operation", "role"}),
 		permissionsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "crush_permission_requests_total",
+			Name: "codeplane_permission_requests_total",
 			Help: "Total number of permission requests by outcome.",
 		}, []string{"tool", "action", "result"}),
 		permissionDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "crush_permission_request_duration_seconds",
+			Name:    "codeplane_permission_request_duration_seconds",
 			Help:    "Duration of permission requests.",
 			Buckets: prometheus.DefBuckets,
 		}, []string{"tool", "action"}),
 		httpServerTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "crush_http_server_requests_total",
+			Name: "codeplane_http_server_requests_total",
 			Help: "Total number of HTTP server requests by status.",
 		}, []string{"method", "route", "status"}),
 		httpServerDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "crush_http_server_request_duration_seconds",
+			Name:    "codeplane_http_server_request_duration_seconds",
 			Help:    "Duration of HTTP server requests.",
 			Buckets: prometheus.DefBuckets,
 		}, []string{"method", "route"}),
 		httpClientTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "crush_http_client_requests_total",
+			Name: "codeplane_http_client_requests_total",
 			Help: "Total number of HTTP client requests by status.",
 		}, []string{"component", "method", "host", "status"}),
 		httpClientDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "crush_http_client_request_duration_seconds",
+			Name:    "codeplane_http_client_request_duration_seconds",
 			Help:    "Duration of HTTP client requests.",
 			Buckets: prometheus.DefBuckets,
 		}, []string{"component", "method", "host"}),
 		dbOpsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "crush_db_operations_total",
+			Name: "codeplane_db_operations_total",
 			Help: "Total number of database and migration operations by outcome.",
 		}, []string{"operation", "result"}),
 		dbOpDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "crush_db_operation_duration_seconds",
+			Name:    "codeplane_db_operation_duration_seconds",
 			Help:    "Duration of database and migration operations.",
 			Buckets: prometheus.DefBuckets,
 		}, []string{"operation"}),
 		retriesTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "crush_retries_total",
+			Name: "codeplane_retries_total",
 			Help: "Total number of retry attempts by component and reason.",
 		}, []string{"component", "provider", "reason"}),
 		retryDelay: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "crush_retry_delay_seconds",
+			Name:    "codeplane_retry_delay_seconds",
 			Help:    "Delay before retry attempts.",
 			Buckets: prometheus.DefBuckets,
 		}, []string{"component", "provider", "reason"}),
 		workItemPromotionsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "crush_work_item_promotions_total",
+			Name: "codeplane_work_item_promotions_total",
 			Help: "Total number of local work item promotions by target and outcome.",
 		}, []string{"target", "result"}),
 		workItemPromotionDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "crush_work_item_promotion_duration_seconds",
+			Name:    "codeplane_work_item_promotion_duration_seconds",
 			Help:    "Duration of local work item promotions.",
 			Buckets: prometheus.DefBuckets,
 		}, []string{"target", "result"}),
 		pubsubEventsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "crush_pubsub_events_total",
+			Name: "codeplane_pubsub_events_total",
 			Help: "Pubsub events and fanout outcomes by broker.",
 		}, []string{"broker", "event_type", "result"}),
 		pubsubSubscribers: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "crush_pubsub_subscribers",
+			Name: "codeplane_pubsub_subscribers",
 			Help: "Current number of pubsub subscribers by broker.",
 		}, []string{"broker"}),
 		sseEventsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "crush_sse_events_total",
+			Name: "codeplane_sse_events_total",
 			Help: "Total number of SSE stream events and failures by stream.",
 		}, []string{"stream", "result"}),
 		sseConnections: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "crush_sse_connections",
+			Name: "codeplane_sse_connections",
 			Help: "Current number of active SSE connections by stream.",
 		}, []string{"stream"}),
 		sseDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "crush_sse_connection_duration_seconds",
+			Name:    "codeplane_sse_connection_duration_seconds",
 			Help:    "Duration of SSE connections.",
 			Buckets: prometheus.DefBuckets,
 		}, []string{"stream", "result"}),
 		backgroundJobsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "crush_background_jobs_total",
+			Name: "codeplane_background_jobs_total",
 			Help: "Background shell job lifecycle events.",
 		}, []string{"result"}),
 		backgroundJobDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "crush_background_job_duration_seconds",
+			Name:    "codeplane_background_job_duration_seconds",
 			Help:    "Duration of completed background shell jobs.",
 			Buckets: prometheus.DefBuckets,
 		}, []string{"result"}),
 		backgroundTrackedJobs: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "crush_background_jobs_tracked",
+			Name: "codeplane_background_jobs_tracked",
 			Help: "Current number of background jobs tracked by the manager.",
 		}),
 		permissionBacklog: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "crush_permission_backlog",
+			Name: "codeplane_permission_backlog",
 			Help: "Current number of pending permission requests awaiting resolution.",
 		}),
 		permissionActive: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "crush_permission_active_requests",
+			Name: "codeplane_permission_active_requests",
 			Help: "Current number of permission requests actively blocking execution.",
 		}),
 		permissionQueueDelay: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "crush_permission_queue_delay_seconds",
+			Name:    "codeplane_permission_queue_delay_seconds",
 			Help:    "Time spent waiting to become the active permission request.",
 			Buckets: prometheus.DefBuckets,
 		}, []string{"tool", "action"}),
 		workspaceLifecycleTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "crush_workspace_lifecycle_total",
+			Name: "codeplane_workspace_lifecycle_total",
 			Help: "Workspace lifecycle operations by outcome.",
 		}, []string{"operation", "result"}),
 		workspaceLifecycleDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "crush_workspace_lifecycle_duration_seconds",
+			Name:    "codeplane_workspace_lifecycle_duration_seconds",
 			Help:    "Duration of workspace lifecycle operations.",
 			Buckets: prometheus.DefBuckets,
 		}, []string{"operation"}),
 		droppedEventsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "crush_dropped_events_total",
+			Name: "codeplane_dropped_events_total",
 			Help: "Dropped asynchronous events by subsystem.",
 		}, []string{"subsystem"}),
 		startupFlowsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -395,28 +395,28 @@ func newMetrics() *metrics {
 			Help: "Codeplane startup and command flow events by source and outcome.",
 		}, []string{"flow", "source", "result"}),
 		uiNavigationTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "crush_ui_navigation_total",
+			Name: "codeplane_ui_navigation_total",
 			Help: "UI navigation events by entrypoint, target, and result.",
 		}, []string{"entrypoint", "target", "result"}),
 		snapshotOpsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "crush_snapshot_operations_total",
+			Name: "codeplane_snapshot_operations_total",
 			Help: "Snapshot UI operations by operation and result.",
 		}, []string{"operation", "result"}),
 		snapshotOpDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "crush_snapshot_operation_duration_seconds",
+			Name:    "codeplane_snapshot_operation_duration_seconds",
 			Help:    "Duration of snapshot UI operations.",
 			Buckets: prometheus.DefBuckets,
 		}, []string{"operation"}),
 		activeAgentRuns: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "crush_active_agent_runs",
+			Name: "codeplane_active_agent_runs",
 			Help: "Current number of active agent runs.",
 		}),
 		backgroundJobs: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "crush_background_jobs",
+			Name: "codeplane_background_jobs",
 			Help: "Current number of background shell jobs.",
 		}),
 		activeWorkspaces: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "crush_active_workspaces",
+			Name: "codeplane_active_workspaces",
 			Help: "Current number of active workspaces.",
 		}),
 	}
@@ -507,7 +507,7 @@ func Configure(ctx context.Context, cfg Config) error {
 		attribute.String("service.name", cfg.ServiceName),
 		attribute.String("service.version", cfg.ServiceVersion),
 		attribute.String("service.instance.id", processInstanceID()),
-		attribute.String("crush.mode", string(cfg.Mode)),
+		attribute.String("codeplane.mode", string(cfg.Mode)),
 	)
 
 	tpOptions := []sdktrace.TracerProviderOption{
@@ -553,7 +553,7 @@ func Configure(ctx context.Context, cfg Config) error {
 	}
 
 	expvarOnce.Do(func() {
-		expvar.Publish("crush_observability", expvar.Func(func() any {
+		expvar.Publish("codeplane_observability", expvar.Func(func() any {
 			return Snapshot()
 		}))
 	})
@@ -700,7 +700,7 @@ func writeJSON(w http.ResponseWriter, payload any) {
 func normalizeConfig(cfg Config) Config {
 	cfg.ServiceName = strings.TrimSpace(cfg.ServiceName)
 	if cfg.ServiceName == "" {
-		cfg.ServiceName = "crush"
+		cfg.ServiceName = "codeplane"
 	}
 	if cfg.TraceBufferSize <= 0 {
 		cfg.TraceBufferSize = 512
@@ -903,13 +903,13 @@ func HTTPServerMiddleware(next http.Handler) http.Handler {
 				route = r.URL.Path
 			}
 			if workspaceID := contextValue(ctx, workspaceIDKey); workspaceID != "" {
-				span.SetAttributes(attribute.String("crush.workspace_id", workspaceID))
+				span.SetAttributes(attribute.String("codeplane.workspace_id", workspaceID))
 			}
 			if sessionID := contextValue(ctx, sessionIDKey); sessionID != "" {
-				span.SetAttributes(attribute.String("crush.session_id", sessionID))
+				span.SetAttributes(attribute.String("codeplane.session_id", sessionID))
 			}
 			if lspName := contextValue(ctx, lspKey); lspName != "" {
-				span.SetAttributes(attribute.String("crush.lsp", lspName))
+				span.SetAttributes(attribute.String("codeplane.lsp", lspName))
 			}
 			duration := time.Since(start)
 			span.SetAttributes(
@@ -960,7 +960,7 @@ func (rt *InstrumentedRoundTripper) RoundTrip(req *http.Request) (*http.Response
 		attribute.String("http.method", req.Method),
 		attribute.String("http.url", RedactURLString(req.URL.String())),
 		attribute.String("http.host", req.URL.Host),
-		attribute.String("crush.http.component", rt.Component),
+		attribute.String("codeplane.http.component", rt.Component),
 		attribute.String("http.request_id", RequestIDFromContext(ctx)),
 	)
 	defer span.End()
@@ -1275,9 +1275,9 @@ func RecordUINavigation(entrypoint, target, result string, attrs ...attribute.Ke
 
 	ctx := WithComponent(context.Background(), "ui_navigation")
 	attrs = append([]attribute.KeyValue{
-		attribute.String("crush.ui.entrypoint", entrypoint),
-		attribute.String("crush.ui.target", target),
-		attribute.String("crush.ui.result", result),
+		attribute.String("codeplane.ui.entrypoint", entrypoint),
+		attribute.String("codeplane.ui.target", target),
+		attribute.String("codeplane.ui.result", result),
 	}, attrs...)
 	_, span := StartSpan(ctx, "ui.navigation", attrs...)
 	if result != "ok" {
@@ -1297,9 +1297,9 @@ func RecordSnapshotOperation(operation string, duration time.Duration, err error
 
 	ctx := WithComponent(context.Background(), "ui_snapshots")
 	attrs = append([]attribute.KeyValue{
-		attribute.String("crush.snapshot.operation", operation),
-		attribute.String("crush.snapshot.result", result),
-		attribute.Int64("crush.snapshot.duration_ms", duration.Milliseconds()),
+		attribute.String("codeplane.snapshot.operation", operation),
+		attribute.String("codeplane.snapshot.result", result),
+		attribute.Int64("codeplane.snapshot.duration_ms", duration.Milliseconds()),
 	}, attrs...)
 	_, span := StartSpan(ctx, "ui.snapshots."+operation, attrs...)
 	RecordError(span, err)

@@ -205,7 +205,7 @@ func (c *controllerV1) handleGetWorkspaceEvents(w http.ResponseWriter, r *http.R
 	ctx := observability.WithWorkspaceID(r.Context(), id)
 	ctx = observability.WithComponent(ctx, "workspace_events")
 	ctx, span := observability.StartSpan(ctx, "server.workspace_events",
-		attribute.String("crush.workspace_id", id),
+		attribute.String("codeplane.workspace_id", id),
 	)
 	r = r.WithContext(ctx)
 	streamStart := time.Now()

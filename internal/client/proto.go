@@ -125,7 +125,7 @@ func (c *Client) SubscribeEvents(ctx context.Context, id string) (<-chan any, er
 	ctx = observability.WithWorkspaceID(ctx, id)
 	ctx = observability.WithComponent(ctx, workspaceEventsClientStream)
 	ctx, span := observability.StartSpan(ctx, "client.workspace_events.subscribe",
-		attribute.String("crush.workspace_id", id),
+		attribute.String("codeplane.workspace_id", id),
 	)
 
 	rsp, retryDelay, err := c.openWorkspaceEventsStream(ctx, id)
@@ -242,7 +242,7 @@ func (c *Client) openWorkspaceEventsStream(ctx context.Context, id string) (*htt
 func (c *Client) readWorkspaceEventsStream(ctx context.Context, id string, rsp *http.Response, events chan<- any) (time.Duration, error) {
 	streamCtx := observability.WithComponent(ctx, workspaceEventsClientStream)
 	streamCtx, span := observability.StartSpan(streamCtx, "client.workspace_events.stream",
-		attribute.String("crush.workspace_id", id),
+		attribute.String("codeplane.workspace_id", id),
 	)
 	started := time.Now()
 	result := "ok"

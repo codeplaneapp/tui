@@ -307,21 +307,21 @@ func (m *BackgroundShellManager) KillAll(ctx context.Context) {
 
 func backgroundShellAttributes(ctx context.Context, id, workingDir, command string) []attribute.KeyValue {
 	attrs := []attribute.KeyValue{
-		attribute.String("crush.background_job.id", id),
+		attribute.String("codeplane.background_job.id", id),
 		attribute.String("shell.cwd", workingDir),
 		attribute.Int("shell.command_length", len(command)),
 	}
 	if workspaceID := observability.WorkspaceIDFromContext(ctx); workspaceID != "" {
-		attrs = append(attrs, attribute.String("crush.workspace_id", workspaceID))
+		attrs = append(attrs, attribute.String("codeplane.workspace_id", workspaceID))
 	}
 	if sessionID := observability.SessionIDFromContext(ctx); sessionID != "" {
-		attrs = append(attrs, attribute.String("crush.session_id", sessionID))
+		attrs = append(attrs, attribute.String("codeplane.session_id", sessionID))
 	}
 	if tool := observability.ToolFromContext(ctx); tool != "" {
-		attrs = append(attrs, attribute.String("crush.tool", tool))
+		attrs = append(attrs, attribute.String("codeplane.tool", tool))
 	}
 	if toolCallID := observability.ToolCallIDFromContext(ctx); toolCallID != "" {
-		attrs = append(attrs, attribute.String("crush.tool_call_id", toolCallID))
+		attrs = append(attrs, attribute.String("codeplane.tool_call_id", toolCallID))
 	}
 	return attrs
 }
