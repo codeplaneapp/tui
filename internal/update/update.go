@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	githubApiUrl = "https://api.github.com/repos/charmbracelet/crush/releases/latest"
-	userAgent    = "crush/1.0"
+	githubApiURL = "https://api.github.com/repos/charmbracelet/codeplane/releases/latest"
+	userAgent    = "codeplane/1.0"
 )
 
 // Default is the default [Client].
@@ -92,7 +92,7 @@ func (c *github) Latest(ctx context.Context) (*Release, error) {
 	client := crushlog.NewHTTPClientWithComponent("update_check")
 	client.Timeout = 30 * time.Second
 
-	req, err := http.NewRequestWithContext(ctx, "GET", githubApiUrl, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", githubApiURL, nil)
 	if err != nil {
 		return nil, err
 	}

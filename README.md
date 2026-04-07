@@ -1,22 +1,22 @@
-# Crush
+# Codeplane
 
 <p align="center">
-    <a href="https://stuff.charm.sh/crush/charm-crush.png"><img width="450" alt="Charm Crush Logo" src="https://github.com/user-attachments/assets/cf8ca3ce-8b02-43f0-9d0f-5a331488da4b" /></a><br />
-    <a href="https://github.com/charmbracelet/crush/releases"><img src="https://img.shields.io/github/release/charmbracelet/crush" alt="Latest Release"></a>
-    <a href="https://github.com/charmbracelet/crush/actions"><img src="https://github.com/charmbracelet/crush/actions/workflows/build.yml/badge.svg" alt="Build Status"></a>
+    <a href="https://stuff.charm.sh/codeplane/charm-codeplane.png"><img width="450" alt="Charm Codeplane Logo" src="https://github.com/user-attachments/assets/cf8ca3ce-8b02-43f0-9d0f-5a331488da4b" /></a><br />
+    <a href="https://github.com/charmbracelet/codeplane/releases"><img src="https://img.shields.io/github/release/charmbracelet/codeplane" alt="Latest Release"></a>
+    <a href="https://github.com/charmbracelet/codeplane/actions"><img src="https://github.com/charmbracelet/codeplane/actions/workflows/build.yml/badge.svg" alt="Build Status"></a>
 </p>
 
 <p align="center">Your new coding bestie, now available in your favourite terminal.<br />Your tools, your code, and your workflows, wired into your LLM of choice.</p>
 <p align="center">终端里的编程新搭档，<br />无缝接入你的工具、代码与工作流，全面兼容主流 LLM 模型。</p>
 
-<p align="center"><img width="800" alt="Crush Demo" src="https://github.com/user-attachments/assets/58280caf-851b-470a-b6f7-d5c4ea8a1968" /></p>
+<p align="center"><img width="800" alt="Codeplane Demo" src="https://github.com/user-attachments/assets/58280caf-851b-470a-b6f7-d5c4ea8a1968" /></p>
 
 ## Features
 
 - **Multi-Model:** choose from a wide range of LLMs or add your own via OpenAI- or Anthropic-compatible APIs
 - **Flexible:** switch LLMs mid-session while preserving context
 - **Session-Based:** maintain multiple work sessions and contexts per project
-- **LSP-Enhanced:** Crush uses LSPs for additional context, just like you do
+- **LSP-Enhanced:** Codeplane uses LSPs for additional context, just like you do
 - **Extensible:** add capabilities via MCPs (`http`, `stdio`, and `sse`)
 - **Works Everywhere:** first-class support in every terminal on macOS, Linux, Windows (PowerShell and WSL), Android, FreeBSD, OpenBSD, and NetBSD
 - **Industrial Grade:** built on the Charm ecosystem, powering 25k+ applications, from leading open source projects to business-critical infrastructure
@@ -27,51 +27,51 @@ Use a package manager:
 
 ```bash
 # Homebrew
-brew install charmbracelet/tap/crush
+brew install charmbracelet/tap/codeplane
 
 # NPM
-npm install -g @charmland/crush
+npm install -g @charmland/codeplane
 
 # Arch Linux (btw)
-yay -S crush-bin
+yay -S codeplane-bin
 
 # Nix
-nix run github:numtide/nix-ai-tools#crush
+nix run github:numtide/nix-ai-tools#codeplane
 
 # FreeBSD
-pkg install crush
+pkg install codeplane
 ```
 
 Windows users:
 
 ```bash
 # Winget
-winget install charmbracelet.crush
+winget install charmbracelet.codeplane
 
 # Scoop
 scoop bucket add charm https://github.com/charmbracelet/scoop-bucket.git
-scoop install crush
+scoop install codeplane
 ```
 
 <details>
 <summary><strong>Nix (NUR)</strong></summary>
 
-Crush is available via the official Charm [NUR](https://github.com/nix-community/NUR) in `nur.repos.charmbracelet.crush`, which is the most up-to-date way to get Crush in Nix.
+Codeplane is available via the official Charm [NUR](https://github.com/nix-community/NUR) in `nur.repos.charmbracelet.codeplane`, which is the most up-to-date way to get Codeplane in Nix.
 
-You can also try out Crush via the NUR with `nix-shell`:
+You can also try out Codeplane via the NUR with `nix-shell`:
 
 ```bash
 # Add the NUR channel.
 nix-channel --add https://github.com/nix-community/NUR/archive/main.tar.gz nur
 nix-channel --update
 
-# Get Crush in a Nix shell.
-nix-shell -p '(import <nur> { pkgs = import <nixpkgs> {}; }).repos.charmbracelet.crush'
+# Get Codeplane in a Nix shell.
+nix-shell -p '(import <nur> { pkgs = import <nixpkgs> {}; }).repos.charmbracelet.codeplane'
 ```
 
 ### NixOS & Home Manager Module Usage via NUR
 
-Crush provides NixOS and Home Manager modules via NUR.
+Codeplane provides NixOS and Home Manager modules via NUR.
 You can use these modules directly in your flake by importing them from NUR. Since it auto detects whether its a home manager or nixos context you can use the import the exact same way :)
 
 ```nix
@@ -86,9 +86,9 @@ You can use these modules directly in your flake by importing them from NUR. Sin
       system = "x86_64-linux";
       modules = [
         nur.modules.nixos.default
-        nur.repos.charmbracelet.modules.crush
+        nur.repos.charmbracelet.modules.codeplane
         {
-          programs.crush = {
+          programs.codeplane = {
             enable = true;
             settings = {
               providers = {
@@ -133,7 +133,7 @@ You can use these modules directly in your flake by importing them from NUR. Sin
 sudo mkdir -p /etc/apt/keyrings
 curl -fsSL https://repo.charm.sh/apt/gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/charm.gpg
 echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" | sudo tee /etc/apt/sources.list.d/charm.list
-sudo apt update && sudo apt install crush
+sudo apt update && sudo apt install codeplane
 ```
 
 </details>
@@ -148,7 +148,7 @@ baseurl=https://repo.charm.sh/yum/
 enabled=1
 gpgcheck=1
 gpgkey=https://repo.charm.sh/yum/gpg.key' | sudo tee /etc/yum.repos.d/charm.repo
-sudo yum install crush
+sudo yum install codeplane
 ```
 
 </details>
@@ -158,16 +158,16 @@ Or, download it:
 - [Packages][releases] are available in Debian and RPM formats
 - [Binaries][releases] are available for Linux, macOS, Windows, FreeBSD, OpenBSD, and NetBSD
 
-[releases]: https://github.com/charmbracelet/crush/releases
+[releases]: https://github.com/charmbracelet/codeplane/releases
 
 Or just install it with Go:
 
 ```
-go install github.com/charmbracelet/crush@latest
+go install github.com/charmbracelet/codeplane@latest
 ```
 
 > [!WARNING]
-> Productivity may increase when using Crush and you may find yourself nerd
+> Productivity may increase when using Codeplane and you may find yourself nerd
 > sniped when first using the application. If the symptoms persist, join the
 > [Discord][discord] and nerd snipe the rest of us.
 
@@ -175,7 +175,7 @@ go install github.com/charmbracelet/crush@latest
 
 The quickest way to get started is to grab an API key for your preferred
 provider such as Anthropic, OpenAI, Groq, OpenRouter, or Vercel AI Gateway and just start
-Crush. You'll be prompted to enter your API key.
+Codeplane. You'll be prompted to enter your API key.
 
 That said, you can also set environment variables for preferred providers.
 
@@ -207,7 +207,7 @@ That said, you can also set environment variables for preferred providers.
 ### Subscriptions
 
 If you prefer subscription-based usage, here are some plans that work well in
-Crush:
+Codeplane:
 
 - [Synthetic](https://synthetic.new/pricing)
 - [GLM Coding Plan](https://z.ai/subscribe)
@@ -216,25 +216,25 @@ Crush:
 
 ### By the Way
 
-Is there a provider you’d like to see in Crush? Is there an existing model that needs an update?
+Is there a provider you’d like to see in Codeplane? Is there an existing model that needs an update?
 
-Crush’s default model listing is managed in [Catwalk](https://github.com/charmbracelet/catwalk), a community-supported, open source repository of Crush-compatible models, and you’re welcome to contribute.
+Codeplane’s default model listing is managed in [Catwalk](https://github.com/charmbracelet/catwalk), a community-supported, open source repository of Codeplane-compatible models, and you’re welcome to contribute.
 
 <a href="https://github.com/charmbracelet/catwalk"><img width="174" height="174" alt="Catwalk Badge" src="https://github.com/user-attachments/assets/95b49515-fe82-4409-b10d-5beb0873787d" /></a>
 
 ## Configuration
 
 > [!TIP]
-> Crush ships with a builtin `crush-config` skill for configuring itself. In
-> many cases you can simply ask Crush to configure itself.
+> Codeplane ships with a builtin `codeplane-config` skill for configuring itself. In
+> many cases you can simply ask Codeplane to configure itself.
 
-Crush runs great with no configuration. That said, if you do need or want to
-customize Crush, configuration can be added either local to the project itself,
+Codeplane runs great with no configuration. That said, if you do need or want to
+customize Codeplane, configuration can be added either local to the project itself,
 or globally, with the following priority:
 
-1. `.crush.json`
-2. `crush.json`
-3. `$HOME/.config/crush/crush.json`
+1. `.codeplane.json`
+2. `codeplane.json`
+3. `$HOME/.config/codeplane/codeplane.json`
 
 Configuration itself is stored as a JSON object:
 
@@ -245,31 +245,31 @@ Configuration itself is stored as a JSON object:
 }
 ```
 
-As an additional note, Crush also stores ephemeral data, such as application
+As an additional note, Codeplane also stores ephemeral data, such as application
 state, in one additional location:
 
 ```bash
 # Unix
-$HOME/.local/share/crush/crush.json
+$HOME/.local/share/codeplane/codeplane.json
 
 # Windows
-%LOCALAPPDATA%\crush\crush.json
+%LOCALAPPDATA%\codeplane\codeplane.json
 ```
 
 > [!TIP]
 > You can override the user and data config locations by setting:
 >
-> - `CRUSH_GLOBAL_CONFIG`
-> - `CRUSH_GLOBAL_DATA`
+> - `CODEPLANE_GLOBAL_CONFIG`
+> - `CODEPLANE_GLOBAL_DATA`
 
 ### LSPs
 
-Crush can use LSPs for additional context to help inform its decisions, just
+Codeplane can use LSPs for additional context to help inform its decisions, just
 like you would. LSPs can be added manually like so:
 
 ```json
 {
-  "$schema": "https://charm.land/crush.json",
+  "$schema": "https://charm.land/codeplane.json",
   "lsp": {
     "go": {
       "command": "gopls",
@@ -290,14 +290,14 @@ like you would. LSPs can be added manually like so:
 
 ### MCPs
 
-Crush also supports Model Context Protocol (MCP) servers through three
+Codeplane also supports Model Context Protocol (MCP) servers through three
 transport types: `stdio` for command-line servers, `http` for HTTP endpoints,
 and `sse` for Server-Sent Events. Environment variable expansion is supported
 using `$(echo $VAR)` syntax.
 
 ```json
 {
-  "$schema": "https://charm.land/crush.json",
+  "$schema": "https://charm.land/codeplane.json",
   "mcp": {
     "filesystem": {
       "type": "stdio",
@@ -335,23 +335,25 @@ using `$(echo $VAR)` syntax.
 
 ### Ignoring Files
 
-Crush respects `.gitignore` files by default, but you can also create a
-`.crushignore` file to specify additional files and directories that Crush
-should ignore. This is useful for excluding files that you want in version
-control but don't want Crush to consider when providing context.
+Codeplane respects `.gitignore` files by default, but you can also create a
+`.codeplaneignore` file to specify additional files and directories that
+Codeplane should ignore. Legacy `.crushignore` and `.smithersignore` files are
+still honored during migration. This is useful for excluding files that you
+want in version control but don't want Codeplane to consider when providing
+context.
 
-The `.crushignore` file uses the same syntax as `.gitignore` and can be placed
+The `.codeplaneignore` file uses the same syntax as `.gitignore` and can be placed
 in the root of your project or in subdirectories.
 
 ### Allowing Tools
 
-By default, Crush will ask you for permission before running tool calls. If
+By default, Codeplane will ask you for permission before running tool calls. If
 you'd like, you can allow tools to be executed without prompting you for
 permissions. Use this with care.
 
 ```json
 {
-  "$schema": "https://charm.land/crush.json",
+  "$schema": "https://charm.land/codeplane.json",
   "permissions": {
     "allowed_tools": [
       "view",
@@ -364,18 +366,18 @@ permissions. Use this with care.
 }
 ```
 
-You can also skip all permission prompts entirely by running Crush with the
+You can also skip all permission prompts entirely by running Codeplane with the
 `--yolo` flag. Be very, very careful with this feature.
 
 ### Disabling Built-In Tools
 
-If you'd like to prevent Crush from using certain built-in tools entirely, you
+If you'd like to prevent Codeplane from using certain built-in tools entirely, you
 can disable them via the `options.disabled_tools` list. Disabled tools are
 completely hidden from the agent.
 
 ```json
 {
-  "$schema": "https://charm.land/crush.json",
+  "$schema": "https://charm.land/codeplane.json",
   "options": {
     "disabled_tools": ["bash", "sourcegraph"]
   }
@@ -386,50 +388,50 @@ To disable tools from MCP servers, see the [MCP config section](#mcps).
 
 ### Disabling Skills
 
-If you'd like to prevent Crush from using certain skills entirely, you can
+If you'd like to prevent Codeplane from using certain skills entirely, you can
 disable them via the `options.disabled_skills` list. Disabled skills are hidden
 from the agent, including builtin skills and skills discovered from disk.
 
 ```json
 {
-  "$schema": "https://charm.land/crush.json",
+  "$schema": "https://charm.land/codeplane.json",
   "options": {
-    "disabled_skills": ["crush-config"]
+    "disabled_skills": ["codeplane-config"]
   }
 }
 ```
 
 ### Agent Skills
 
-Crush supports the [Agent Skills](https://agentskills.io) open standard for
+Codeplane supports the [Agent Skills](https://agentskills.io) open standard for
 extending agent capabilities with reusable skill packages. Skills are folders
-containing a `SKILL.md` file with instructions that Crush can discover and
+containing a `SKILL.md` file with instructions that Codeplane can discover and
 activate on demand.
 
 The global paths we looks for skills are:
 
-* `$CRUSH_SKILLS_DIR`
+* `$CODEPLANE_SKILLS_DIR`
 * `$XDG_CONFIG_HOME/agents/skills` or `~/.config/agents/skills/`
-* `$XDG_CONFIG_HOME/crush/skills` or `~/.config/crush/skills/`
+* `$XDG_CONFIG_HOME/codeplane/skills` or `~/.config/codeplane/skills/`
 * On Windows, we _also_ look at
   * `%LOCALAPPDATA%\agents\skills\` or `%USERPROFILE%\AppData\Local\agents\skills\`
-  * `%LOCALAPPDATA%\crush\skills\` or `%USERPROFILE%\AppData\Local\crush\skills\`
+  * `%LOCALAPPDATA%\codeplane\skills\` or `%USERPROFILE%\AppData\Local\codeplane\skills\`
 * Additional paths configured via `options.skills_paths`
 
 On top of that, we _also_ load skills in your project from the following
 relative paths:
 
 * `.agents/skills`
-* `.crush/skills`
+* `.codeplane/skills`
 * `.claude/skills`
 * `.cursor/skills`
 
 ```jsonc
 {
-  "$schema": "https://charm.land/crush.json",
+  "$schema": "https://charm.land/codeplane.json",
   "options": {
     "skills_paths": [
-      "~/.config/crush/skills", // Windows: "%LOCALAPPDATA%\\crush\\skills",
+      "~/.config/codeplane/skills", // Windows: "%LOCALAPPDATA%\\codeplane\\skills",
       "./project-skills",
     ],
   },
@@ -440,29 +442,29 @@ You can get started with example skills from [anthropics/skills](https://github.
 
 ```bash
 # Unix
-mkdir -p ~/.config/crush/skills
-cd ~/.config/crush/skills
+mkdir -p ~/.config/codeplane/skills
+cd ~/.config/codeplane/skills
 git clone https://github.com/anthropics/skills.git _temp
 mv _temp/skills/* . && rm -rf _temp
 ```
 
 ```powershell
 # Windows (PowerShell)
-mkdir -Force "$env:LOCALAPPDATA\crush\skills"
-cd "$env:LOCALAPPDATA\crush\skills"
+mkdir -Force "$env:LOCALAPPDATA\codeplane\skills"
+cd "$env:LOCALAPPDATA\codeplane\skills"
 git clone https://github.com/anthropics/skills.git _temp
 mv _temp/skills/* . ; rm -r -force _temp
 ```
 
 ### Desktop notifications
 
-Crush sends desktop notifications when a tool call requires permission and when
+Codeplane sends desktop notifications when a tool call requires permission and when
 the agent finishes its turn. They're only sent when the terminal window isn't
 focused _and_ your terminal supports reporting the focus state.
 
 ```jsonc
 {
-  "$schema": "https://charm.land/crush.json",
+  "$schema": "https://charm.land/codeplane.json",
   "options": {
     "disable_notifications": false, // default
   },
@@ -475,14 +477,14 @@ limitations.
 
 ### Initialization
 
-When you initialize a project, Crush analyzes your codebase and creates
+When you initialize a project, Codeplane analyzes your codebase and creates
 a context file that helps it work more effectively in future sessions.
 By default, this file is named `AGENTS.md`, but you can customize the
 name and location with the `initialize_as` option:
 
 ```json
 {
-  "$schema": "https://charm.land/crush.json",
+  "$schema": "https://charm.land/codeplane.json",
   "options": {
     "initialize_as": "AGENTS.md"
   }
@@ -490,19 +492,19 @@ name and location with the `initialize_as` option:
 ```
 
 This is useful if you prefer a different naming convention or want to
-place the file in a specific directory (e.g., `CRUSH.md` or
-`docs/LLMs.md`). Crush will fill the file with project-specific context
+place the file in a specific directory (e.g., `CODEPLANE.md` or
+`docs/LLMs.md`). Codeplane will fill the file with project-specific context
 like build commands, code patterns, and conventions it discovered during
 initialization.
 
 ### Attribution Settings
 
-By default, Crush adds attribution information to Git commits and pull requests
+By default, Codeplane adds attribution information to Git commits and pull requests
 it creates. You can customize this behavior with the `attribution` option:
 
 ```json
 {
-  "$schema": "https://charm.land/crush.json",
+  "$schema": "https://charm.land/codeplane.json",
   "options": {
     "attribution": {
       "trailer_style": "co-authored-by",
@@ -514,16 +516,16 @@ it creates. You can customize this behavior with the `attribution` option:
 
 - `trailer_style`: Controls the attribution trailer added to commit messages
   (default: `assisted-by`)
-  - `assisted-by`: Adds `Assisted-by: [Model Name] via Crush <crush@charm.land>`
+  - `assisted-by`: Adds `Assisted-by: [Model Name] via Codeplane <codeplane@charm.land>`
     (includes the model name)
-  - `co-authored-by`: Adds `Co-Authored-By: Crush <crush@charm.land>`
+  - `co-authored-by`: Adds `Co-Authored-By: Codeplane <codeplane@charm.land>`
   - `none`: No attribution trailer
-- `generated_with`: When true (default), adds `💘 Generated with Crush` line to
+- `generated_with`: When true (default), adds `💘 Generated with Codeplane` line to
   commit messages and PR descriptions
 
 ### Custom Providers
 
-Crush supports custom provider configurations for both OpenAI-compatible and
+Codeplane supports custom provider configurations for both OpenAI-compatible and
 Anthropic-compatible APIs.
 
 > [!NOTE]
@@ -540,7 +542,7 @@ API. Don't forget to set `DEEPSEEK_API_KEY` in your environment.
 
 ```json
 {
-  "$schema": "https://charm.land/crush.json",
+  "$schema": "https://charm.land/codeplane.json",
   "providers": {
     "deepseek": {
       "type": "openai-compat",
@@ -569,7 +571,7 @@ Custom Anthropic-compatible providers follow this format:
 
 ```json
 {
-  "$schema": "https://charm.land/crush.json",
+  "$schema": "https://charm.land/codeplane.json",
   "providers": {
     "custom-anthropic": {
       "type": "anthropic",
@@ -599,11 +601,11 @@ Custom Anthropic-compatible providers follow this format:
 
 ### Amazon Bedrock
 
-Crush currently supports running Anthropic models through Bedrock, with caching disabled.
+Codeplane currently supports running Anthropic models through Bedrock, with caching disabled.
 
 - A Bedrock provider will appear once you have AWS configured, i.e. `aws configure`
-- Crush also expects the `AWS_REGION` or `AWS_DEFAULT_REGION` to be set
-- To use a specific AWS profile set `AWS_PROFILE` in your environment, i.e. `AWS_PROFILE=myprofile crush`
+- Codeplane also expects the `AWS_REGION` or `AWS_DEFAULT_REGION` to be set
+- To use a specific AWS profile set `AWS_PROFILE` in your environment, i.e. `AWS_PROFILE=myprofile codeplane`
 - Alternatively to `aws configure`, you can also just set `AWS_BEARER_TOKEN_BEDROCK`
 
 ### Vertex AI Platform
@@ -618,7 +620,7 @@ To add specific models to the configuration, configure as such:
 
 ```json
 {
-  "$schema": "https://charm.land/crush.json",
+  "$schema": "https://charm.land/codeplane.json",
   "providers": {
     "vertexai": {
       "models": [
@@ -690,28 +692,28 @@ Local models can also be configured via OpenAI-compatible API. Here are two comm
 
 ## Logging
 
-Sometimes you need to look at logs. Luckily, Crush logs all sorts of
-stuff. Logs are stored in `./.crush/logs/crush.log` relative to the project.
+Sometimes you need to look at logs. Luckily, Codeplane logs all sorts of
+stuff. Logs are stored in `./.codeplane/logs/codeplane.log` relative to the project.
 
 The CLI also contains some helper commands to make perusing recent logs easier:
 
 ```bash
 # Print the last 1000 lines
-crush logs
+codeplane logs
 
 # Print the last 500 lines
-crush logs --tail 500
+codeplane logs --tail 500
 
 # Follow logs in real time
-crush logs --follow
+codeplane logs --follow
 ```
 
-Want more logging? Run `crush` with the `--debug` flag, or enable it in the
+Want more logging? Run `codeplane` with the `--debug` flag, or enable it in the
 config:
 
 ```json
 {
-  "$schema": "https://charm.land/crush.json",
+  "$schema": "https://charm.land/codeplane.json",
   "options": {
     "debug": true,
     "debug_lsp": true
@@ -719,13 +721,13 @@ config:
 }
 ```
 
-For deep runtime debugging, Crush can also expose a local observability
+For deep runtime debugging, Codeplane can also expose a local observability
 endpoint with Prometheus metrics, pprof, expvar, and an in-memory recent span
 buffer:
 
 ```json
 {
-  "$schema": "https://charm.land/crush.json",
+  "$schema": "https://charm.land/codeplane.json",
   "options": {
     "observability": {
       "address": "127.0.0.1:9464",
@@ -755,7 +757,7 @@ You can also configure trace export to an OTLP/HTTP backend:
 
 ```json
 {
-  "$schema": "https://charm.land/crush.json",
+  "$schema": "https://charm.land/codeplane.json",
   "options": {
     "observability": {
       "otlp_endpoint": "http://localhost:4318",
@@ -770,10 +772,10 @@ You can also configure trace export to an OTLP/HTTP backend:
 
 ## Provider Auto-Updates
 
-By default, Crush automatically checks for the latest and greatest list of
+By default, Codeplane automatically checks for the latest and greatest list of
 providers and models from [Catwalk](https://github.com/charmbracelet/catwalk),
-the open source Crush provider database. This means that when new providers and
-models are available, or when model metadata changes, Crush automatically
+the open source Codeplane provider database. This means that when new providers and
+models are available, or when model metadata changes, Codeplane automatically
 updates your local configuration.
 
 ### Disabling automatic provider updates
@@ -783,48 +785,48 @@ air-gapped environments, this might not be want you want, and this feature can
 be disabled.
 
 To disable automatic provider updates, set `disable_provider_auto_update` into
-your `crush.json` config:
+your `codeplane.json` config:
 
 ```json
 {
-  "$schema": "https://charm.land/crush.json",
+  "$schema": "https://charm.land/codeplane.json",
   "options": {
     "disable_provider_auto_update": true
   }
 }
 ```
 
-Or set the `CRUSH_DISABLE_PROVIDER_AUTO_UPDATE` environment variable:
+Or set the `CODEPLANE_DISABLE_PROVIDER_AUTO_UPDATE` environment variable:
 
 ```bash
-export CRUSH_DISABLE_PROVIDER_AUTO_UPDATE=1
+export CODEPLANE_DISABLE_PROVIDER_AUTO_UPDATE=1
 ```
 
 ### Manually updating providers
 
-Manually updating providers is possible with the `crush update-providers`
+Manually updating providers is possible with the `codeplane update-providers`
 command:
 
 ```bash
 # Update providers remotely from Catwalk.
-crush update-providers
+codeplane update-providers
 
 # Update providers from a custom Catwalk base URL.
-crush update-providers https://example.com/
+codeplane update-providers https://example.com/
 
 # Update providers from a local file.
-crush update-providers /path/to/local-providers.json
+codeplane update-providers /path/to/local-providers.json
 
-# Reset providers to the embedded version, embedded at crush at build time.
-crush update-providers embedded
+# Reset providers to the embedded version, embedded into Codeplane at build time.
+codeplane update-providers embedded
 
 # For more info:
-crush update-providers --help
+codeplane update-providers --help
 ```
 
 ## Metrics
 
-Crush records pseudonymous usage metrics (tied to a device-specific hash),
+Codeplane records pseudonymous usage metrics (tied to a device-specific hash),
 which maintainers rely on to inform development and support priorities. The
 metrics include solely usage metadata; prompts and responses are NEVER
 collected.
@@ -836,7 +838,7 @@ You can opt out of metrics collection at any time by setting the environment
 variable by setting the following in your environment:
 
 ```bash
-export CRUSH_DISABLE_METRICS=1
+export CODEPLANE_DISABLE_METRICS=1
 ```
 
 Or by setting the following in your config:
@@ -849,7 +851,7 @@ Or by setting the following in your config:
 }
 ```
 
-Crush also respects the `DO_NOT_TRACK` convention which can be enabled via
+Codeplane also respects the `DO_NOT_TRACK` convention which can be enabled via
 `export DO_NOT_TRACK=1`.
 
 ## Q&A

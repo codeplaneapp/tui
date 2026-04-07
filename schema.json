@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/charmbracelet/crush/internal/config/config",
+  "$id": "https://charm.land/codeplane.json",
   "$ref": "#/$defs/Config",
   "$defs": {
     "Attribution": {
@@ -22,7 +22,7 @@
         },
         "generated_with": {
           "type": "boolean",
-          "description": "Add Generated with Smithers TUI line to commit messages and issues and PRs",
+          "description": "Add Generated with Codeplane line to commit messages and issues and PRs",
           "default": true
         }
       },
@@ -64,7 +64,7 @@
           "description": "Model configurations for different model types"
         },
         "providers": {
-          "$ref": "#/$defs/Map[string,github.com/charmbracelet/crush/internal/config.ProviderConfig]",
+          "$ref": "#/$defs/Map[string,codeplane.internal.config.ProviderConfig]",
           "description": "AI provider configurations"
         },
         "mcp": {
@@ -89,7 +89,7 @@
         },
         "smithers": {
           "$ref": "#/$defs/SmithersConfig",
-          "description": "Smithers integration settings"
+          "description": "Codeplane workflow integration settings"
         }
       },
       "additionalProperties": false,
@@ -266,7 +266,7 @@
       },
       "type": "object"
     },
-    "Map[string,github.com/charmbracelet/crush/internal/config.ProviderConfig]": {
+    "Map[string,codeplane.internal.config.ProviderConfig]": {
       "properties": {},
       "additionalProperties": false,
       "type": "object"
@@ -328,7 +328,7 @@
             "type": "string",
             "examples": [
               ".cursorrules",
-              "SMITHERS-TUI.md"
+              "CODEPLANE.md"
             ]
           },
           "type": "array",
@@ -338,7 +338,7 @@
           "items": {
             "type": "string",
             "examples": [
-              "~/.config/smithers-tui/skills",
+              "~/.config/codeplane/skills",
               "./skills"
             ]
           },
@@ -367,9 +367,9 @@
         "data_directory": {
           "type": "string",
           "description": "Directory for storing application data (relative to working directory)",
-          "default": ".smithers-tui",
+          "default": ".codeplane",
           "examples": [
-            ".smithers-tui"
+            ".codeplane"
           ]
         },
         "disabled_tools": {
@@ -408,7 +408,7 @@
           "default": "AGENTS.md",
           "examples": [
             "AGENTS.md",
-            "SMITHERS-TUI.md",
+            "CODEPLANE.md",
             "CLAUDE.md",
             "docs/LLMs.md"
           ]
@@ -432,7 +432,7 @@
           "items": {
             "type": "string",
             "examples": [
-              "crush-config"
+              "codeplane-config"
             ]
           },
           "type": "array",
@@ -546,27 +546,27 @@
       "properties": {
         "dbPath": {
           "type": "string",
-          "description": "Path to the Smithers SQLite database file",
+          "description": "Path to the Codeplane workflow SQLite database file",
           "examples": [
-            ".smithers/smithers.db"
+            ".codeplane/codeplane.db"
           ]
         },
         "apiUrl": {
           "type": "string",
-          "description": "Base URL for the Smithers HTTP API",
+          "description": "Base URL for the Codeplane workflow HTTP API",
           "examples": [
             "http://localhost:7331"
           ]
         },
         "apiToken": {
           "type": "string",
-          "description": "Bearer token used for the Smithers HTTP API"
+          "description": "Bearer token used for the Codeplane workflow HTTP API"
         },
         "workflowDir": {
           "type": "string",
-          "description": "Path to Smithers workflow definitions",
+          "description": "Path to Codeplane workflow definitions",
           "examples": [
-            ".smithers/workflows"
+            ".codeplane/workflows"
           ]
         }
       },

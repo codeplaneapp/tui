@@ -3,6 +3,7 @@ package logo
 
 import (
 	"image/color"
+	"strings"
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/crush/internal/ui/styles"
@@ -25,7 +26,7 @@ type Opts struct {
 // The compact argument determines whether it renders compact for the sidebar
 // or wider for the main pane.
 func Render(s *styles.Styles, version string, compact bool, o Opts) string {
-	title := styles.ApplyBoldForegroundGrad(s, "CODEPLANE", o.TitleColorA, o.TitleColorB)
+	title := styles.ApplyBoldForegroundGrad(s, "SMITHERS", o.TitleColorA, o.TitleColorB)
 
 	if version != "" {
 		versionText := lipgloss.NewStyle().Foreground(o.VersionColor).Render(" " + version)
@@ -42,6 +43,33 @@ func Render(s *styles.Styles, version string, compact bool, o Opts) string {
 // SmallRender renders a smaller version of the Codeplane logo, suitable for
 // smaller windows or sidebar usage.
 func SmallRender(t *styles.Styles, width int) string {
-	title := styles.ApplyBoldForegroundGrad(t, "CODEPLANE", t.Secondary, t.Primary)
+	title := styles.ApplyBoldForegroundGrad(t, "SMITHERS", t.Secondary, t.Primary)
 	return title
+}
+
+// LargeRender renders the large Smithers ASCII logo.
+func LargeRender(s *styles.Styles, width int) string {
+	ascii := []string{
+		" ███████╗███╗   ███╗██╗████████╗██╗  ██╗███████╗██████╗ ███████╗",
+		" ██╔════╝████╗ ████║██║╚══██╔══╝██║  ██║██╔════╝██╔══██╗██╔════╝",
+		" ███████╗██╔████╔██║██║   ██║   ███████║█████╗  ██████╔╝███████╗",
+		" ╚════██║██║╚██╔╝██║██║   ██║   ██╔══██║██╔══╝  ██╔══██╗╚════██║",
+		" ███████║██║ ╚═╝ ██║██║   ██║   ██║  ██║███████╗██║  ██║███████║",
+		" ╚══════╝╚═╝     ╚═╝╚═╝   ╚═╝   ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚══════╝",
+	}
+
+	var b strings.Builder
+	for i, line := range ascii {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		// Apply horizontal gradient to each line.
+		b.WriteString(styles.ApplyBoldForegroundGrad(s, line, s.LogoTitleColorA, s.LogoTitleColorB))
+	}
+
+	res := b.String()
+	if width > 0 {
+		res = ansi.Truncate(res, width, "")
+	}
+	return res
 }

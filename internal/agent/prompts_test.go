@@ -44,7 +44,7 @@ func TestSmithersPromptIncludesDomainInstructions(t *testing.T) {
 
 	rendered := renderSmithersPrompt(t, prompt.WithSmithersMode(".smithers/workflows", "smithers"))
 
-	require.Contains(t, rendered, "Smithers TUI assistant")
+	require.Contains(t, rendered, "Codeplane Smithers assistant")
 	require.Contains(t, rendered, "format results as tables")
 	require.Contains(t, rendered, "pending approval gates")
 	require.Contains(t, rendered, "mcp_smithers_runs_list")
@@ -109,7 +109,7 @@ func TestSmithersPromptSnapshot(t *testing.T) {
 
 	rendered := renderSmithersPrompt(t, prompt.WithSmithersMode(".smithers/workflows", "smithers"))
 	goldenPath := filepath.Join("testdata", "smithers_prompt.golden")
-	if os.Getenv("SMITHERS_TUI_UPDATE_GOLDEN") == "1" {
+	if os.Getenv("CODEPLANE_UPDATE_GOLDEN") == "1" || os.Getenv("SMITHERS_TUI_UPDATE_GOLDEN") == "1" {
 		require.NoError(t, os.MkdirAll(filepath.Dir(goldenPath), 0o755))
 		require.NoError(t, os.WriteFile(goldenPath, []byte(rendered), 0o644))
 	}
@@ -189,7 +189,7 @@ func TestCoderPromptDoesNotIncludeSmithersInstructions(t *testing.T) {
 
 	rendered := renderCoderPrompt(t)
 
-	require.NotContains(t, rendered, "Smithers TUI assistant")
+	require.NotContains(t, rendered, "Codeplane Smithers assistant")
 	require.NotContains(t, rendered, "mcp_smithers_runs_list")
 }
 

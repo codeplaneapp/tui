@@ -26,6 +26,8 @@ func TestCommandBrandingUsesCodeplane(t *testing.T) {
 		{name: "logs", cmd: logsCmd},
 		{name: "schema", cmd: schemaCmd},
 		{name: "projects", cmd: projectsCmd},
+		{name: "server", cmd: serverCmd},
+		{name: "session", cmd: sessionCmd},
 	}
 
 	for _, tt := range tests {

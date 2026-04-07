@@ -100,7 +100,7 @@ func TestSmithersSystemPromptContainsDomainInstructions(t *testing.T) {
 	require.NoError(t, err)
 
 	// Must identify as the Smithers assistant.
-	assert.Contains(t, rendered, "Smithers TUI assistant")
+	assert.Contains(t, rendered, "Codeplane Smithers assistant")
 
 	// MCP tool names must use the configured server name constant.
 	expectedToolPrefix := "mcp_" + config.SmithersMCPName + "_"
@@ -138,7 +138,7 @@ func TestCoderSystemPromptAbsent(t *testing.T) {
 	require.NoError(t, err)
 
 	// Must not include Smithers-specific role text.
-	assert.NotContains(t, rendered, "Smithers TUI assistant",
+	assert.NotContains(t, rendered, "Codeplane Smithers assistant",
 		"coder prompt must not contain Smithers domain instructions")
 }
 

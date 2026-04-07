@@ -16,8 +16,8 @@ import (
 	"github.com/charmbracelet/crush/internal/agent/hyper"
 	"github.com/charmbracelet/crush/internal/event"
 	crushlog "github.com/charmbracelet/crush/internal/log"
-	"github.com/charmbracelet/crush/internal/observability"
 	"github.com/charmbracelet/crush/internal/oauth"
+	"github.com/charmbracelet/crush/internal/observability"
 )
 
 // DeviceAuthResponse contains the response from the device authorization endpoint.
@@ -38,6 +38,8 @@ type TokenResponse struct {
 	ErrorDescription string `json:"error_description,omitempty"`
 }
 
+const defaultUserAgent = "codeplane"
+
 // InitiateDeviceAuth calls the /device/auth endpoint to start the device flow.
 func InitiateDeviceAuth(ctx context.Context) (*DeviceAuthResponse, error) {
 	url := hyper.BaseURL() + "/device/auth"
@@ -51,7 +53,7 @@ func InitiateDeviceAuth(ctx context.Context) (*DeviceAuthResponse, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "smithers-tui")
+	req.Header.Set("User-Agent", defaultUserAgent)
 
 	client := crushlog.NewHTTPClientWithComponent("hyper_oauth")
 	client.Timeout = 30 * time.Second
@@ -80,9 +82,16 @@ func InitiateDeviceAuth(ctx context.Context) (*DeviceAuthResponse, error) {
 
 func deviceName() string {
 	if hostname, err := os.Hostname(); err == nil && hostname != "" {
-		return "Crush (" + hostname + ")"
+		return deviceNameFromHostname(hostname)
 	}
-	return "Crush"
+	return deviceNameFromHostname("")
+}
+
+func deviceNameFromHostname(hostname string) string {
+	if hostname == "" {
+		return "Codeplane"
+	}
+	return "Codeplane (" + hostname + ")"
 }
 
 // PollForToken polls the /device/token endpoint until authorization is complete.
@@ -127,7 +136,7 @@ func pollOnce(ctx context.Context, deviceCode string) (TokenResponse, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "crush")
+	req.Header.Set("User-Agent", defaultUserAgent)
 
 	client := crushlog.NewHTTPClientWithComponent("hyper_oauth")
 	client.Timeout = 30 * time.Second
@@ -171,7 +180,7 @@ func ExchangeToken(ctx context.Context, refreshToken string) (*oauth.Token, erro
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "crush")
+	req.Header.Set("User-Agent", defaultUserAgent)
 
 	client := crushlog.NewHTTPClientWithComponent("hyper_oauth")
 	client.Timeout = 30 * time.Second
@@ -229,7 +238,7 @@ func IntrospectToken(ctx context.Context, accessToken string) (*IntrospectTokenR
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "crush")
+	req.Header.Set("User-Agent", defaultUserAgent)
 
 	client := crushlog.NewHTTPClientWithComponent("hyper_oauth")
 	client.Timeout = 30 * time.Second

@@ -8,6 +8,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestBrandingConstantsUseCodeplane(t *testing.T) {
+	require.Contains(t, githubApiURL, "/charmbracelet/codeplane/releases/latest")
+	require.Equal(t, "codeplane/1.0", userAgent)
+}
+
 func TestCheckForUpdate_Old(t *testing.T) {
 	info, err := Check(t.Context(), "v0.10.0", testClient{"v0.11.0"})
 	require.NoError(t, err)
