@@ -582,7 +582,8 @@ func (app *App) InitCoderAgent(ctx context.Context) error {
 
 // Subscribe sends events to the TUI as tea.Msgs.
 func (app *App) Subscribe(program *tea.Program) {
-	defer log.RecoverPanic("app.Subscribe", func() {
+	panicCtx := observability.WithComponent(app.globalCtx, "app_subscribe")
+	defer log.RecoverPanic(panicCtx, "app.Subscribe", func() {
 		slog.Info("TUI subscription panic: attempting graceful shutdown")
 		program.Quit()
 	})
