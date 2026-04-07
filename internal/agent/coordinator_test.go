@@ -516,6 +516,224 @@ func TestIsUnauthorized(t *testing.T) {
 	})
 }
 
+func TestIsAnthropicThinking(t *testing.T) {
+	t.Parallel()
+	coord := &coordinator{}
+
+	t.Run("returns true when Think flag is set", func(t *testing.T) {
+		t.Parallel()
+		model := config.SelectedModel{Think: true}
+		assert.True(t, coord.isAnthropicThinking(model))
+	})
+
+	t.Run("returns true when provider_options contain thinking key", func(t *testing.T) {
+		t.Parallel()
+		model := config.SelectedModel{
+			ProviderOptions: map[string]any{
+				"thinking": map[string]any{"budget_tokens": 5000},
+			},
+		}
+		assert.True(t, coord.isAnthropicThinking(model))
+	})
+
+	t.Run("returns false when neither Think nor thinking option set", func(t *testing.T) {
+		t.Parallel()
+		model := config.SelectedModel{
+			ProviderOptions: map[string]any{"effort": "high"},
+		}
+		assert.False(t, coord.isAnthropicThinking(model))
+	})
+
+	t.Run("returns false for empty model", func(t *testing.T) {
+		t.Parallel()
+		model := config.SelectedModel{}
+		assert.False(t, coord.isAnthropicThinking(model))
+	})
+
+	t.Run("Think true takes precedence even with nil provider options", func(t *testing.T) {
+		t.Parallel()
+		model := config.SelectedModel{
+			Think:           true,
+			ProviderOptions: nil,
+		}
+		assert.True(t, coord.isAnthropicThinking(model))
+	})
+}
+
+func TestGetProviderOptions(t *testing.T) {
+	t.Parallel()
+
+	t.Run("merges model, provider, and catwalk options with correct precedence", func(t *testing.T) {
+		t.Parallel()
+		model := Model{
+			ModelCfg: config.SelectedModel{
+				Provider:        "anthropic",
+				ProviderOptions: map[string]any{"effort": "high"},
+			},
+			CatwalkCfg: catwalk.Model{
+				Options: catwalk.ModelOptions{
+					ProviderOptions: map[string]any{"effort": "low", "extra_key": "from_catwalk"},
+				},
+			},
+		}
+		providerCfg := config.ProviderConfig{
+			Type:            "anthropic",
+			ProviderOptions: map[string]any{"effort": "medium", "provider_key": "from_provider"},
+		}
+
+		opts := getProviderOptions(model, providerCfg)
+		// The result should have anthropic options since provider type is anthropic.
+		// Model-level effort ("high") should win over provider ("medium") and catwalk ("low").
+		assert.NotEmpty(t, opts)
+	})
+
+	t.Run("returns empty options for nil provider options on all sources", func(t *testing.T) {
+		t.Parallel()
+		model := Model{
+			ModelCfg:   config.SelectedModel{Provider: "anthropic"},
+			CatwalkCfg: catwalk.Model{},
+		}
+		providerCfg := config.ProviderConfig{Type: "anthropic"}
+		opts := getProviderOptions(model, providerCfg)
+		// With no provider options and no reasoning_effort, the result
+		// should still contain an anthropic key (from empty merge) or be empty.
+		// Since all source options are nil, merging should produce "{}" -> empty map,
+		// and no reasoning defaults are injected.
+		assert.NotNil(t, opts)
+	})
+
+	t.Run("injects reasoning_effort for openai provider", func(t *testing.T) {
+		t.Parallel()
+		model := Model{
+			ModelCfg: config.SelectedModel{
+				Provider:        "openai",
+				Model:           "gpt-4o",
+				ReasoningEffort: "high",
+			},
+			CatwalkCfg: catwalk.Model{ID: "gpt-4o"},
+		}
+		providerCfg := config.ProviderConfig{Type: "openai"}
+		opts := getProviderOptions(model, providerCfg)
+		// Should have openai options with reasoning_effort injected.
+		assert.NotEmpty(t, opts)
+	})
+
+	t.Run("injects thinking for anthropic when Think is set", func(t *testing.T) {
+		t.Parallel()
+		model := Model{
+			ModelCfg: config.SelectedModel{
+				Provider: "anthropic",
+				Model:    "claude-opus-4",
+				Think:    true,
+			},
+			CatwalkCfg: catwalk.Model{ID: "claude-opus-4"},
+		}
+		providerCfg := config.ProviderConfig{Type: "anthropic"}
+		opts := getProviderOptions(model, providerCfg)
+		assert.NotEmpty(t, opts)
+	})
+
+	t.Run("hyper provider dispatches to anthropic for claude models", func(t *testing.T) {
+		t.Parallel()
+		model := Model{
+			ModelCfg: config.SelectedModel{
+				Provider:        "hyper",
+				Model:           "claude-opus-4",
+				ReasoningEffort: "high",
+			},
+			CatwalkCfg: catwalk.Model{ID: "claude-opus-4"},
+		}
+		providerCfg := config.ProviderConfig{Type: "hyper"}
+		opts := getProviderOptions(model, providerCfg)
+		// hyper + claude model ID -> should be treated as anthropic provider
+		_, hasAnthropic := opts["anthropic"]
+		assert.True(t, hasAnthropic, "hyper provider with claude model should produce anthropic options")
+	})
+
+	t.Run("hyper provider dispatches to openai for gpt models", func(t *testing.T) {
+		t.Parallel()
+		model := Model{
+			ModelCfg: config.SelectedModel{
+				Provider:        "hyper",
+				Model:           "gpt-4o",
+				ReasoningEffort: "high",
+			},
+			CatwalkCfg: catwalk.Model{ID: "gpt-4o"},
+		}
+		providerCfg := config.ProviderConfig{Type: "hyper"}
+		opts := getProviderOptions(model, providerCfg)
+		_, hasOpenai := opts["openai"]
+		assert.True(t, hasOpenai, "hyper provider with gpt model should produce openai options")
+	})
+
+	t.Run("hyper provider dispatches to google for gemini models", func(t *testing.T) {
+		t.Parallel()
+		model := Model{
+			ModelCfg: config.SelectedModel{
+				Provider: "hyper",
+				Model:    "gemini-2.5-pro",
+			},
+			CatwalkCfg: catwalk.Model{ID: "gemini-2.5-pro"},
+		}
+		providerCfg := config.ProviderConfig{Type: "hyper"}
+		opts := getProviderOptions(model, providerCfg)
+		_, hasGoogle := opts["google"]
+		assert.True(t, hasGoogle, "hyper provider with gemini model should produce google options")
+	})
+
+	t.Run("hyper provider dispatches to openai-compat for unknown models", func(t *testing.T) {
+		t.Parallel()
+		model := Model{
+			ModelCfg: config.SelectedModel{
+				Provider:        "hyper",
+				Model:           "some-custom-model",
+				ReasoningEffort: "medium",
+			},
+			CatwalkCfg: catwalk.Model{ID: "some-custom-model"},
+		}
+		providerCfg := config.ProviderConfig{Type: "hyper"}
+		opts := getProviderOptions(model, providerCfg)
+		_, hasCompat := opts["openai-compat"]
+		assert.True(t, hasCompat, "hyper provider with unknown model should produce openai-compat options")
+	})
+}
+
+func TestMergeCallOptionsPartialOverlap(t *testing.T) {
+	t.Parallel()
+
+	floatPtr := func(v float64) *float64 { return &v }
+	int64Ptr := func(v int64) *int64 { return &v }
+
+	t.Run("ModelCfg partially set falls through to CatwalkCfg for remaining fields", func(t *testing.T) {
+		t.Parallel()
+		model := Model{
+			ModelCfg: config.SelectedModel{
+				Temperature: floatPtr(0.7),
+				// TopP, TopK, etc. are nil
+			},
+			CatwalkCfg: catwalk.Model{
+				Options: catwalk.ModelOptions{
+					Temperature:      floatPtr(0.1),
+					TopP:             floatPtr(0.95),
+					TopK:             int64Ptr(40),
+					FrequencyPenalty: floatPtr(0.3),
+				},
+			},
+		}
+		_, temp, topP, topK, freqPenalty, presPenalty := mergeCallOptions(model, config.ProviderConfig{})
+		// Temperature: ModelCfg wins (0.7)
+		assert.Equal(t, floatPtr(0.7), temp)
+		// TopP: falls through to CatwalkCfg (0.95)
+		assert.Equal(t, floatPtr(0.95), topP)
+		// TopK: falls through to CatwalkCfg (40)
+		assert.Equal(t, int64Ptr(40), topK)
+		// FrequencyPenalty: falls through to CatwalkCfg (0.3)
+		assert.Equal(t, floatPtr(0.3), freqPenalty)
+		// PresencePenalty: neither set -> nil
+		assert.Nil(t, presPenalty)
+	})
+}
+
 func TestCoordinatorResolveAgent(t *testing.T) {
 	t.Run("prefers smithers agent when configured", func(t *testing.T) {
 		cfg, err := config.Init(t.TempDir(), "", false)

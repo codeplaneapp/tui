@@ -136,3 +136,110 @@ func TestSmithersPromptSnapshotWithActiveRuns(t *testing.T) {
 	require.Contains(t, rendered, "run-002: deploy-prod (waiting-approval)")
 	require.Contains(t, rendered, "Workflow directory: .smithers/workflows")
 }
+
+// --- Coder prompt tests ---
+
+func renderCoderPrompt(t *testing.T, opts ...prompt.Option) string {
+	t.Helper()
+
+	store, err := config.Init(t.TempDir(), "", false)
+	require.NoError(t, err)
+	store.Config().Options.ContextPaths = nil
+	store.Config().Options.SkillsPaths = nil
+
+	baseOptions := []prompt.Option{
+		prompt.WithTimeFunc(func() time.Time {
+			return time.Date(2026, 4, 6, 0, 0, 0, 0, time.UTC)
+		}),
+		prompt.WithPlatform("linux"),
+		prompt.WithWorkingDir("/tmp/test-workspace"),
+	}
+	baseOptions = append(baseOptions, opts...)
+
+	systemPrompt, err := coderPrompt(baseOptions...)
+	require.NoError(t, err)
+
+	rendered, err := systemPrompt.Build(context.Background(), "anthropic", "claude-opus-4", store)
+	require.NoError(t, err)
+	return rendered
+}
+
+func TestCoderPromptIncludesCriticalRules(t *testing.T) {
+	t.Parallel()
+
+	rendered := renderCoderPrompt(t)
+
+	require.Contains(t, rendered, "READ BEFORE EDITING")
+	require.Contains(t, rendered, "BE AUTONOMOUS")
+	require.Contains(t, rendered, "TEST AFTER CHANGES")
+}
+
+func TestCoderPromptIncludesEnvironmentInfo(t *testing.T) {
+	t.Parallel()
+
+	rendered := renderCoderPrompt(t)
+
+	require.Contains(t, rendered, "/tmp/test-workspace")
+	require.Contains(t, rendered, "linux")
+	require.Contains(t, rendered, "4/6/2026")
+}
+
+func TestCoderPromptDoesNotIncludeSmithersInstructions(t *testing.T) {
+	t.Parallel()
+
+	rendered := renderCoderPrompt(t)
+
+	require.NotContains(t, rendered, "Smithers TUI assistant")
+	require.NotContains(t, rendered, "mcp_smithers_runs_list")
+}
+
+// --- Task prompt tests ---
+
+func renderTaskPrompt(t *testing.T, opts ...prompt.Option) string {
+	t.Helper()
+
+	store, err := config.Init(t.TempDir(), "", false)
+	require.NoError(t, err)
+	store.Config().Options.ContextPaths = nil
+	store.Config().Options.SkillsPaths = nil
+
+	baseOptions := []prompt.Option{
+		prompt.WithTimeFunc(func() time.Time {
+			return time.Date(2026, 4, 6, 0, 0, 0, 0, time.UTC)
+		}),
+		prompt.WithPlatform("darwin"),
+		prompt.WithWorkingDir("/tmp/task-workspace"),
+	}
+	baseOptions = append(baseOptions, opts...)
+
+	systemPrompt, err := taskPrompt(baseOptions...)
+	require.NoError(t, err)
+
+	rendered, err := systemPrompt.Build(context.Background(), "anthropic", "claude-opus-4", store)
+	require.NoError(t, err)
+	return rendered
+}
+
+func TestTaskPromptRendersSuccessfully(t *testing.T) {
+	t.Parallel()
+
+	rendered := renderTaskPrompt(t)
+	require.NotEmpty(t, rendered)
+	// Task prompt should include environment info
+	require.Contains(t, rendered, "/tmp/task-workspace")
+}
+
+// --- InitializePrompt tests ---
+
+func TestInitializePromptRendersSuccessfully(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	store, err := config.Init(tmpDir, "", false)
+	require.NoError(t, err)
+
+	rendered, err := InitializePrompt(store)
+	require.NoError(t, err)
+	require.NotEmpty(t, rendered)
+	require.Contains(t, rendered, store.Config().Options.InitializeAs)
+}
