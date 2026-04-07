@@ -186,19 +186,19 @@ func TestRecordWorkItemPromotionTracksCountersAndDuration(t *testing.T) {
 	st := getState()
 	require.NotNil(t, st)
 
-	successMetric := gatherMetric(t, st, "crush_work_item_promotions_total", map[string]string{
+	successMetric := gatherMetric(t, st, "codeplane_work_item_promotions_total", map[string]string{
 		"target": "github_issues",
 		"result": "success",
 	})
 	require.Equal(t, float64(1), successMetric.GetCounter().GetValue())
 
-	warningMetric := gatherMetric(t, st, "crush_work_item_promotions_total", map[string]string{
+	warningMetric := gatherMetric(t, st, "codeplane_work_item_promotions_total", map[string]string{
 		"target": "github_issues",
 		"result": "warning",
 	})
 	require.Equal(t, float64(1), warningMetric.GetCounter().GetValue())
 
-	metric := gatherMetric(t, st, "crush_work_item_promotion_duration_seconds", map[string]string{
+	metric := gatherMetric(t, st, "codeplane_work_item_promotion_duration_seconds", map[string]string{
 		"target": "github_issues",
 		"result": "success",
 	})
@@ -220,20 +220,20 @@ func TestRecordUINavigation_CapturesSpanAndMetric(t *testing.T) {
 	}))
 
 	RecordUINavigation("runs", "snapshots", "ok",
-		attribute.String("crush.run_id", "run-123"),
+		attribute.String("codeplane.run_id", "run-123"),
 	)
 
 	spans := RecentSpans(10)
 	require.Len(t, spans, 1)
 	require.Equal(t, "ui.navigation", spans[0].Name)
-	require.Equal(t, "runs", spans[0].Attributes["crush.ui.entrypoint"])
-	require.Equal(t, "snapshots", spans[0].Attributes["crush.ui.target"])
-	require.Equal(t, "ok", spans[0].Attributes["crush.ui.result"])
-	require.Equal(t, "run-123", spans[0].Attributes["crush.run_id"])
+	require.Equal(t, "runs", spans[0].Attributes["codeplane.ui.entrypoint"])
+	require.Equal(t, "snapshots", spans[0].Attributes["codeplane.ui.target"])
+	require.Equal(t, "ok", spans[0].Attributes["codeplane.ui.result"])
+	require.Equal(t, "run-123", spans[0].Attributes["codeplane.run_id"])
 
 	st := getState()
 	require.NotNil(t, st)
-	counter := gatherMetric(t, st, "crush_ui_navigation_total", map[string]string{
+	counter := gatherMetric(t, st, "codeplane_ui_navigation_total", map[string]string{
 		"entrypoint": "runs",
 		"target":     "snapshots",
 		"result":     "ok",
@@ -290,28 +290,28 @@ func TestRecordSnapshotOperation_CapturesSpanAndMetric(t *testing.T) {
 	}))
 
 	RecordSnapshotOperation("load", 250*time.Millisecond, nil,
-		attribute.String("crush.run_id", "run-123"),
-		attribute.Int("crush.snapshot.count", 3),
+		attribute.String("codeplane.run_id", "run-123"),
+		attribute.Int("codeplane.snapshot.count", 3),
 	)
 
 	spans := RecentSpans(10)
 	require.Len(t, spans, 1)
 	require.Equal(t, "ui.snapshots.load", spans[0].Name)
-	require.Equal(t, "load", spans[0].Attributes["crush.snapshot.operation"])
-	require.Equal(t, "ok", spans[0].Attributes["crush.snapshot.result"])
-	require.Equal(t, "run-123", spans[0].Attributes["crush.run_id"])
-	require.EqualValues(t, 3, spans[0].Attributes["crush.snapshot.count"])
+	require.Equal(t, "load", spans[0].Attributes["codeplane.snapshot.operation"])
+	require.Equal(t, "ok", spans[0].Attributes["codeplane.snapshot.result"])
+	require.Equal(t, "run-123", spans[0].Attributes["codeplane.run_id"])
+	require.EqualValues(t, 3, spans[0].Attributes["codeplane.snapshot.count"])
 
 	st := getState()
 	require.NotNil(t, st)
 
-	counter := gatherMetric(t, st, "crush_snapshot_operations_total", map[string]string{
+	counter := gatherMetric(t, st, "codeplane_snapshot_operations_total", map[string]string{
 		"operation": "load",
 		"result":    "ok",
 	})
 	require.Equal(t, float64(1), counter.GetCounter().GetValue())
 
-	metric := gatherMetric(t, st, "crush_snapshot_operation_duration_seconds", map[string]string{
+	metric := gatherMetric(t, st, "codeplane_snapshot_operation_duration_seconds", map[string]string{
 		"operation": "load",
 	})
 	require.Equal(t, uint64(1), metric.GetHistogram().GetSampleCount())
@@ -325,17 +325,17 @@ func TestNormalizeConfigAppliesDefaults(t *testing.T) {
 		assert func(t *testing.T, cfg Config)
 	}{
 		{
-			name:  "empty service name defaults to crush",
+			name:  "empty service name defaults to codeplane",
 			input: Config{},
 			assert: func(t *testing.T, cfg Config) {
-				require.Equal(t, "crush", cfg.ServiceName)
+				require.Equal(t, "codeplane", cfg.ServiceName)
 			},
 		},
 		{
-			name:  "whitespace-only service name defaults to crush",
+			name:  "whitespace-only service name defaults to codeplane",
 			input: Config{ServiceName: "   "},
 			assert: func(t *testing.T, cfg Config) {
-				require.Equal(t, "crush", cfg.ServiceName)
+				require.Equal(t, "codeplane", cfg.ServiceName)
 			},
 		},
 		{

@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSmithersIgnore(t *testing.T) {
+func TestCodeplaneIgnore(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
 
@@ -17,8 +17,8 @@ func TestSmithersIgnore(t *testing.T) {
 	require.NoError(t, os.WriteFile("test2.log", []byte("test"), 0o644))
 	require.NoError(t, os.WriteFile("test3.tmp", []byte("test"), 0o644))
 
-	// Create a .smithersignore file that ignores .log files
-	require.NoError(t, os.WriteFile(".smithersignore", []byte("*.log\n"), 0o644))
+	// Create a .codeplaneignore file that ignores .log files.
+	require.NoError(t, os.WriteFile(".codeplaneignore", []byte("*.log\n"), 0o644))
 
 	dl := NewDirectoryLister(tempDir)
 	require.True(t, dl.shouldIgnore("test2.log", nil, false), ".log files should be ignored")
@@ -64,16 +64,16 @@ func TestShouldExcludeFile(t *testing.T) {
 		t.Fatalf("Failed to create .gitignore: %v", err)
 	}
 
-	// Create .smithersignore file
-	smithersignoreContent := "custom_ignored/\n"
-	if err := os.WriteFile(filepath.Join(tempDir, ".smithersignore"), []byte(smithersignoreContent), 0o644); err != nil {
-		t.Fatalf("Failed to create .smithersignore: %v", err)
+	// Create .codeplaneignore file.
+	codeplaneIgnoreContent := "custom_ignored/\n"
+	if err := os.WriteFile(filepath.Join(tempDir, ".codeplaneignore"), []byte(codeplaneIgnoreContent), 0o644); err != nil {
+		t.Fatalf("Failed to create .codeplaneignore: %v", err)
 	}
 
 	// Test that ignored directories are properly ignored
 	require.True(t, ShouldExcludeFile(tempDir, nodeModules), "Expected node_modules to be ignored by .gitignore")
 	require.True(t, ShouldExcludeFile(tempDir, target), "Expected target to be ignored by .gitignore")
-	require.True(t, ShouldExcludeFile(tempDir, customIgnored), "Expected custom_ignored to be ignored by .smithersignore")
+	require.True(t, ShouldExcludeFile(tempDir, customIgnored), "Expected custom_ignored to be ignored by .codeplaneignore")
 
 	// Test that normal directories are not ignored
 	require.False(t, ShouldExcludeFile(tempDir, normalDir), "Expected src directory to not be ignored")
@@ -98,14 +98,14 @@ func TestShouldExcludeFileHierarchical(t *testing.T) {
 		}
 	}
 
-	// Create .smithersignore in subdir that ignores normal_nested
+	// Create .codeplaneignore in subdir that ignores normal_nested.
 	subCrushignore := "normal_nested/\n"
-	if err := os.WriteFile(filepath.Join(subDir, ".smithersignore"), []byte(subCrushignore), 0o644); err != nil {
-		t.Fatalf("Failed to create subdir .smithersignore: %v", err)
+	if err := os.WriteFile(filepath.Join(subDir, ".codeplaneignore"), []byte(subCrushignore), 0o644); err != nil {
+		t.Fatalf("Failed to create subdir .codeplaneignore: %v", err)
 	}
 
-	// Test hierarchical ignore behavior - this should work because the .smithersignore is in the parent directory
-	require.True(t, ShouldExcludeFile(tempDir, nestedNormal), "Expected normal_nested to be ignored by subdir .smithersignore")
+	// Test hierarchical ignore behavior - this should work because the .codeplaneignore is in the parent directory.
+	require.True(t, ShouldExcludeFile(tempDir, nestedNormal), "Expected normal_nested to be ignored by subdir .codeplaneignore")
 	require.False(t, ShouldExcludeFile(tempDir, subDir), "Expected subdir itself to not be ignored")
 }
 
@@ -118,6 +118,17 @@ func TestShouldExcludeFileLegacyCrushIgnore(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(tempDir, ".crushignore"), []byte("legacy_ignored/\n"), 0o644))
 
 	require.True(t, ShouldExcludeFile(tempDir, legacyIgnored), "Expected legacy_ignored to be ignored by .crushignore")
+}
+
+func TestShouldExcludeFileLegacySmithersIgnore(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	legacyIgnored := filepath.Join(tempDir, "legacy_smithers_ignored")
+	require.NoError(t, os.MkdirAll(legacyIgnored, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(tempDir, ".smithersignore"), []byte("legacy_smithers_ignored/\n"), 0o644))
+
+	require.True(t, ShouldExcludeFile(tempDir, legacyIgnored), "Expected legacy_smithers_ignored to be ignored by .smithersignore")
 }
 
 func TestShouldExcludeFileCommonPatterns(t *testing.T) {

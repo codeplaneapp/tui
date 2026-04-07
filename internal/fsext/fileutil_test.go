@@ -200,7 +200,7 @@ func TestGlobWithDoubleStar(t *testing.T) {
 	t.Run("respects basic ignore patterns", func(t *testing.T) {
 		testDir := t.TempDir()
 
-		rootIgnore := filepath.Join(testDir, ".smithersignore")
+		rootIgnore := filepath.Join(testDir, ".codeplaneignore")
 
 		require.NoError(t, os.WriteFile(rootIgnore, []byte("*.tmp\nbackup/\n"), 0o644))
 
@@ -233,6 +233,22 @@ func TestGlobWithDoubleStar(t *testing.T) {
 		require.NoError(t, err)
 		require.False(t, truncated)
 		require.Equal(t, []string{goodFile}, matches)
+	})
+
+	t.Run("respects legacy smithers ignore patterns", func(t *testing.T) {
+		testDir := t.TempDir()
+
+		rootIgnore := filepath.Join(testDir, ".smithersignore")
+		require.NoError(t, os.WriteFile(rootIgnore, []byte("legacy-smithers/\n"), 0o644))
+
+		require.NoError(t, os.WriteFile(filepath.Join(testDir, "good.txt"), []byte("content"), 0o644))
+		require.NoError(t, os.MkdirAll(filepath.Join(testDir, "legacy-smithers"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(testDir, "legacy-smithers", "old.txt"), []byte("old content"), 0o644))
+
+		matches, truncated, err := GlobGitignoreAware("legacy-smithers", testDir, 0)
+		require.NoError(t, err)
+		require.False(t, truncated)
+		require.Empty(t, matches, "Expected no matches for 'legacy-smithers' pattern (should be ignored)")
 	})
 
 	t.Run("respects legacy crush ignore patterns", func(t *testing.T) {

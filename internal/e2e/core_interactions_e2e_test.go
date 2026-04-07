@@ -245,7 +245,7 @@ func TestSessionsPersistence_TUI(t *testing.T) {
 		tui := launchFixtureTUI(t, fixture, "--continue")
 		defer tui.Terminate()
 
-		waitForConfiguredLanding(t, tui)
+		require.NoError(t, tui.WaitForText("Continue Session", 15*time.Second))
 		require.NoError(t, tui.WaitForText("seeded continue message", 15*time.Second))
 	})
 }
