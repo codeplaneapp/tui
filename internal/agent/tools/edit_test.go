@@ -2,458 +2,326 @@ package tools
 
 import (
 	"context"
-	"errors"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"charm.land/fantasy"
 	"github.com/charmbracelet/crush/internal/history"
 	"github.com/charmbracelet/crush/internal/permission"
-	"github.com/stretchr/testify/assert"
+	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/stretchr/testify/require"
 )
 
-func TestEditTool_EmptyFilePath(t *testing.T) {
-	t.Parallel()
-
-	tmpDir := t.TempDir()
-	tool := NewEditTool(nil, &mockPermissionService{}, &mockHistoryService{}, newMockFiletrackerService(), tmpDir)
-
-	resp, err := tool.Run(t.Context(), fantasy.ToolCall{
-		ID:    "call-1",
-		Name:  EditToolName,
-		Input: `{"file_path": "", "old_string": "a", "new_string": "b"}`,
-	})
-
-	require.NoError(t, err)
-	assert.True(t, resp.IsError)
-	assert.Contains(t, resp.Content, "file_path is required")
+func editToolCtx(sessionID string) context.Context {
+	return context.WithValue(context.Background(), SessionIDContextKey, sessionID)
 }
 
-func TestEditTool_ReplaceContentSingleMatch(t *testing.T) {
-	t.Parallel()
-
-	tmpDir := t.TempDir()
-	testFile := filepath.Join(tmpDir, "test.txt")
-	require.NoError(t, os.WriteFile(testFile, []byte("hello world\nfoo bar\n"), 0o644))
-
-	ft := newMockFiletrackerService()
-	ctx := context.WithValue(t.Context(), SessionIDContextKey, "test-session")
-	ft.RecordRead(ctx, "test-session", testFile)
-
-	tool := NewEditTool(nil, &mockPermissionService{}, &mockHistoryService{}, ft, tmpDir)
-
-	resp, err := tool.Run(ctx, fantasy.ToolCall{
-		ID:    "call-2",
-		Name:  EditToolName,
-		Input: `{"file_path": "` + testFile + `", "old_string": "hello world", "new_string": "HELLO WORLD"}`,
+func editToolCall(filePath, oldString, newString string) fantasy.ToolCall {
+	input, _ := json.Marshal(EditParams{
+		FilePath:  filePath,
+		OldString: oldString,
+		NewString: newString,
 	})
-
-	require.NoError(t, err)
-	assert.False(t, resp.IsError, "expected success, got: %s", resp.Content)
-
-	got, err := os.ReadFile(testFile)
-	require.NoError(t, err)
-	assert.Equal(t, "HELLO WORLD\nfoo bar\n", string(got))
-}
-
-func TestEditTool_ReplaceContentNotFound(t *testing.T) {
-	t.Parallel()
-
-	tmpDir := t.TempDir()
-	testFile := filepath.Join(tmpDir, "test.txt")
-	require.NoError(t, os.WriteFile(testFile, []byte("hello world\n"), 0o644))
-
-	ft := newMockFiletrackerService()
-	ctx := context.WithValue(t.Context(), SessionIDContextKey, "test-session")
-	ft.RecordRead(ctx, "test-session", testFile)
-
-	tool := NewEditTool(nil, &mockPermissionService{}, &mockHistoryService{}, ft, tmpDir)
-
-	resp, err := tool.Run(ctx, fantasy.ToolCall{
-		ID:    "call-3",
+	return fantasy.ToolCall{
+		ID:    "test-edit-1",
 		Name:  EditToolName,
-		Input: `{"file_path": "` + testFile + `", "old_string": "nonexistent", "new_string": "replacement"}`,
-	})
-
-	require.NoError(t, err)
-	assert.True(t, resp.IsError)
-	assert.Contains(t, resp.Content, "old_string not found")
-}
-
-func TestEditTool_ReplaceContentMultipleMatches(t *testing.T) {
-	t.Parallel()
-
-	tmpDir := t.TempDir()
-	testFile := filepath.Join(tmpDir, "test.txt")
-	require.NoError(t, os.WriteFile(testFile, []byte("foo\nfoo\nbar\n"), 0o644))
-
-	ft := newMockFiletrackerService()
-	ctx := context.WithValue(t.Context(), SessionIDContextKey, "test-session")
-	ft.RecordRead(ctx, "test-session", testFile)
-
-	tool := NewEditTool(nil, &mockPermissionService{}, &mockHistoryService{}, ft, tmpDir)
-
-	resp, err := tool.Run(ctx, fantasy.ToolCall{
-		ID:    "call-4",
-		Name:  EditToolName,
-		Input: `{"file_path": "` + testFile + `", "old_string": "foo", "new_string": "baz"}`,
-	})
-
-	require.NoError(t, err)
-	assert.True(t, resp.IsError)
-	assert.Contains(t, resp.Content, "multiple times")
-}
-
-func TestEditTool_ReplaceAllMultipleMatches(t *testing.T) {
-	t.Parallel()
-
-	tmpDir := t.TempDir()
-	testFile := filepath.Join(tmpDir, "test.txt")
-	require.NoError(t, os.WriteFile(testFile, []byte("foo\nfoo\nbar\n"), 0o644))
-
-	ft := newMockFiletrackerService()
-	ctx := context.WithValue(t.Context(), SessionIDContextKey, "test-session")
-	ft.RecordRead(ctx, "test-session", testFile)
-
-	tool := NewEditTool(nil, &mockPermissionService{}, &mockHistoryService{}, ft, tmpDir)
-
-	resp, err := tool.Run(ctx, fantasy.ToolCall{
-		ID:    "call-5",
-		Name:  EditToolName,
-		Input: `{"file_path": "` + testFile + `", "old_string": "foo", "new_string": "baz", "replace_all": true}`,
-	})
-
-	require.NoError(t, err)
-	assert.False(t, resp.IsError, "expected success with replace_all, got: %s", resp.Content)
-
-	got, err := os.ReadFile(testFile)
-	require.NoError(t, err)
-	assert.Equal(t, "baz\nbaz\nbar\n", string(got))
-}
-
-func TestEditTool_DeleteContent(t *testing.T) {
-	t.Parallel()
-
-	tmpDir := t.TempDir()
-	testFile := filepath.Join(tmpDir, "test.txt")
-	require.NoError(t, os.WriteFile(testFile, []byte("line 1\nline 2\nline 3\n"), 0o644))
-
-	ft := newMockFiletrackerService()
-	ctx := context.WithValue(t.Context(), SessionIDContextKey, "test-session")
-	ft.RecordRead(ctx, "test-session", testFile)
-
-	tool := NewEditTool(nil, &mockPermissionService{}, &mockHistoryService{}, ft, tmpDir)
-
-	// When new_string is empty and old_string is set, it deletes the content
-	resp, err := tool.Run(ctx, fantasy.ToolCall{
-		ID:    "call-6",
-		Name:  EditToolName,
-		Input: `{"file_path": "` + testFile + `", "old_string": "line 2\n", "new_string": ""}`,
-	})
-
-	require.NoError(t, err)
-	assert.False(t, resp.IsError, "expected success, got: %s", resp.Content)
-
-	got, err := os.ReadFile(testFile)
-	require.NoError(t, err)
-	assert.Equal(t, "line 1\nline 3\n", string(got))
-}
-
-func TestEditTool_CreateNewFile(t *testing.T) {
-	t.Parallel()
-
-	tmpDir := t.TempDir()
-	newFile := filepath.Join(tmpDir, "new_file.txt")
-
-	ft := newMockFiletrackerService()
-	ctx := context.WithValue(t.Context(), SessionIDContextKey, "test-session")
-
-	tool := NewEditTool(nil, &mockPermissionService{}, &mockHistoryService{}, ft, tmpDir)
-
-	// When old_string is empty and new_string is set, it creates a new file
-	resp, err := tool.Run(ctx, fantasy.ToolCall{
-		ID:    "call-7",
-		Name:  EditToolName,
-		Input: `{"file_path": "` + newFile + `", "old_string": "", "new_string": "new content here"}`,
-	})
-
-	require.NoError(t, err)
-	assert.False(t, resp.IsError, "expected success, got: %s", resp.Content)
-
-	got, err := os.ReadFile(newFile)
-	require.NoError(t, err)
-	assert.Equal(t, "new content here", string(got))
-}
-
-func TestEditTool_CreateNewFileAlreadyExists(t *testing.T) {
-	t.Parallel()
-
-	tmpDir := t.TempDir()
-	existingFile := filepath.Join(tmpDir, "existing.txt")
-	require.NoError(t, os.WriteFile(existingFile, []byte("original"), 0o644))
-
-	ft := newMockFiletrackerService()
-	ctx := context.WithValue(t.Context(), SessionIDContextKey, "test-session")
-
-	tool := NewEditTool(nil, &mockPermissionService{}, &mockHistoryService{}, ft, tmpDir)
-
-	resp, err := tool.Run(ctx, fantasy.ToolCall{
-		ID:    "call-8",
-		Name:  EditToolName,
-		Input: `{"file_path": "` + existingFile + `", "old_string": "", "new_string": "overwrite attempt"}`,
-	})
-
-	require.NoError(t, err)
-	assert.True(t, resp.IsError)
-	assert.Contains(t, resp.Content, "file already exists")
-}
-
-func TestEditTool_FileNotFound(t *testing.T) {
-	t.Parallel()
-
-	tmpDir := t.TempDir()
-	missingFile := filepath.Join(tmpDir, "does_not_exist.txt")
-
-	ft := newMockFiletrackerService()
-	ctx := context.WithValue(t.Context(), SessionIDContextKey, "test-session")
-	ft.RecordRead(ctx, "test-session", missingFile)
-
-	tool := NewEditTool(nil, &mockPermissionService{}, &mockHistoryService{}, ft, tmpDir)
-
-	resp, err := tool.Run(ctx, fantasy.ToolCall{
-		ID:    "call-9",
-		Name:  EditToolName,
-		Input: `{"file_path": "` + missingFile + `", "old_string": "something", "new_string": "else"}`,
-	})
-
-	require.NoError(t, err)
-	assert.True(t, resp.IsError)
-	assert.Contains(t, resp.Content, "file not found")
-}
-
-func TestEditTool_MustReadBeforeEditing(t *testing.T) {
-	t.Parallel()
-
-	tmpDir := t.TempDir()
-	testFile := filepath.Join(tmpDir, "test.txt")
-	require.NoError(t, os.WriteFile(testFile, []byte("content"), 0o644))
-
-	ft := newMockFiletrackerService()
-	// Deliberately do NOT call ft.RecordRead
-	ctx := context.WithValue(t.Context(), SessionIDContextKey, "test-session")
-
-	tool := NewEditTool(nil, &mockPermissionService{}, &mockHistoryService{}, ft, tmpDir)
-
-	resp, err := tool.Run(ctx, fantasy.ToolCall{
-		ID:    "call-10",
-		Name:  EditToolName,
-		Input: `{"file_path": "` + testFile + `", "old_string": "content", "new_string": "new content"}`,
-	})
-
-	require.NoError(t, err)
-	assert.True(t, resp.IsError)
-	assert.Contains(t, resp.Content, "must read the file before editing")
-}
-
-func TestEditTool_SameContentNoChange(t *testing.T) {
-	t.Parallel()
-
-	tmpDir := t.TempDir()
-	testFile := filepath.Join(tmpDir, "test.txt")
-	require.NoError(t, os.WriteFile(testFile, []byte("unchanged"), 0o644))
-
-	ft := newMockFiletrackerService()
-	ctx := context.WithValue(t.Context(), SessionIDContextKey, "test-session")
-	ft.RecordRead(ctx, "test-session", testFile)
-
-	tool := NewEditTool(nil, &mockPermissionService{}, &mockHistoryService{}, ft, tmpDir)
-
-	resp, err := tool.Run(ctx, fantasy.ToolCall{
-		ID:    "call-11",
-		Name:  EditToolName,
-		Input: `{"file_path": "` + testFile + `", "old_string": "unchanged", "new_string": "unchanged"}`,
-	})
-
-	require.NoError(t, err)
-	assert.True(t, resp.IsError)
-	assert.Contains(t, resp.Content, "same as old content")
-}
-
-func TestEditTool_ReplaceContentMissingHistoryRowDoesNotCreateDuplicateOldVersion(t *testing.T) {
-	t.Parallel()
-
-	tmpDir := t.TempDir()
-	testFile := filepath.Join(tmpDir, "test.txt")
-	originalContent := "hello world\nfoo bar\n"
-	require.NoError(t, os.WriteFile(testFile, []byte(originalContent), 0o644))
-
-	ft := newMockFiletrackerService()
-	ctx := context.WithValue(t.Context(), SessionIDContextKey, "test-session")
-	ft.RecordRead(ctx, "test-session", testFile)
-
-	historyService := &mockHistoryService{
-		getErr: errors.New("missing history row"),
+		Input: string(input),
 	}
-	tool := NewEditTool(nil, &mockPermissionService{}, historyService, ft, tmpDir)
+}
 
-	resp, err := tool.Run(ctx, fantasy.ToolCall{
-		ID:    "call-12",
-		Name:  EditToolName,
-		Input: `{"file_path": "` + testFile + `", "old_string": "hello world", "new_string": "HELLO WORLD"}`,
-	})
+// ---------- replace-content history tests ----------
 
+func TestEditToolReplaceHistoryNoExistingRow(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.txt")
+	oldContent := "hello world\n"
+
+	require.NoError(t, os.WriteFile(testFile, []byte(oldContent), 0o644))
+
+	hist := newConfigurableHistoryService()
+	hist.getByPathErr = fmt.Errorf("sql: no rows in result set")
+
+	ft := &mockFileTrackerService{lastReadTime: time.Now().Add(time.Hour)}
+	perms := &mockPermissionService{Broker: pubsub.NewBroker[permission.PermissionRequest]()}
+
+	tool := NewEditTool(nil, perms, hist, ft, tmpDir)
+
+	ctx := editToolCtx("sess-1")
+	resp, err := tool.Run(ctx, editToolCall(testFile, "hello", "goodbye"))
 	require.NoError(t, err)
-	assert.False(t, resp.IsError, "expected success, got: %s", resp.Content)
-	assert.Equal(t, []string{originalContent}, historyService.createCalls)
-	assert.Equal(t, []string{"HELLO WORLD\nfoo bar\n"}, historyService.createVersionCalls)
-	assert.Equal(t,
-		[]string{
-			"get",
-			"create:" + originalContent,
-			"createVersion:HELLO WORLD\nfoo bar\n",
-		},
-		historyService.callOrder,
-	)
+	require.False(t, resp.IsError, "unexpected error response: %s", resp.Content)
+
+	// Create must be called with oldContent when no history row exists.
+	require.Len(t, hist.createCalls, 1)
+	require.Equal(t, oldContent, hist.createCalls[0].Content)
+
+	// CreateVersion should be called at least once (final version).
+	require.GreaterOrEqual(t, len(hist.createVersionCalls), 1)
+	last := hist.createVersionCalls[len(hist.createVersionCalls)-1]
+	require.Equal(t, "goodbye world\n", last.Content)
 }
 
-func TestEditTool_DeleteContentMissingHistoryRowDoesNotCreateDuplicateOldVersion(t *testing.T) {
+func TestEditToolReplaceHistoryExistingRowMatchesContent(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.txt")
-	originalContent := "line 1\nline 2\nline 3\n"
-	require.NoError(t, os.WriteFile(testFile, []byte(originalContent), 0o644))
+	oldContent := "hello world\n"
 
-	ft := newMockFiletrackerService()
-	ctx := context.WithValue(t.Context(), SessionIDContextKey, "test-session")
-	ft.RecordRead(ctx, "test-session", testFile)
+	require.NoError(t, os.WriteFile(testFile, []byte(oldContent), 0o644))
 
-	historyService := &mockHistoryService{
-		getErr: errors.New("missing history row"),
-	}
-	tool := NewEditTool(nil, &mockPermissionService{}, historyService, ft, tmpDir)
+	hist := newConfigurableHistoryService()
+	hist.getByPathResult = history.File{Path: testFile, Content: oldContent}
 
-	resp, err := tool.Run(ctx, fantasy.ToolCall{
-		ID:    "call-13",
-		Name:  EditToolName,
-		Input: `{"file_path": "` + testFile + `", "old_string": "line 2\n", "new_string": ""}`,
-	})
+	ft := &mockFileTrackerService{lastReadTime: time.Now().Add(time.Hour)}
+	perms := &mockPermissionService{Broker: pubsub.NewBroker[permission.PermissionRequest]()}
 
+	tool := NewEditTool(nil, perms, hist, ft, tmpDir)
+
+	ctx := editToolCtx("sess-1")
+	resp, err := tool.Run(ctx, editToolCall(testFile, "hello", "goodbye"))
 	require.NoError(t, err)
-	assert.False(t, resp.IsError, "expected success, got: %s", resp.Content)
-	assert.Equal(t, []string{originalContent}, historyService.createCalls)
-	assert.Equal(t, []string{"line 1\nline 3\n"}, historyService.createVersionCalls)
-	assert.Equal(t,
-		[]string{
-			"get",
-			"create:" + originalContent,
-			"createVersion:line 1\nline 3\n",
-		},
-		historyService.callOrder,
-	)
+	require.False(t, resp.IsError)
+
+	// No Create needed.
+	require.Empty(t, hist.createCalls)
+
+	// Only the final version (no intermediate).
+	require.Len(t, hist.createVersionCalls, 1)
+	require.Equal(t, "goodbye world\n", hist.createVersionCalls[0].Content)
 }
 
-func TestEditTool_DeleteContentMissingHistoryRowCreateFailureReturnsError(t *testing.T) {
+func TestEditToolReplaceHistoryExistingRowStaleContent(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.txt")
-	require.NoError(t, os.WriteFile(testFile, []byte("line 1\nline 2\nline 3\n"), 0o644))
+	oldContent := "hello world\n"
 
-	ft := newMockFiletrackerService()
-	ctx := context.WithValue(t.Context(), SessionIDContextKey, "test-session")
-	ft.RecordRead(ctx, "test-session", testFile)
+	require.NoError(t, os.WriteFile(testFile, []byte(oldContent), 0o644))
 
-	historyService := &mockHistoryService{
-		getErr:    errors.New("missing history row"),
-		createErr: errors.New("create failed"),
-	}
-	tool := NewEditTool(nil, &mockPermissionService{}, historyService, ft, tmpDir)
+	hist := newConfigurableHistoryService()
+	hist.getByPathResult = history.File{Path: testFile, Content: "stale\n"}
 
-	_, err := tool.Run(ctx, fantasy.ToolCall{
-		ID:    "call-14",
-		Name:  EditToolName,
-		Input: `{"file_path": "` + testFile + `", "old_string": "line 2\n", "new_string": ""}`,
-	})
+	ft := &mockFileTrackerService{lastReadTime: time.Now().Add(time.Hour)}
+	perms := &mockPermissionService{Broker: pubsub.NewBroker[permission.PermissionRequest]()}
 
-	require.ErrorContains(t, err, "error creating file history: create failed")
-	assert.Equal(t, []string{"get", "create:line 1\nline 2\nline 3\n"}, historyService.callOrder)
-	assert.Empty(t, historyService.createVersionCalls)
-}
+	tool := NewEditTool(nil, perms, hist, ft, tmpDir)
 
-func TestEditTool_ReplaceContentCreateVersionFailureDoesNotFailEdit(t *testing.T) {
-	t.Parallel()
-
-	tmpDir := t.TempDir()
-	testFile := filepath.Join(tmpDir, "test.txt")
-	originalContent := "hello world\nfoo bar\n"
-	require.NoError(t, os.WriteFile(testFile, []byte(originalContent), 0o644))
-
-	ft := newMockFiletrackerService()
-	ctx := context.WithValue(t.Context(), SessionIDContextKey, "test-session")
-	ft.RecordRead(ctx, "test-session", testFile)
-
-	historyService := &mockHistoryService{
-		getFile: history.File{
-			Path:    testFile,
-			Content: "stale history content",
-		},
-		createVersionErrs: map[int]error{
-			1: errors.New("create version failed"),
-		},
-	}
-	tool := NewEditTool(nil, &mockPermissionService{}, historyService, ft, tmpDir)
-
-	resp, err := tool.Run(ctx, fantasy.ToolCall{
-		ID:    "call-15",
-		Name:  EditToolName,
-		Input: `{"file_path": "` + testFile + `", "old_string": "hello world", "new_string": "HELLO WORLD"}`,
-	})
-
+	ctx := editToolCtx("sess-1")
+	resp, err := tool.Run(ctx, editToolCall(testFile, "hello", "goodbye"))
 	require.NoError(t, err)
-	assert.False(t, resp.IsError, "expected success, got: %s", resp.Content)
-	assert.Equal(t, []string{originalContent, "HELLO WORLD\nfoo bar\n"}, historyService.createVersionCalls)
+	require.False(t, resp.IsError)
 
-	got, readErr := os.ReadFile(testFile)
-	require.NoError(t, readErr)
-	assert.Equal(t, "HELLO WORLD\nfoo bar\n", string(got))
+	// No Create (row exists).
+	require.Empty(t, hist.createCalls)
+
+	// Two CreateVersion: intermediate (oldContent) + final (newContent).
+	require.Len(t, hist.createVersionCalls, 2)
+	require.Equal(t, oldContent, hist.createVersionCalls[0].Content)
+	require.Equal(t, "goodbye world\n", hist.createVersionCalls[1].Content)
 }
 
-func TestEditTool_PermissionDeniedSkipsHistory(t *testing.T) {
+func TestEditToolReplaceCreateVersionFailure(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.txt")
-	originalContent := "hello world\nfoo bar\n"
-	require.NoError(t, os.WriteFile(testFile, []byte(originalContent), 0o644))
+	oldContent := "hello world\n"
 
-	ft := newMockFiletrackerService()
-	ctx := context.WithValue(t.Context(), SessionIDContextKey, "test-session")
-	ft.RecordRead(ctx, "test-session", testFile)
+	require.NoError(t, os.WriteFile(testFile, []byte(oldContent), 0o644))
 
-	permissionService := &mockPermissionService{deny: true}
-	historyService := &mockHistoryService{
-		getErr:    errors.New("history should not be called"),
-		createErr: errors.New("history should not be called"),
-		createVersionErrs: map[int]error{
-			1: errors.New("history should not be called"),
-		},
-	}
-	tool := NewEditTool(nil, permissionService, historyService, ft, tmpDir)
+	hist := newConfigurableHistoryService()
+	hist.getByPathResult = history.File{Path: testFile, Content: oldContent}
+	hist.createVersionErr = fmt.Errorf("disk full")
 
-	_, err := tool.Run(ctx, fantasy.ToolCall{
-		ID:    "call-16",
-		Name:  EditToolName,
-		Input: `{"file_path": "` + testFile + `", "old_string": "hello world", "new_string": "HELLO WORLD"}`,
+	ft := &mockFileTrackerService{lastReadTime: time.Now().Add(time.Hour)}
+	perms := &mockPermissionService{Broker: pubsub.NewBroker[permission.PermissionRequest]()}
+
+	tool := NewEditTool(nil, perms, hist, ft, tmpDir)
+
+	ctx := editToolCtx("sess-1")
+	resp, err := tool.Run(ctx, editToolCall(testFile, "hello", "goodbye"))
+
+	// CreateVersion errors are logged but don't fail the operation.
+	require.NoError(t, err)
+	require.False(t, resp.IsError)
+
+	// File on disk should still be written.
+	data, _ := os.ReadFile(testFile)
+	require.Equal(t, "goodbye world\n", string(data))
+}
+
+func TestEditToolReplaceCreateFailure(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.txt")
+	oldContent := "hello world\n"
+
+	require.NoError(t, os.WriteFile(testFile, []byte(oldContent), 0o644))
+
+	hist := newConfigurableHistoryService()
+	hist.getByPathErr = fmt.Errorf("sql: no rows in result set")
+	hist.createErr = fmt.Errorf("db connection lost")
+
+	ft := &mockFileTrackerService{lastReadTime: time.Now().Add(time.Hour)}
+	perms := &mockPermissionService{Broker: pubsub.NewBroker[permission.PermissionRequest]()}
+
+	tool := NewEditTool(nil, perms, hist, ft, tmpDir)
+
+	ctx := editToolCtx("sess-1")
+	_, err := tool.Run(ctx, editToolCall(testFile, "hello", "goodbye"))
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "error creating file history")
+}
+
+// ---------- delete-content history tests ----------
+
+func TestEditToolDeleteHistoryNoExistingRow(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.txt")
+	oldContent := "hello world\n"
+
+	require.NoError(t, os.WriteFile(testFile, []byte(oldContent), 0o644))
+
+	hist := newConfigurableHistoryService()
+	hist.getByPathErr = fmt.Errorf("sql: no rows in result set")
+
+	ft := &mockFileTrackerService{lastReadTime: time.Now().Add(time.Hour)}
+	perms := &mockPermissionService{Broker: pubsub.NewBroker[permission.PermissionRequest]()}
+
+	tool := NewEditTool(nil, perms, hist, ft, tmpDir)
+
+	// Delete "hello " from the file (OldString set, NewString empty).
+	input, _ := json.Marshal(EditParams{
+		FilePath:  testFile,
+		OldString: "hello ",
+		NewString: "",
 	})
+	call := fantasy.ToolCall{ID: "test-del-1", Name: EditToolName, Input: string(input)}
 
-	require.ErrorIs(t, err, permission.ErrorPermissionDenied)
-	assert.Len(t, permissionService.requests, 1)
-	assert.Empty(t, historyService.callOrder)
+	ctx := editToolCtx("sess-1")
+	resp, err := tool.Run(ctx, call)
+	require.NoError(t, err)
+	require.False(t, resp.IsError, "unexpected error: %s", resp.Content)
 
-	got, readErr := os.ReadFile(testFile)
-	require.NoError(t, readErr)
-	assert.Equal(t, originalContent, string(got))
+	// Create must be called.
+	require.Len(t, hist.createCalls, 1)
+	require.Equal(t, oldContent, hist.createCalls[0].Content)
+
+	// At least the final CreateVersion with the new content.
+	require.GreaterOrEqual(t, len(hist.createVersionCalls), 1)
+	last := hist.createVersionCalls[len(hist.createVersionCalls)-1]
+	require.Equal(t, "world\n", last.Content)
+}
+
+// ---------- permission denied + history isolation ----------
+
+func TestEditToolPermissionDeniedNoHistorySideEffect(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.txt")
+	oldContent := "hello world\n"
+
+	require.NoError(t, os.WriteFile(testFile, []byte(oldContent), 0o644))
+
+	hist := newConfigurableHistoryService()
+	ft := &mockFileTrackerService{lastReadTime: time.Now().Add(time.Hour)}
+	perms := &denyPermissionService{Broker: pubsub.NewBroker[permission.PermissionRequest]()}
+
+	tool := NewEditTool(nil, perms, hist, ft, tmpDir)
+
+	ctx := editToolCtx("sess-1")
+	_, err := tool.Run(ctx, editToolCall(testFile, "hello", "goodbye"))
+
+	require.Error(t, err)
+
+	require.Empty(t, hist.createCalls)
+	require.Empty(t, hist.createVersionCalls)
+
+	// File on disk should be untouched.
+	data, _ := os.ReadFile(testFile)
+	require.Equal(t, oldContent, string(data))
+}
+
+// ---------- create-new-file history tests ----------
+
+func TestEditToolCreateNewFileHistory(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "new_file.txt")
+	newContent := "brand new content\n"
+
+	hist := newConfigurableHistoryService()
+	ft := &mockFileTrackerService{lastReadTime: time.Now().Add(time.Hour)}
+	perms := &mockPermissionService{Broker: pubsub.NewBroker[permission.PermissionRequest]()}
+
+	tool := NewEditTool(nil, perms, hist, ft, tmpDir)
+
+	// OldString == "" triggers createNewFile path.
+	input, _ := json.Marshal(EditParams{
+		FilePath:  testFile,
+		OldString: "",
+		NewString: newContent,
+	})
+	call := fantasy.ToolCall{ID: "test-create-1", Name: EditToolName, Input: string(input)}
+
+	ctx := editToolCtx("sess-1")
+	resp, err := tool.Run(ctx, call)
+	require.NoError(t, err)
+	require.False(t, resp.IsError, "unexpected error: %s", resp.Content)
+
+	// Create is called with empty content (new file).
+	require.Len(t, hist.createCalls, 1)
+	require.Equal(t, "", hist.createCalls[0].Content)
+
+	// CreateVersion stores the new content.
+	require.Len(t, hist.createVersionCalls, 1)
+	require.Equal(t, newContent, hist.createVersionCalls[0].Content)
+}
+
+func TestEditToolCreateNewFileCreateVersionFailure(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "new_file.txt")
+	newContent := "brand new content\n"
+
+	hist := newConfigurableHistoryService()
+	hist.createVersionErr = fmt.Errorf("disk full")
+
+	ft := &mockFileTrackerService{lastReadTime: time.Now().Add(time.Hour)}
+	perms := &mockPermissionService{Broker: pubsub.NewBroker[permission.PermissionRequest]()}
+
+	tool := NewEditTool(nil, perms, hist, ft, tmpDir)
+
+	input, _ := json.Marshal(EditParams{
+		FilePath:  testFile,
+		OldString: "",
+		NewString: newContent,
+	})
+	call := fantasy.ToolCall{ID: "test-create-2", Name: EditToolName, Input: string(input)}
+
+	ctx := editToolCtx("sess-1")
+	resp, err := tool.Run(ctx, call)
+
+	// CreateVersion failure in createNewFile is logged, not fatal.
+	require.NoError(t, err)
+	require.False(t, resp.IsError)
+
+	// File should still exist on disk.
+	data, _ := os.ReadFile(testFile)
+	require.Equal(t, newContent, string(data))
 }

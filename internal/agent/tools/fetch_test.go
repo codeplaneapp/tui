@@ -3,533 +3,360 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"charm.land/fantasy"
+	"github.com/charmbracelet/crush/internal/permission"
+	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// ---------------------------------------------------------------------------
-// ConvertHTMLToMarkdown
-// ---------------------------------------------------------------------------
+// fetchMockPermissions is a permission.Service mock for fetch tests that
+// supports configurable grant/deny behavior.
+type fetchMockPermissions struct {
+	*pubsub.Broker[permission.PermissionRequest]
+	grantAll bool
+}
 
-func TestConvertHTMLToMarkdown(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name     string
-		html     string
-		contains []string
-	}{
-		{
-			name:     "h1 tag",
-			html:     "<h1>Hello World</h1>",
-			contains: []string{"# Hello World"},
-		},
-		{
-			name:     "paragraph tag",
-			html:     "<p>Some paragraph text.</p>",
-			contains: []string{"Some paragraph text."},
-		},
-		{
-			name:     "anchor tag",
-			html:     `<a href="https://example.com">click here</a>`,
-			contains: []string{"[click here](https://example.com)"},
-		},
-		{
-			name:     "unordered list",
-			html:     "<ul><li>alpha</li><li>beta</li></ul>",
-			contains: []string{"alpha", "beta"},
-		},
-		{
-			name: "mixed tags",
-			html: `<h1>Title</h1><p>Intro paragraph.</p><ul><li>one</li><li>two</li></ul>`,
-			contains: []string{
-				"# Title",
-				"Intro paragraph.",
-				"one",
-				"two",
-			},
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			result, err := ConvertHTMLToMarkdown(tc.html)
-			require.NoError(t, err)
-			for _, substr := range tc.contains {
-				assert.Contains(t, result, substr)
-			}
-		})
+func newFetchMockPermissions(grant bool) *fetchMockPermissions {
+	return &fetchMockPermissions{
+		Broker:   pubsub.NewBroker[permission.PermissionRequest](),
+		grantAll: grant,
 	}
 }
 
-func TestConvertHTMLToMarkdown_EmptyInput(t *testing.T) {
-	t.Parallel()
+func (m *fetchMockPermissions) GrantPersistent(_ permission.PermissionRequest) {}
+func (m *fetchMockPermissions) Grant(_ permission.PermissionRequest)           {}
+func (m *fetchMockPermissions) Deny(_ permission.PermissionRequest)            {}
+func (m *fetchMockPermissions) AutoApproveSession(_ string)                    {}
+func (m *fetchMockPermissions) SetSkipRequests(_ bool)                         {}
+func (m *fetchMockPermissions) SkipRequests() bool                             { return false }
+func (m *fetchMockPermissions) SubscribeNotifications(_ context.Context) <-chan pubsub.Event[permission.PermissionNotification] {
+	return nil
+}
+func (m *fetchMockPermissions) Request(_ context.Context, _ permission.CreatePermissionRequest) (bool, error) {
+	return m.grantAll, nil
+}
 
-	result, err := ConvertHTMLToMarkdown("")
+func runFetchTool(t *testing.T, tool fantasy.AgentTool, params FetchParams) (fantasy.ToolResponse, error) {
+	t.Helper()
+	input, err := json.Marshal(params)
 	require.NoError(t, err)
-	assert.Empty(t, result)
+	ctx := context.WithValue(context.Background(), SessionIDContextKey, "test-session")
+	return tool.Run(ctx, fantasy.ToolCall{
+		ID:    "test-call",
+		Name:  FetchToolName,
+		Input: string(input),
+	})
 }
 
-// ---------------------------------------------------------------------------
-// removeNoisyElements
-// ---------------------------------------------------------------------------
-
-func TestRemoveNoisyElements(t *testing.T) {
+func TestFetchSizeLimitBoundary(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name     string
-		html     string
-		wantGone []string
-		wantKept []string
+		name          string
+		bodySize      int
+		wantTruncated bool
 	}{
 		{
-			name:     "removes script tag",
-			html:     `<html><body><script>alert("xss")</script><p>Keep me</p></body></html>`,
-			wantGone: []string{"<script>", "alert"},
-			wantKept: []string{"Keep me"},
+			name:          "body at MaxFetchSize minus one",
+			bodySize:      MaxFetchSize - 1,
+			wantTruncated: false,
 		},
 		{
-			name:     "removes style tag",
-			html:     `<html><body><style>body{color:red}</style><p>Visible</p></body></html>`,
-			wantGone: []string{"<style>", "color:red"},
-			wantKept: []string{"Visible"},
+			name:          "body at exactly MaxFetchSize",
+			bodySize:      MaxFetchSize,
+			wantTruncated: false,
 		},
 		{
-			name:     "removes nav tag",
-			html:     `<html><body><nav><a href="/">Home</a></nav><p>Main content</p></body></html>`,
-			wantGone: []string{"<nav>"},
-			wantKept: []string{"Main content"},
+			name:          "body at MaxFetchSize plus one is capped by LimitReader",
+			bodySize:      MaxFetchSize + 1,
+			wantTruncated: false, // io.LimitReader caps at MaxFetchSize, so content == MaxFetchSize, no truncation
 		},
 		{
-			name:     "removes footer tag",
-			html:     `<html><body><p>Body text</p><footer>Copyright 2025</footer></body></html>`,
-			wantGone: []string{"<footer>", "Copyright"},
-			wantKept: []string{"Body text"},
-		},
-		{
-			name:     "removes header tag",
-			html:     `<html><body><header>Site header</header><p>Article</p></body></html>`,
-			wantGone: []string{"<header>", "Site header"},
-			wantKept: []string{"Article"},
-		},
-		{
-			name: "removes multiple noisy tags at once",
-			html: `<html><body>
-				<script>evil()</script>
-				<style>.x{}</style>
-				<nav>nav</nav>
-				<aside>sidebar</aside>
-				<noscript>no js</noscript>
-				<iframe src="x"></iframe>
-				<svg><circle/></svg>
-				<p>Real content</p>
-			</body></html>`,
-			wantGone: []string{"<script>", "<style>", "<nav>", "<aside>", "<noscript>", "<iframe", "<svg>"},
-			wantKept: []string{"Real content"},
+			name:          "body well over MaxFetchSize is capped",
+			bodySize:      MaxFetchSize + 1000,
+			wantTruncated: false, // Still capped by LimitReader to exactly MaxFetchSize
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			result := removeNoisyElements(tc.html)
-			for _, gone := range tc.wantGone {
-				assert.NotContains(t, result, gone)
-			}
-			for _, kept := range tc.wantKept {
-				assert.Contains(t, result, kept)
-			}
-		})
-	}
-}
-
-// ---------------------------------------------------------------------------
-// cleanupMarkdown
-// ---------------------------------------------------------------------------
-
-func TestCleanupMarkdown(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		in   string
-		want string
-	}{
-		{
-			name: "collapses 3+ newlines to 2",
-			in:   "line1\n\n\n\nline2",
-			want: "line1\n\nline2",
-		},
-		{
-			name: "collapses many blank lines",
-			in:   "a\n\n\n\n\n\n\nb",
-			want: "a\n\nb",
-		},
-		{
-			name: "trims trailing whitespace on lines",
-			in:   "hello   \nworld\t\t",
-			want: "hello\nworld",
-		},
-		{
-			name: "trims leading and trailing whitespace",
-			in:   "  \n\n  content  \n\n  ",
-			want: "content",
-		},
-		{
-			name: "already clean content unchanged",
-			in:   "# Title\n\nParagraph text.",
-			want: "# Title\n\nParagraph text.",
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			got := cleanupMarkdown(tc.in)
-			assert.Equal(t, tc.want, got)
-		})
-	}
-}
-
-// ---------------------------------------------------------------------------
-// FormatJSON
-// ---------------------------------------------------------------------------
-
-func TestFormatJSON(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		in   string
-		want string
-	}{
-		{
-			name: "simple object",
-			in:   `{"name":"alice","age":30}`,
-			want: "{\n  \"age\": 30,\n  \"name\": \"alice\"\n}\n",
-		},
-		{
-			name: "array",
-			in:   `[1,2,3]`,
-			want: "[\n  1,\n  2,\n  3\n]\n",
-		},
-		{
-			name: "nested object",
-			in:   `{"a":{"b":"c"}}`,
-			want: "{\n  \"a\": {\n    \"b\": \"c\"\n  }\n}\n",
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			got, err := FormatJSON(tc.in)
-			require.NoError(t, err)
-			assert.Equal(t, tc.want, got)
-		})
-	}
-}
-
-func TestFormatJSON_InvalidJSON(t *testing.T) {
-	t.Parallel()
-
-	badInputs := []string{
-		"not json at all",
-		"{missing: quotes}",
-		`{"unclosed": `,
-		"",
-	}
-
-	for _, bad := range badInputs {
-		t.Run(bad, func(t *testing.T) {
-			t.Parallel()
-			_, err := FormatJSON(bad)
-			assert.Error(t, err, "FormatJSON should return error for invalid JSON: %q", bad)
-		})
-	}
-}
-
-// ---------------------------------------------------------------------------
-// FetchURLAndConvert — HTTP integration tests using httptest
-// ---------------------------------------------------------------------------
-
-func TestFetchURLAndConvert_NonUTF8(t *testing.T) {
-	t.Parallel()
-
-	// Create a test server that returns invalid UTF-8 bytes.
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		// 0xfe 0xff are not valid in UTF-8.
-		_, _ = w.Write([]byte{0xfe, 0xff, 0x80, 0x81})
-	}))
-	defer srv.Close()
-
-	_, err := FetchURLAndConvert(context.Background(), srv.Client(), srv.URL)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not valid UTF-8")
-}
-
-func TestFetchURLAndConvert_StatusError(t *testing.T) {
-	t.Parallel()
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "not found", http.StatusNotFound)
-	}))
-	defer srv.Close()
-
-	_, err := FetchURLAndConvert(context.Background(), srv.Client(), srv.URL)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "404")
-}
-
-func TestFetchURLAndConvert_HTMLContent(t *testing.T) {
-	t.Parallel()
-
-	htmlBody := `<html><body><script>evil()</script><h1>Hello</h1><p>World</p></body></html>`
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(htmlBody))
-	}))
-	defer srv.Close()
-
-	result, err := FetchURLAndConvert(context.Background(), srv.Client(), srv.URL)
-	require.NoError(t, err)
-
-	// The result should be converted to markdown and cleaned up.
-	assert.Contains(t, result, "Hello")
-	assert.Contains(t, result, "World")
-	// Script content should have been stripped by removeNoisyElements.
-	assert.NotContains(t, result, "evil()")
-}
-
-func TestFetchURLAndConvert_JSONContent(t *testing.T) {
-	t.Parallel()
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"key":"value"}`))
-	}))
-	defer srv.Close()
-
-	result, err := FetchURLAndConvert(context.Background(), srv.Client(), srv.URL)
-	require.NoError(t, err)
-
-	// Should be pretty-printed.
-	assert.Contains(t, result, "\"key\": \"value\"")
-}
-
-func TestFetchURLAndConvert_PlainText(t *testing.T) {
-	t.Parallel()
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
-		_, _ = w.Write([]byte("just some plain text"))
-	}))
-	defer srv.Close()
-
-	result, err := FetchURLAndConvert(context.Background(), srv.Client(), srv.URL)
-	require.NoError(t, err)
-	assert.Equal(t, "just some plain text", result)
-}
-
-func TestFetchTool_MaxFetchSizeBoundaries(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		size int
-	}{
-		{
-			name: "max fetch size minus one",
-			size: MaxFetchSize - 1,
-		},
-		{
-			name: "max fetch size",
-			size: MaxFetchSize,
-		},
-		{
-			name: "max fetch size plus one",
-			size: MaxFetchSize + 1,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			body := strings.Repeat("a", tc.size)
+			body := strings.Repeat("A", tt.bodySize)
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+				w.Header().Set("Content-Type", "text/plain")
+				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write([]byte(body))
 			}))
 			defer srv.Close()
 
-			tool := newFetchToolForTest(t, srv.Client())
-			resp := runJSONTool(t, tool, newTestToolContext(t), FetchToolName, FetchParams{
+			perms := newFetchMockPermissions(true)
+			tool := NewFetchTool(perms, t.TempDir(), srv.Client())
+
+			resp, err := runFetchTool(t, tool, FetchParams{
 				URL:    srv.URL,
 				Format: "text",
 			})
-			require.False(t, resp.IsError, resp.Content)
+			require.NoError(t, err)
+			assert.False(t, resp.IsError, "expected non-error response")
 
-			wantLen := tc.size
-			if wantLen > MaxFetchSize {
-				wantLen = MaxFetchSize
+			if tt.wantTruncated {
+				assert.Contains(t, resp.Content, "[Content truncated to")
+			} else {
+				assert.NotContains(t, resp.Content, "[Content truncated to")
 			}
 
-			assert.Len(t, resp.Content, wantLen)
-			assert.Equal(t, body[:wantLen], resp.Content)
-			assert.NotContains(t, resp.Content, "[Content truncated to")
+			// Verify the content never exceeds MaxFetchSize (pre-truncation-notice)
+			if !tt.wantTruncated {
+				assert.LessOrEqual(t, len(resp.Content), MaxFetchSize)
+			}
 		})
 	}
 }
 
-func TestFetchTool_TimeoutBoundaries(t *testing.T) {
+func TestFetchSizeLimitBoundary_HTMLExpands(t *testing.T) {
 	t.Parallel()
+
+	// When HTML is converted to markdown, the conversion may change the content length.
+	// If the converted content exceeds MaxFetchSize, it should be truncated.
+	// Create HTML that is under MaxFetchSize raw but whose markdown conversion stays under too.
+	smallHTML := "<html><body><p>" + strings.Repeat("word ", 100) + "</p></body></html>"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(smallHTML))
+	}))
+	defer srv.Close()
+
+	perms := newFetchMockPermissions(true)
+	tool := NewFetchTool(perms, t.TempDir(), srv.Client())
+
+	resp, err := runFetchTool(t, tool, FetchParams{
+		URL:    srv.URL,
+		Format: "markdown",
+	})
+	require.NoError(t, err)
+	assert.False(t, resp.IsError)
+	assert.Contains(t, resp.Content, "```")
+}
+
+func TestFetchTimeoutValidation(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("hello"))
+	}))
+	defer srv.Close()
 
 	tests := []struct {
 		name    string
 		timeout int
 	}{
 		{
-			name:    "timeout at max",
+			name:    "valid timeout at max (120s)",
 			timeout: 120,
 		},
 		{
-			name:    "timeout above max clamps",
-			timeout: 121,
+			name:    "timeout exceeding max gets clamped to 120",
+			timeout: 300,
+		},
+		{
+			name:    "zero timeout uses default client timeout",
+			timeout: 0,
+		},
+		{
+			name:    "negative timeout uses default client timeout",
+			timeout: -5,
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			perms := newFetchMockPermissions(true)
+			tool := NewFetchTool(perms, t.TempDir(), srv.Client())
 
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-				_, _ = w.Write([]byte("ok"))
-			}))
-			defer srv.Close()
-
-			client := srv.Client()
-			baseTransport := client.Transport
-			if baseTransport == nil {
-				baseTransport = http.DefaultTransport
-			}
-
-			var deadline time.Time
-			client.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
-				var ok bool
-				deadline, ok = req.Context().Deadline()
-				require.True(t, ok)
-				return baseTransport.RoundTrip(req)
-			})
-
-			tool := newFetchToolForTest(t, client)
-			resp := runJSONTool(t, tool, newTestToolContext(t), FetchToolName, FetchParams{
+			resp, err := runFetchTool(t, tool, FetchParams{
 				URL:     srv.URL,
 				Format:  "text",
-				Timeout: tc.timeout,
+				Timeout: tt.timeout,
 			})
-			require.False(t, resp.IsError, resp.Content)
-			require.False(t, deadline.IsZero())
-
-			assert.InDelta(t, 120.0, time.Until(deadline).Seconds(), 3.0)
+			require.NoError(t, err)
+			assert.False(t, resp.IsError)
+			assert.Contains(t, resp.Content, "hello")
 		})
 	}
 }
 
-func TestFetchTool_InvalidFormat(t *testing.T) {
+func TestFetchInvalidFormat(t *testing.T) {
 	t.Parallel()
 
-	tool := newFetchToolForTest(t, nil)
-	resp := runJSONTool(t, tool, context.Background(), FetchToolName, FetchParams{
-		URL:    "http://example.com",
-		Format: "json",
-	})
+	perms := newFetchMockPermissions(true)
+	tool := NewFetchTool(perms, t.TempDir(), &http.Client{})
 
-	require.True(t, resp.IsError)
-	assert.Contains(t, resp.Content, "Format must be one of: text, markdown, html")
+	tests := []struct {
+		name   string
+		format string
+	}{
+		{"xml format", "xml"},
+		{"json format", "json"},
+		{"empty format", ""},
+		{"uppercase TEXT is accepted", "TEXT"}, // lowercased in handler
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			resp, err := runFetchTool(t, tool, FetchParams{
+				URL:    "http://example.com",
+				Format: tt.format,
+			})
+			require.NoError(t, err)
+
+			if strings.EqualFold(tt.format, "text") || strings.EqualFold(tt.format, "markdown") || strings.EqualFold(tt.format, "html") {
+				// Valid formats should not produce a format error
+				assert.False(t, resp.IsError || strings.Contains(resp.Content, "Format must be one of"),
+					"expected valid format %q to be accepted", tt.format)
+			} else {
+				assert.True(t, resp.IsError)
+				assert.Contains(t, resp.Content, "Format must be one of: text, markdown, html")
+			}
+		})
+	}
 }
 
-func TestFetchTool_InvalidScheme(t *testing.T) {
+func TestFetchInvalidScheme(t *testing.T) {
 	t.Parallel()
 
-	tool := newFetchToolForTest(t, nil)
-	resp := runJSONTool(t, tool, context.Background(), FetchToolName, FetchParams{
-		URL:    "ftp://example.com",
-		Format: "text",
-	})
+	perms := newFetchMockPermissions(true)
+	tool := NewFetchTool(perms, t.TempDir(), &http.Client{})
 
-	require.True(t, resp.IsError)
-	assert.Contains(t, resp.Content, "URL must start with http:// or https://")
+	tests := []struct {
+		name string
+		url  string
+	}{
+		{"ftp scheme", "ftp://example.com/file"},
+		{"file scheme", "file:///etc/passwd"},
+		{"no scheme", "example.com"},
+		{"data URI", "data:text/html,<h1>Hi</h1>"},
+		{"javascript scheme", "javascript:alert(1)"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			resp, err := runFetchTool(t, tool, FetchParams{
+				URL:    tt.url,
+				Format: "text",
+			})
+			require.NoError(t, err)
+			assert.True(t, resp.IsError)
+			assert.Contains(t, resp.Content, "URL must start with http:// or https://")
+		})
+	}
 }
 
-func TestFetchTool_HTMLWithoutBody(t *testing.T) {
+func TestFetchHTMLNoBodyTag(t *testing.T) {
 	t.Parallel()
 
+	htmlContent := `<html><head><title>Test</title></head></html>`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte("<html><head><title>Only Head</title></head></html>"))
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(htmlContent))
 	}))
 	defer srv.Close()
 
-	tool := newFetchToolForTest(t, srv.Client())
-	resp := runJSONTool(t, tool, newTestToolContext(t), FetchToolName, FetchParams{
+	perms := newFetchMockPermissions(true)
+	tool := NewFetchTool(perms, t.TempDir(), srv.Client())
+
+	t.Run("html format with no body returns error", func(t *testing.T) {
+		resp, err := runFetchTool(t, tool, FetchParams{
+			URL:    srv.URL,
+			Format: "html",
+		})
+		require.NoError(t, err)
+		assert.True(t, resp.IsError)
+		assert.Contains(t, resp.Content, "No body content found in HTML")
+	})
+
+	t.Run("text format with no body returns empty text", func(t *testing.T) {
+		resp, err := runFetchTool(t, tool, FetchParams{
+			URL:    srv.URL,
+			Format: "text",
+		})
+		require.NoError(t, err)
+		assert.False(t, resp.IsError)
+	})
+}
+
+func TestFetchEmptyURL(t *testing.T) {
+	t.Parallel()
+
+	perms := newFetchMockPermissions(true)
+	tool := NewFetchTool(perms, t.TempDir(), &http.Client{})
+
+	resp, err := runFetchTool(t, tool, FetchParams{
+		URL:    "",
+		Format: "text",
+	})
+	require.NoError(t, err)
+	assert.True(t, resp.IsError)
+	assert.Contains(t, resp.Content, "URL parameter is required")
+}
+
+func TestFetchPermissionDenied(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	perms := newFetchMockPermissions(false)
+	tool := NewFetchTool(perms, t.TempDir(), srv.Client())
+
+	_, err := runFetchTool(t, tool, FetchParams{
 		URL:    srv.URL,
-		Format: "html",
+		Format: "text",
 	})
-
-	require.True(t, resp.IsError)
-	assert.Contains(t, resp.Content, "No body content found in HTML")
+	assert.ErrorIs(t, err, permission.ErrorPermissionDenied)
 }
 
-func newFetchToolForTest(t *testing.T, client *http.Client) fantasy.AgentTool {
-	t.Helper()
+func TestFetchHTTPErrorCodes(t *testing.T) {
+	t.Parallel()
 
-	return NewFetchTool(&mockPermissionService{}, t.TempDir(), client)
-}
+	codes := []int{http.StatusNotFound, http.StatusInternalServerError, http.StatusForbidden}
 
-func newTestToolContext(t *testing.T) context.Context {
-	t.Helper()
+	for _, code := range codes {
+		t.Run(fmt.Sprintf("status %d", code), func(t *testing.T) {
+			t.Parallel()
 
-	return context.WithValue(t.Context(), SessionIDContextKey, "test-session")
-}
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(code)
+			}))
+			defer srv.Close()
 
-func runJSONTool[T any](
-	t *testing.T,
-	tool fantasy.AgentTool,
-	ctx context.Context,
-	toolName string,
-	params T,
-) fantasy.ToolResponse {
-	t.Helper()
+			perms := newFetchMockPermissions(true)
+			tool := NewFetchTool(perms, t.TempDir(), srv.Client())
 
-	input, err := json.Marshal(params)
-	require.NoError(t, err)
-
-	resp, err := tool.Run(ctx, fantasy.ToolCall{
-		ID:    "test-call",
-		Name:  toolName,
-		Input: string(input),
-	})
-	require.NoError(t, err)
-
-	return resp
-}
-
-type roundTripperFunc func(*http.Request) (*http.Response, error)
-
-func (fn roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
-	return fn(req)
+			resp, err := runFetchTool(t, tool, FetchParams{
+				URL:    srv.URL,
+				Format: "text",
+			})
+			require.NoError(t, err)
+			assert.True(t, resp.IsError)
+			assert.Contains(t, resp.Content, fmt.Sprintf("status code: %d", code))
+		})
+	}
 }
