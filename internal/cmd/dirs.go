@@ -13,18 +13,18 @@ import (
 
 var dirsCmd = &cobra.Command{
 	Use:   "dirs",
-	Short: "Print directories used by Smithers TUI",
-	Long: `Print the directories where Smithers TUI stores its configuration and data files.
+	Short: "Print directories used by Codeplane",
+	Long: `Print the directories where Codeplane stores its configuration and data files.
 This includes the global configuration directory and data directory.`,
 	Example: `
 # Print all directories
-smithers-tui dirs
+codeplane dirs
 
 # Print only the config directory
-smithers-tui dirs config
+codeplane dirs config
 
 # Print only the data directory
-smithers-tui dirs data
+codeplane dirs data
   `,
 	Run: func(cmd *cobra.Command, args []string) {
 		if term.IsTerminal(os.Stdout.Fd()) {
@@ -47,7 +47,7 @@ smithers-tui dirs data
 
 var configDirCmd = &cobra.Command{
 	Use:   "config",
-	Short: "Print the configuration directory used by Smithers TUI",
+	Short: "Print the configuration directory used by Codeplane",
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Println(filepath.Dir(config.GlobalConfig()))
 	},
@@ -55,7 +55,7 @@ var configDirCmd = &cobra.Command{
 
 var dataDirCmd = &cobra.Command{
 	Use:   "data",
-	Short: "Print the datauration directory used by Smithers TUI",
+	Short: "Print the data directory used by Codeplane",
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Println(filepath.Dir(config.GlobalConfigData()))
 	},

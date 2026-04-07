@@ -42,6 +42,7 @@ import (
 	"github.com/charmbracelet/x/exp/charmtone"
 	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 var clientHost string
@@ -76,6 +77,9 @@ var rootCmd = &cobra.Command{
 	Use:   "codeplane",
 	Short: "A terminal-first AI assistant for software development",
 	Long:  "A glamorous, terminal-first AI assistant for software development and adjacent tasks",
+	PersistentPreRun: func(cmd *cobra.Command, _ []string) {
+		slog.Info("Running Codeplane command", "command", cmd.CommandPath())
+	},
 	Example: `
 # Run in interactive mode
 codeplane
@@ -177,6 +181,7 @@ func runInteractive(cmd *cobra.Command, _ []string) error {
 
 	com := common.DefaultCommon(ws)
 	model := ui.New(com, sessionID, continueLast)
+	observability.RecordStartupFlow("entrypoint", "tui", "ok")
 
 	var env uv.Environ = os.Environ()
 	program := tea.NewProgram(
@@ -294,6 +299,11 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 	if err := configureObservability(ctx, cfg, observability.ModeLocal, true); err != nil {
 		return nil, nil, err
 	}
+	observability.RecordStartupFlow("workspace_mode", "local", "ok",
+		attribute.String("codeplane.cwd", cwd),
+		attribute.String("codeplane.data_dir", cfg.Options.DataDirectory),
+	)
+	recordConfigSelections(store)
 
 	appInstance, err := app.New(ctx, conn, store)
 	if err != nil {
@@ -329,6 +339,9 @@ func setupClientServerWorkspace(cmd *cobra.Command) (workspace.Workspace, func()
 			slog.Error("Failed to initialize coder agent", "error", err)
 		}
 	}
+	observability.RecordStartupFlow("workspace_mode", "client_server", "ok",
+		attribute.String("codeplane.workspace_id", protoWs.ID),
+	)
 
 	return clientWs, cleanupServer, nil
 }
@@ -426,9 +439,18 @@ func ensureServer(cmd *cobra.Command, hostURL *url.URL) error {
 		}
 
 		if needsStart {
+			startedAt := time.Now()
 			if err := startDetachedServer(cmd); err != nil {
+				observability.RecordStartupFlow("server_autostart", hostURL.Scheme, "error",
+					attribute.String("codeplane.server.host", hostURL.Host),
+					attribute.String("codeplane.error", err.Error()),
+				)
 				return err
 			}
+			observability.RecordStartupFlow("server_autostart", hostURL.Scheme, "ok",
+				attribute.String("codeplane.server.host", hostURL.Host),
+				attribute.Int64("codeplane.duration_ms", time.Since(startedAt).Milliseconds()),
+			)
 		}
 
 		var err error
@@ -444,7 +466,7 @@ func ensureServer(cmd *cobra.Command, hostURL *url.URL) error {
 			}
 		}
 		if err != nil {
-			return fmt.Errorf("failed to initialize crush server: %v", err)
+			return fmt.Errorf("failed to initialize Codeplane server: %v", err)
 		}
 	}
 
@@ -470,6 +492,7 @@ func restartIfStale(cmd *cobra.Command, hostURL *url.URL) error {
 		"server", vi.Version,
 		"client", version.Version,
 	)
+	startedAt := time.Now()
 	_ = c.ShutdownServer(cmd.Context())
 	// Give the old process a moment to release the socket.
 	for range 20 {
@@ -484,6 +507,12 @@ func restartIfStale(cmd *cobra.Command, hostURL *url.URL) error {
 	}
 	// Force-remove if the socket is still lingering.
 	_ = os.Remove(hostURL.Host)
+	observability.RecordStartupFlow("server_restart", hostURL.Scheme, "ok",
+		attribute.String("codeplane.server.host", hostURL.Host),
+		attribute.String("codeplane.server.version", vi.Version),
+		attribute.String("codeplane.client.version", version.Version),
+		attribute.Int64("codeplane.duration_ms", time.Since(startedAt).Milliseconds()),
+	)
 	return nil
 }
 
@@ -526,20 +555,20 @@ func startDetachedServer(cmd *cobra.Command) error {
 	c.Stderr = stderr
 
 	if err := c.Start(); err != nil {
-		return fmt.Errorf("failed to start crush server: %v", err)
+		return fmt.Errorf("failed to start Codeplane server: %v", err)
 	}
 
 	if err := c.Process.Release(); err != nil {
-		return fmt.Errorf("failed to detach crush server process: %v", err)
+		return fmt.Errorf("failed to detach Codeplane server process: %v", err)
 	}
 
 	return nil
 }
 
 // envWithFallback returns the value of the primary env var, falling back to
-// the legacy CRUSH_* name if unset. A warning is logged when the legacy name
-// is used so operators can migrate.
-// TODO(smithers-tui): remove CRUSH_* fallback after v1.0
+// legacy names if unset. A warning is logged when a legacy name is used so
+// operators can migrate.
+// TODO(codeplane): remove SMITHERS_TUI_* and CRUSH_* fallbacks after v1.0.
 func envWithFallback(primary string, legacy ...string) string {
 	if v := os.Getenv(primary); v != "" {
 		return v
@@ -570,7 +599,7 @@ func configureObservability(ctx context.Context, cfg *config.Config, mode observ
 	}
 
 	return observability.Configure(ctx, observability.Config{
-		ServiceName:      "crush",
+		ServiceName:      "codeplane",
 		ServiceVersion:   version.Version,
 		Mode:             mode,
 		DebugServerAddr:  obs.Address,
@@ -592,7 +621,7 @@ func shutdownObservability() {
 }
 
 func shouldEnableMetrics(cfg *config.Config) bool {
-	if v, _ := strconv.ParseBool(envWithFallback("SMITHERS_TUI_DISABLE_METRICS", "CRUSH_DISABLE_METRICS")); v {
+	if v, _ := strconv.ParseBool(envWithFallback("CODEPLANE_DISABLE_METRICS", "SMITHERS_TUI_DISABLE_METRICS", "CRUSH_DISABLE_METRICS")); v {
 		return false
 	}
 	if v, _ := strconv.ParseBool(os.Getenv("DO_NOT_TRACK")); v {
@@ -669,6 +698,35 @@ func ResolveCwd(cmd *cobra.Command) (string, error) {
 		return "", fmt.Errorf("failed to get current working directory: %v", err)
 	}
 	return cwd, nil
+}
+
+func recordConfigSelections(store *config.ConfigStore) {
+	if store == nil {
+		return
+	}
+	recordConfigSelection("global_config", config.GlobalConfig())
+	recordConfigSelection("global_data", store.GlobalDataPath())
+	recordConfigSelection("workspace_config", store.WorkspaceConfigPath())
+}
+
+func recordConfigSelection(kind, path string) {
+	if strings.TrimSpace(path) == "" {
+		return
+	}
+
+	result := "codeplane"
+	if config.IsLegacyConfigPath(path) {
+		result = "legacy"
+	}
+
+	slog.Info("Resolved Codeplane config source",
+		"kind", kind,
+		"path", path,
+		"legacy", result == "legacy",
+	)
+	observability.RecordStartupFlow("config_source", kind, result,
+		attribute.String("codeplane.config.path", path),
+	)
 }
 
 func createDataDir(dir string) error {

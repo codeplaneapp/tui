@@ -14,13 +14,13 @@ import (
 var projectsCmd = &cobra.Command{
 	Use:   "projects",
 	Short: "List project directories",
-	Long:  "List directories where Smithers TUI project data is known to exist",
+	Long:  "List directories where Codeplane project data is known to exist",
 	Example: `
 # List all projects in a table
-smithers-tui projects
+codeplane projects
 
 # Output projects data as JSON
-smithers-tui projects --json
+codeplane projects --json
   `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		jsonOutput, _ := cmd.Flags().GetBool("json")

@@ -19,10 +19,10 @@ var modelsCmd = &cobra.Command{
 	Short: "List all available models from configured providers",
 	Long:  `List all available models from configured providers. Shows provider name and model IDs.`,
 	Example: `# List all available models
-smithers-tui models
+codeplane models
 
 # Search models
-smithers-tui models gpt5`,
+codeplane models gpt5`,
 	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cwd, err := ResolveCwd(cmd)
@@ -39,7 +39,7 @@ smithers-tui models gpt5`,
 		}
 
 		if !cfg.Config().IsConfigured() {
-			return fmt.Errorf("no providers configured - please run 'smithers-tui' to set up a provider interactively")
+			return fmt.Errorf("no providers configured; run 'codeplane' to set up a provider interactively")
 		}
 
 		term := strings.ToLower(strings.Join(args, " "))

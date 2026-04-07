@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/event"
 	"github.com/charmbracelet/crush/internal/format"
+	"github.com/charmbracelet/crush/internal/observability"
 	"github.com/charmbracelet/crush/internal/proto"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/charmbracelet/crush/internal/session"
@@ -35,28 +36,28 @@ var runCmd = &cobra.Command{
 The prompt can be provided as arguments or piped from stdin.`,
 	Example: `
 # Run a simple prompt
-smithers-tui run "Guess my 5 favorite Pokémon"
+codeplane run "Guess my 5 favorite Pokémon"
 
 # Pipe input from stdin
-curl https://charm.land | smithers-tui run "Summarize this website"
+curl https://charm.land | codeplane run "Summarize this website"
 
 # Read from a file
-smithers-tui run "What is this code doing?" <<< prrr.go
+codeplane run "What is this code doing?" <<< prrr.go
 
 # Redirect output to a file
-smithers-tui run "Generate a hot README for this project" > MY_HOT_README.md
+codeplane run "Generate a hot README for this project" > MY_HOT_README.md
 
 # Run in quiet mode (hide the spinner)
-smithers-tui run --quiet "Generate a README for this project"
+codeplane run --quiet "Generate a README for this project"
 
 # Run in verbose mode (show logs)
-smithers-tui run --verbose "Generate a README for this project"
+codeplane run --verbose "Generate a README for this project"
 
 # Continue a previous session
-smithers-tui run --session {session-id} "Follow up on your last response"
+codeplane run --session {session-id} "Follow up on your last response"
 
 # Continue the most recent session
-smithers-tui run --continue "Follow up on your last response"
+codeplane run --continue "Follow up on your last response"
 
   `,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -111,13 +112,14 @@ smithers-tui run --continue "Follow up on your last response"
 			}
 
 			if !ws.Config.IsConfigured() {
-				return fmt.Errorf("no providers configured - please run 'crush' to set up a provider interactively")
+				return fmt.Errorf("no providers configured; run 'codeplane' to set up a provider interactively")
 			}
 
 			if verbose {
 				slog.SetDefault(slog.New(log.New(os.Stderr)))
 			}
 
+			observability.RecordStartupFlow("entrypoint", "run", "ok")
 			return runNonInteractive(ctx, c, ws, prompt, largeModel, smallModel, quiet || verbose, sessionID, useLast)
 		}
 
@@ -128,13 +130,14 @@ smithers-tui run --continue "Follow up on your last response"
 		defer cleanup()
 
 		if !ws.Config().IsConfigured() {
-			return fmt.Errorf("no providers configured - please run 'crush' to set up a provider interactively")
+			return fmt.Errorf("no providers configured; run 'codeplane' to set up a provider interactively")
 		}
 
 		if verbose {
 			slog.SetDefault(slog.New(log.New(os.Stderr)))
 		}
 
+		observability.RecordStartupFlow("entrypoint", "run", "ok")
 		appWs := ws.(*workspace.AppWorkspace)
 		return appWs.App().RunNonInteractive(ctx, os.Stdout, prompt, largeModel, smallModel, quiet || verbose, sessionID, useLast)
 	},

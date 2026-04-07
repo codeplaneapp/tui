@@ -23,16 +23,16 @@ import (
 var loginCmd = &cobra.Command{
 	Aliases: []string{"auth"},
 	Use:     "login [platform]",
-	Short:   "Login Smithers TUI to a platform",
-	Long: `Login Smithers TUI to a specified platform.
+	Short:   "Login Codeplane to a platform",
+	Long: `Login Codeplane to a specified platform.
 The platform should be provided as an argument.
 Available platforms are: hyper, copilot.`,
 	Example: `
 # Authenticate with Charm Hyper
-smithers-tui login
+codeplane login
 
 # Authenticate with GitHub Copilot
-smithers-tui login copilot
+codeplane login copilot
   `,
 	ValidArgs: []cobra.Completion{
 		"hyper",
