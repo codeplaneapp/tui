@@ -2,6 +2,7 @@ package views
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -11,11 +12,15 @@ import (
 )
 
 type mockChangeManager struct {
-	repo    *jjhub.Repo
-	changes []jjhub.Change
-	details map[string]jjhub.Change
-	diffs   map[string]string
-	status  string
+	repo       *jjhub.Repo
+	changes    []jjhub.Change
+	details    map[string]jjhub.Change
+	diffs      map[string]string
+	status     string
+	listErr    error
+	viewErr    error
+	diffErr    error
+	statusErr  error
 }
 
 func (m *mockChangeManager) GetCurrentRepo(context.Context) (*jjhub.Repo, error) {
@@ -26,10 +31,16 @@ func (m *mockChangeManager) GetCurrentRepo(context.Context) (*jjhub.Repo, error)
 }
 
 func (m *mockChangeManager) ListChanges(_ context.Context, limit int) ([]jjhub.Change, error) {
+	if m.listErr != nil {
+		return nil, m.listErr
+	}
 	return append([]jjhub.Change(nil), m.changes[:min(limit, len(m.changes))]...), nil
 }
 
 func (m *mockChangeManager) ViewChange(_ context.Context, changeID string) (*jjhub.Change, error) {
+	if m.viewErr != nil {
+		return nil, m.viewErr
+	}
 	if change, ok := m.details[changeID]; ok {
 		return &change, nil
 	}
@@ -37,10 +48,16 @@ func (m *mockChangeManager) ViewChange(_ context.Context, changeID string) (*jjh
 }
 
 func (m *mockChangeManager) ChangeDiff(_ context.Context, changeID string) (string, error) {
+	if m.diffErr != nil {
+		return "", m.diffErr
+	}
 	return m.diffs[changeID], nil
 }
 
 func (m *mockChangeManager) Status(context.Context) (string, error) {
+	if m.statusErr != nil {
+		return "", m.statusErr
+	}
 	return m.status, nil
 }
 

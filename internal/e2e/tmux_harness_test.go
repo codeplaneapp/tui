@@ -3,19 +3,19 @@ package e2e_test
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	dto "github.com/prometheus/client_model/go"
-	"github.com/prometheus/common/expfmt"
-	"github.com/prometheus/common/model"
 )
 
 const (
@@ -504,19 +504,13 @@ func waitForMetricAtLeast(t *testing.T, addr, metricName string, labels map[stri
 			return fmt.Errorf("status %d", resp.StatusCode)
 		}
 
-		parser := expfmt.NewTextParser(model.UTF8Validation)
-		families, err := parser.TextToMetricFamilies(resp.Body)
+		samples, err := parsePrometheusMetricSamples(resp.Body)
 		if err != nil {
 			return err
 		}
 
-		family := families[metricName]
-		if family == nil {
-			return fmt.Errorf("metric %s not found", metricName)
-		}
-
-		for _, metric := range family.GetMetric() {
-			if metricLabelsMatch(metric, labels) && metricNumericValue(metric) >= minValue {
+		for _, sample := range samples {
+			if sample.name == metricName && metricLabelsMatchMap(sample.labels, labels) && sample.value >= minValue {
 				return nil
 			}
 		}
@@ -551,6 +545,110 @@ func waitForHTTP(t *testing.T, url string, timeout time.Duration, predicate func
 	t.Fatalf("wait for %s: %v", url, lastErr)
 }
 
+type prometheusMetricSample struct {
+	name   string
+	labels map[string]string
+	value  float64
+}
+
+func parsePrometheusMetricSamples(r io.Reader) ([]prometheusMetricSample, error) {
+	body, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+
+	lines := strings.Split(string(body), "\n")
+	samples := make([]prometheusMetricSample, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+
+		name, labels, err := parsePrometheusSampleLabels(fields[0])
+		if err != nil {
+			return nil, err
+		}
+		value, err := strconv.ParseFloat(fields[1], 64)
+		if err != nil {
+			return nil, err
+		}
+
+		samples = append(samples, prometheusMetricSample{
+			name:   name,
+			labels: labels,
+			value:  value,
+		})
+	}
+
+	return samples, nil
+}
+
+func parsePrometheusSampleLabels(spec string) (string, map[string]string, error) {
+	open := strings.IndexByte(spec, '{')
+	if open == -1 {
+		return spec, nil, nil
+	}
+
+	close := strings.LastIndexByte(spec, '}')
+	if close < open {
+		return "", nil, fmt.Errorf("invalid metric sample %q", spec)
+	}
+
+	name := spec[:open]
+	labels := make(map[string]string)
+	raw := spec[open+1 : close]
+	for strings.TrimSpace(raw) != "" {
+		eq := strings.IndexByte(raw, '=')
+		if eq <= 0 {
+			return "", nil, fmt.Errorf("invalid metric labels %q", spec)
+		}
+
+		key := raw[:eq]
+		value, rest, err := parsePrometheusLabelValue(raw[eq+1:])
+		if err != nil {
+			return "", nil, err
+		}
+		labels[key] = value
+		raw = strings.TrimPrefix(rest, ",")
+	}
+
+	return name, labels, nil
+}
+
+func parsePrometheusLabelValue(input string) (string, string, error) {
+	if !strings.HasPrefix(input, "\"") {
+		return "", "", fmt.Errorf("invalid metric label value %q", input)
+	}
+
+	escaped := false
+	for i := 1; i < len(input); i++ {
+		switch input[i] {
+		case '\\':
+			escaped = !escaped
+		case '"':
+			if escaped {
+				escaped = false
+				continue
+			}
+			value, err := strconv.Unquote(input[:i+1])
+			if err != nil {
+				return "", "", err
+			}
+			return value, strings.TrimSpace(input[i+1:]), nil
+		default:
+			escaped = false
+		}
+	}
+
+	return "", "", fmt.Errorf("unterminated metric label value %q", input)
+}
+
 func metricLabelsMatch(metric *dto.Metric, labels map[string]string) bool {
 	for key, want := range labels {
 		found := false
@@ -561,6 +659,15 @@ func metricLabelsMatch(metric *dto.Metric, labels map[string]string) bool {
 			}
 		}
 		if !found {
+			return false
+		}
+	}
+	return true
+}
+
+func metricLabelsMatchMap(metricLabels, want map[string]string) bool {
+	for key, value := range want {
+		if metricLabels[key] != value {
 			return false
 		}
 	}

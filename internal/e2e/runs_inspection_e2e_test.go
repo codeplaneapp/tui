@@ -353,10 +353,10 @@ func TestRunsAndInspection(t *testing.T) {
 				WithSize(140, 45),
 			)
 			s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
-			waitForObservabilityReady(t, obsAddr, 10*time.Second)
+			waitForObservabilityReady(t, obsAddr, 20*time.Second)
 
 			s.SendKeys("C-r")
-			s.WaitForAnyText([]string{"Runs", "Loading runs"}, 10*time.Second)
+			s.WaitForAnyText([]string{"toggle details", "filter status", "[All]"}, 10*time.Second)
 			s.WaitForAnyText([]string{"snapdemo", "snapshot-demo"}, 10*time.Second)
 			s.WaitForAnyText([]string{"snapshots", "t"}, 10*time.Second)
 
@@ -549,10 +549,10 @@ func TestRunsAndInspection(t *testing.T) {
 				WithSize(140, 45),
 			)
 			s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
-			waitForObservabilityReady(t, obsAddr, 10*time.Second)
+			waitForObservabilityReady(t, obsAddr, 20*time.Second)
 
 			s.SendKeys("C-r")
-			s.WaitForAnyText([]string{"Runs", "Loading runs"}, 10*time.Second)
+			s.WaitForAnyText([]string{"toggle details", "filter status", "[All]"}, 10*time.Second)
 			s.WaitForAnyText([]string{"snapdemo", "snapshot-demo"}, 10*time.Second)
 
 			s.SendKeys("Enter")

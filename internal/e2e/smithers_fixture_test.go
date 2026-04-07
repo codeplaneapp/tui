@@ -48,7 +48,7 @@ func seedSmithersSnapshotsFixture(t *testing.T) string {
 			iteration INTEGER NOT NULL,
 			attempt INTEGER NOT NULL,
 			label TEXT,
-			created_at TIMESTAMP NOT NULL,
+			created_at INTEGER NOT NULL,
 			state_json TEXT,
 			size_bytes INTEGER,
 			parent_id TEXT
@@ -129,7 +129,7 @@ func seedSmithersSnapshotsFixture(t *testing.T) string {
 			1,
 			1,
 			snap.label,
-			snap.createdAt,
+			snap.createdAt.UnixMilli(),
 			snap.stateJSON,
 			snap.sizeBytes,
 			nil,

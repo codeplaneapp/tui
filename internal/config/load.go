@@ -115,6 +115,11 @@ func mustMarshalConfig(cfg *Config) []byte {
 	return data
 }
 
+type envValue struct {
+	value   string
+	present bool
+}
+
 func PushPopCodeplaneEnv() func() {
 	prefixes := []string{"CRUSH_", "SMITHERS_TUI_", "CODEPLANE_"}
 	found := make(map[string]struct{})
@@ -130,27 +135,42 @@ func PushPopCodeplaneEnv() func() {
 		}
 	}
 
-	backups := make(map[string]string, len(found))
+	backups := make(map[string]envValue, len(found))
 	for ev := range found {
-		backups[ev] = os.Getenv(ev)
+		value, present := os.LookupEnv(ev)
+		backups[ev] = envValue{value: value, present: present}
 	}
 
 	for ev := range found {
 		switch {
-		case os.Getenv("CODEPLANE_"+ev) != "":
-			os.Setenv(ev, os.Getenv("CODEPLANE_"+ev))
-		case os.Getenv("SMITHERS_TUI_"+ev) != "":
-			os.Setenv(ev, os.Getenv("SMITHERS_TUI_"+ev))
-		case os.Getenv("CRUSH_"+ev) != "":
-			os.Setenv(ev, os.Getenv("CRUSH_"+ev))
+		case hasEnv("CODEPLANE_" + ev):
+			os.Setenv(ev, mustGetEnv("CODEPLANE_"+ev))
+		case hasEnv("SMITHERS_TUI_" + ev):
+			os.Setenv(ev, mustGetEnv("SMITHERS_TUI_"+ev))
+		case hasEnv("CRUSH_" + ev):
+			os.Setenv(ev, mustGetEnv("CRUSH_"+ev))
 		}
 	}
 
 	return func() {
 		for k, v := range backups {
-			os.Setenv(k, v)
+			if v.present {
+				os.Setenv(k, v.value)
+				continue
+			}
+			os.Unsetenv(k)
 		}
 	}
+}
+
+func hasEnv(name string) bool {
+	_, ok := os.LookupEnv(name)
+	return ok
+}
+
+func mustGetEnv(name string) string {
+	value, _ := os.LookupEnv(name)
+	return value
 }
 
 func (c *Config) configureProviders(store *ConfigStore, env env.Env, resolver VariableResolver, knownProviders []catwalk.Provider) error {

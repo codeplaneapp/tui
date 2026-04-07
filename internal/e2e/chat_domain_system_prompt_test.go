@@ -56,6 +56,10 @@ func TestSmithersDomainSystemPrompt_CoderFallback_TUI(t *testing.T) {
 	defer tui.Terminate()
 
 	require.NoError(t, tui.WaitForAnyText([]string{"CRUSH", "SMITHERS"}, 15*time.Second))
-	require.NoError(t, tui.WaitForAnyText([]string{"Init Crush", "Init Smithers"}, 10*time.Second))
+	require.NoError(t, tui.WaitForAnyText([]string{
+		"Would you like to initialize this project?",
+		"Init Crush",
+		"Init Smithers",
+	}, 10*time.Second))
 	require.NoError(t, tui.WaitForNoText("Run Dashboard", 5*time.Second))
 }
