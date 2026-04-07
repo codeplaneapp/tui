@@ -128,7 +128,7 @@ func (c *controllerV1) handlePostWorkspaces(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	_, result, err := c.backend.CreateWorkspace(args)
+	_, result, err := c.backend.CreateWorkspace(r.Context(), args)
 	if err != nil {
 		c.handleError(w, r, err)
 		return
@@ -146,7 +146,7 @@ func (c *controllerV1) handlePostWorkspaces(w http.ResponseWriter, r *http.Reque
 //	@Router			/workspaces/{id} [delete]
 func (c *controllerV1) handleDeleteWorkspaces(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	c.backend.DeleteWorkspace(id)
+	c.backend.DeleteWorkspace(r.Context(), id)
 }
 
 // handleGetWorkspaceConfig returns workspace configuration.
