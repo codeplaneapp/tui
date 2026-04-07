@@ -26,7 +26,7 @@ func TestSmithersMCPStatusFromStates_ExactCanonicalName_Connected(t *testing.T) 
 
 	states := map[string]mcp.ClientInfo{
 		"smithers": {
-			Name:   "smithers",
+			Name:   "codeplane",
 			State:  mcp.StateConnected,
 			Counts: mcp.Counts{Tools: 12},
 		},
@@ -34,7 +34,7 @@ func TestSmithersMCPStatusFromStates_ExactCanonicalName_Connected(t *testing.T) 
 
 	connected, name, tools := smithersMCPStatusFromStates(states)
 	require.True(t, connected)
-	require.Equal(t, "smithers", name)
+	require.Equal(t, "codeplane", name)
 	require.Equal(t, 12, tools)
 }
 
@@ -46,11 +46,11 @@ func TestSmithersMCPStatusFromStates_ExactCanonicalName_Disconnected(t *testing.
 		t.Run(state.String(), func(t *testing.T) {
 			t.Parallel()
 			states := map[string]mcp.ClientInfo{
-				"smithers": {Name: "smithers", State: state},
+				"smithers": {Name: "codeplane", State: state},
 			}
 			connected, name, tools := smithersMCPStatusFromStates(states)
 			require.False(t, connected, "state=%s should be disconnected", state)
-			require.Equal(t, "smithers", name)
+			require.Equal(t, "codeplane", name)
 			require.Zero(t, tools)
 		})
 	}
@@ -95,7 +95,7 @@ func TestSmithersMCPStatusFromStates_CanonicalTakesPriorityOverAlternate(t *test
 
 	states := map[string]mcp.ClientInfo{
 		"smithers": {
-			Name:   "smithers",
+			Name:   "codeplane",
 			State:  mcp.StateConnected,
 			Counts: mcp.Counts{Tools: 10},
 		},
@@ -108,7 +108,7 @@ func TestSmithersMCPStatusFromStates_CanonicalTakesPriorityOverAlternate(t *test
 
 	connected, name, tools := smithersMCPStatusFromStates(states)
 	require.True(t, connected)
-	require.Equal(t, "smithers", name)
+	require.Equal(t, "codeplane", name)
 	require.Equal(t, 10, tools)
 }
 
@@ -131,7 +131,7 @@ func TestUpdateSmithersStatusMCP_NilExisting(t *testing.T) {
 
 	states := map[string]mcp.ClientInfo{
 		"smithers": {
-			Name:   "smithers",
+			Name:   "codeplane",
 			State:  mcp.StateConnected,
 			Counts: mcp.Counts{Tools: 8},
 		},
@@ -140,7 +140,7 @@ func TestUpdateSmithersStatusMCP_NilExisting(t *testing.T) {
 	result := updateSmithersStatusMCP(nil, states)
 	require.NotNil(t, result)
 	require.True(t, result.MCPConnected)
-	require.Equal(t, "smithers", result.MCPServerName)
+	require.Equal(t, "codeplane", result.MCPServerName)
 	require.Equal(t, 8, result.MCPToolCount)
 	require.Zero(t, result.ActiveRuns)
 	require.Zero(t, result.PendingApprovals)
@@ -159,7 +159,7 @@ func TestUpdateSmithersStatusMCP_PreservesRunFields(t *testing.T) {
 
 	states := map[string]mcp.ClientInfo{
 		"smithers": {
-			Name:   "smithers",
+			Name:   "codeplane",
 			State:  mcp.StateConnected,
 			Counts: mcp.Counts{Tools: 15},
 		},
@@ -168,7 +168,7 @@ func TestUpdateSmithersStatusMCP_PreservesRunFields(t *testing.T) {
 	result := updateSmithersStatusMCP(existing, states)
 	require.Equal(t, existing, result, "should return same pointer")
 	require.True(t, result.MCPConnected)
-	require.Equal(t, "smithers", result.MCPServerName)
+	require.Equal(t, "codeplane", result.MCPServerName)
 	require.Equal(t, 15, result.MCPToolCount)
 	// Run fields must be unchanged.
 	require.Equal(t, 3, result.ActiveRuns)
@@ -180,7 +180,7 @@ func TestUpdateSmithersStatusMCP_DisconnectedWhenNoSmithersKey(t *testing.T) {
 
 	existing := &SmithersStatus{
 		MCPConnected:  true,
-		MCPServerName: "smithers",
+		MCPServerName: "codeplane",
 		MCPToolCount:  5,
 	}
 

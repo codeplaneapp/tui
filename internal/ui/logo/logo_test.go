@@ -22,7 +22,7 @@ func TestRender_Wide(t *testing.T) {
 	})
 
 	plain := ansi.Strip(out)
-	require.Contains(t, plain, "CRUSH")
+	require.Contains(t, plain, "CODEPLANE")
 	require.NotContains(t, plain, "Smithers")
 	require.NotContains(t, plain, "Charm")
 }
@@ -41,7 +41,7 @@ func TestRender_Compact(t *testing.T) {
 	})
 
 	plain := ansi.Strip(out)
-	require.Contains(t, plain, "CRUSH")
+	require.Contains(t, plain, "CODEPLANE")
 	require.NotContains(t, plain, "Smithers")
 	require.NotContains(t, plain, "Charm")
 }
@@ -53,7 +53,7 @@ func TestSmallRender(t *testing.T) {
 	out := SmallRender(&sty, 80)
 	plain := ansi.Strip(out)
 
-	require.Contains(t, plain, "CRUSH")
+	require.Contains(t, plain, "CODEPLANE")
 	require.NotContains(t, plain, "Smithers")
 	require.NotContains(t, plain, "Charm")
 }

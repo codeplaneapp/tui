@@ -3,10 +3,12 @@ package views
 import (
 	"encoding/json"
 	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/crush/internal/jjhub"
 )
 
 // padRight pads a string to the given width with spaces.
@@ -125,4 +127,132 @@ func fmtRelativeAge(updatedAtMs int64) string {
 	default:
 		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
 	}
+}
+
+var (
+	jjhubTitleStyle     = lipgloss.NewStyle().Bold(true)
+	jjhubSectionStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("111"))
+	jjhubMetaLabelStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Width(12)
+	jjhubMetaValueStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	jjhubMutedStyle     = lipgloss.NewStyle().Faint(true)
+	jjhubErrorStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Bold(true)
+)
+
+func jjhubAvailable() bool {
+	_, err := exec.LookPath("jjhub")
+	return err == nil
+}
+
+func jjhubHeader(title string, width int, right string) string {
+	left := jjhubTitleStyle.Render(title)
+	if width <= 0 || strings.TrimSpace(right) == "" {
+		return left
+	}
+	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
+	if gap <= 1 {
+		return left + " " + right
+	}
+	return left + strings.Repeat(" ", gap) + right
+}
+
+func jjhubMetaRow(label, value string) string {
+	return jjhubMetaLabelStyle.Render(label) + jjhubMetaValueStyle.Render(value)
+}
+
+func jjhubJoinNonEmpty(sep string, parts ...string) string {
+	filtered := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if strings.TrimSpace(part) == "" {
+			continue
+		}
+		filtered = append(filtered, part)
+	}
+	return strings.Join(filtered, sep)
+}
+
+func jjhubRepoLabel(repo *jjhub.Repo) string {
+	if repo == nil {
+		return ""
+	}
+	switch {
+	case strings.TrimSpace(repo.FullName) != "":
+		return jjhubMutedStyle.Render(repo.FullName)
+	case strings.TrimSpace(repo.Owner) != "" && strings.TrimSpace(repo.Name) != "":
+		return jjhubMutedStyle.Render(repo.Owner + "/" + repo.Name)
+	case strings.TrimSpace(repo.Name) != "":
+		return jjhubMutedStyle.Render(repo.Name)
+	default:
+		return ""
+	}
+}
+
+func jjhubAtUser(login string) string {
+	if strings.TrimSpace(login) == "" {
+		return ""
+	}
+	return "@" + login
+}
+
+func jjhubFormatRelativeTime(raw string) string {
+	if raw == "" {
+		return "-"
+	}
+
+	parsed, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		parsed, err = time.Parse(time.RFC3339Nano, raw)
+		if err != nil {
+			return raw
+		}
+	}
+
+	delta := time.Since(parsed)
+	switch {
+	case delta < time.Minute:
+		return "just now"
+	case delta < time.Hour:
+		return fmt.Sprintf("%dm ago", int(delta.Minutes()))
+	case delta < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(delta.Hours()))
+	case delta < 7*24*time.Hour:
+		return fmt.Sprintf("%dd ago", int(delta.Hours()/24))
+	case delta < 365*24*time.Hour:
+		return fmt.Sprintf("%dmo ago", int(delta.Hours()/(24*30)))
+	default:
+		return fmt.Sprintf("%dy ago", int(delta.Hours()/(24*365)))
+	}
+}
+
+func jjhubFormatTimestamp(raw string) string {
+	if raw == "" {
+		return "-"
+	}
+
+	parsed, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		parsed, err = time.Parse(time.RFC3339Nano, raw)
+		if err != nil {
+			return raw
+		}
+	}
+
+	return parsed.Local().Format("2006-01-02 15:04")
+}
+
+func jjhubClipLines(s string, maxLines int) (string, bool) {
+	if maxLines <= 0 {
+		return s, false
+	}
+	lines := strings.Split(s, "\n")
+	if len(lines) <= maxLines {
+		return s, false
+	}
+	return strings.Join(lines[:maxLines], "\n"), true
+}
+
+func pluralS(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }

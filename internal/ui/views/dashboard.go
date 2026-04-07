@@ -3,7 +3,6 @@ package views
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -71,8 +70,8 @@ type DashboardView struct {
 	tabs         []DashboardTab // instance-level tab list (not the global)
 
 	// Smithers data
-	runs         []smithers.RunSummary
-	workflows    []smithers.Workflow
+	runs             []smithers.RunSummary
+	workflows        []smithers.Workflow
 	runsLoading      bool
 	wfLoading        bool
 	approvalsLoading bool
@@ -82,15 +81,15 @@ type DashboardView struct {
 	approvals        []smithers.Approval
 
 	// JJHub data
-	landings         []jjhub.Landing
-	issues           []jjhub.Issue
-	workspaces       []jjhub.Workspace
-	landingsLoading  bool
-	issuesLoading    bool
+	landings          []jjhub.Landing
+	issues            []jjhub.Issue
+	workspaces        []jjhub.Workspace
+	landingsLoading   bool
+	issuesLoading     bool
 	workspacesLoading bool
-	landingsErr      error
-	issuesErr        error
-	workspacesErr    error
+	landingsErr       error
+	issuesErr         error
+	workspacesErr     error
 
 	// repo name shown in header when jjhub is available
 	repoName string
@@ -149,12 +148,6 @@ type dashWorkspacesFetchedMsg struct {
 // InitSmithersMsg is returned when user selects "Init Smithers" from the dashboard.
 type InitSmithersMsg struct{}
 
-// jjhubAvailable returns true if the jjhub CLI binary is on PATH.
-func jjhubAvailable() bool {
-	_, err := exec.LookPath("jjhub")
-	return err == nil
-}
-
 func NewDashboardView(client *smithers.Client, hasSmithers bool) *DashboardView {
 	return NewDashboardViewWithJJHub(client, hasSmithers, nil)
 }
@@ -204,6 +197,8 @@ func NewDashboardViewWithJJHub(client *smithers.Client, hasSmithers bool, jc *jj
 	// Append JJHub quick-action items when available.
 	if hasJJHub {
 		d.menuItems = append(d.menuItems,
+			menuItem{icon: "Δ", label: "Changes", desc: "Inspect recent JJ changes and diffs", action: func() tea.Msg { return DashboardNavigateMsg{View: "changes"} }},
+			menuItem{icon: "≋", label: "Status", desc: "Inspect working copy status and diff", action: func() tea.Msg { return DashboardNavigateMsg{View: "status"} }},
 			menuItem{icon: "⬆", label: "Landings", desc: "Browse landing requests", action: func() tea.Msg { return DashboardNavigateMsg{View: "landings"} }},
 			menuItem{icon: "◉", label: "Issues", desc: "Browse issues", action: func() tea.Msg { return DashboardNavigateMsg{View: "issues"} }},
 			menuItem{icon: "▣", label: "Workspaces", desc: "Manage cloud workspaces", action: func() tea.Msg { return DashboardNavigateMsg{View: "workspaces"} }},
@@ -434,7 +429,7 @@ func (d *DashboardView) renderHeader() string {
 
 	// Show jjhub repo name in header if available.
 	if d.repoName != "" {
-		logo += lipgloss.NewStyle().Faint(true).Render("  "+d.repoName)
+		logo += lipgloss.NewStyle().Faint(true).Render("  " + d.repoName)
 	}
 
 	status := ""
@@ -1193,11 +1188,4 @@ func (d *DashboardView) fetchRepoName() tea.Cmd {
 		}
 		return dashRepoNameFetchedMsg{name: repo.FullName}
 	}
-}
-
-func pluralS(n int) string {
-	if n == 1 {
-		return ""
-	}
-	return "s"
 }

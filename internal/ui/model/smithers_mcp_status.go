@@ -7,13 +7,13 @@ import (
 	"github.com/charmbracelet/crush/internal/config"
 )
 
-// smithersMCPStatusFromStates resolves the Smithers MCP connection status from
+// smithersMCPStatusFromStates resolves the workflow MCP connection status from
 // the provided MCP state map. It applies a stable name-resolution order:
 //  1. exact match on config.SmithersMCPName ("smithers")
 //  2. exact match on "smithers-orchestrator"
 //  3. first key whose name contains "smithers" (case-insensitive)
 //
-// Returns (connected, serverName, toolCount).  When no Smithers MCP entry is
+// Returns (connected, serverName, toolCount). When no workflow MCP entry is
 // found all three zero values are returned.
 func smithersMCPStatusFromStates(states map[string]mcp.ClientInfo) (connected bool, serverName string, toolCount int) {
 	if len(states) == 0 {

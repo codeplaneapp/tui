@@ -2752,7 +2752,7 @@ func (m *UI) View() tea.View {
 	}
 	v.MouseMode = tea.MouseModeCellMotion
 	v.ReportFocus = m.caps.ReportFocusEvents
-	v.WindowTitle = "smithers-tui " + home.Short(m.com.Workspace.WorkingDir())
+	v.WindowTitle = "codeplane " + home.Short(m.com.Workspace.WorkingDir())
 
 	canvas := uv.NewScreenBuffer(m.width, m.height)
 	v.Cursor = m.Draw(canvas, canvas.Bounds())
@@ -3301,7 +3301,7 @@ func (m *UI) openEditor(value string) tea.Cmd {
 		return util.ReportError(err)
 	}
 	cmd, err := editor.Command(
-		"smithers-tui",
+		"codeplane",
 		tmpPath,
 		editor.AtPosition(
 			m.textarea.Line()+1,

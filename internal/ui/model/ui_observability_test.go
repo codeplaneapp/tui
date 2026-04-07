@@ -26,6 +26,8 @@ func TestHandleViewResult_OpenSnapshots_RecordsObservability(t *testing.T) {
 	ui := newShortcutTestUI()
 	ui.viewRouter = views.NewRouter()
 	ui.smithersClient = smithers.NewClient()
+	ui.status = NewStatus(ui.com, ui)
+	ui.chat = NewChat(ui.com)
 
 	cmds := ui.handleViewResult(views.OpenSnapshotsMsg{
 		RunID:  "run-123",

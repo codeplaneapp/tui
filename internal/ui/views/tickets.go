@@ -9,6 +9,8 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	ghrepo "github.com/charmbracelet/crush/internal/github"
+	"github.com/charmbracelet/crush/internal/jjhub"
 	"github.com/charmbracelet/crush/internal/smithers"
 	"github.com/charmbracelet/crush/internal/ui/components"
 )
@@ -232,6 +234,16 @@ func NewTicketsView(client *smithers.Client) *TicketsView {
 		detailPane:   detail,
 		createPrompt: createPromptState{input: ti},
 	}
+}
+
+// NewTicketsViewWithSources preserves the older test constructor shape while
+// tickets remain Smithers-backed in the current implementation.
+func NewTicketsViewWithSources(client *smithers.Client, _ *jjhub.Client, _ *ghrepo.Client) *TicketsView {
+	return NewTicketsView(client)
+}
+
+func (v *TicketsView) activeItems() []smithers.Ticket {
+	return v.tickets
 }
 
 // Init loads tickets from the client.
