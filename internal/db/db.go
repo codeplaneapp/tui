@@ -8,6 +8,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sync"
 )
 
 type DBTX interface {
@@ -329,36 +330,186 @@ func (q *Queries) Close() error {
 }
 
 func (q *Queries) exec(ctx context.Context, stmt *sql.Stmt, query string, args ...interface{}) (sql.Result, error) {
+	ctx, span, operation, started := beginObservedQuery(ctx, query, "exec", q.tx != nil)
+	var err error
+	defer func() {
+		finishObservedQuery(span, operation, started, err)
+	}()
+
 	switch {
 	case stmt != nil && q.tx != nil:
-		return q.tx.StmtContext(ctx, stmt).ExecContext(ctx, args...)
+		var result sql.Result
+		result, err = q.tx.StmtContext(ctx, stmt).ExecContext(ctx, args...)
+		return result, err
 	case stmt != nil:
-		return stmt.ExecContext(ctx, args...)
+		var result sql.Result
+		result, err = stmt.ExecContext(ctx, args...)
+		return result, err
 	default:
-		return q.db.ExecContext(ctx, query, args...)
+		var result sql.Result
+		result, err = q.db.ExecContext(ctx, query, args...)
+		return result, err
 	}
 }
 
-func (q *Queries) query(ctx context.Context, stmt *sql.Stmt, query string, args ...interface{}) (*sql.Rows, error) {
+func (q *Queries) query(ctx context.Context, stmt *sql.Stmt, query string, args ...interface{}) (*observedRows, error) {
+	ctx, span, operation, started := beginObservedQuery(ctx, query, "query", q.tx != nil)
+	finish := func(err error) {
+		finishObservedQuery(span, operation, started, err)
+	}
+
+	var (
+		rows *sql.Rows
+		err  error
+	)
 	switch {
 	case stmt != nil && q.tx != nil:
-		return q.tx.StmtContext(ctx, stmt).QueryContext(ctx, args...)
+		rows, err = q.tx.StmtContext(ctx, stmt).QueryContext(ctx, args...)
 	case stmt != nil:
-		return stmt.QueryContext(ctx, args...)
+		rows, err = stmt.QueryContext(ctx, args...)
 	default:
-		return q.db.QueryContext(ctx, query, args...)
+		rows, err = q.db.QueryContext(ctx, query, args...)
 	}
+	if err != nil {
+		finish(err)
+		return nil, err
+	}
+	return &observedRows{rows: rows, finish: finish}, nil
 }
 
-func (q *Queries) queryRow(ctx context.Context, stmt *sql.Stmt, query string, args ...interface{}) *sql.Row {
+func (q *Queries) queryRow(ctx context.Context, stmt *sql.Stmt, query string, args ...interface{}) *observedRow {
+	ctx, span, operation, started := beginObservedQuery(ctx, query, "query_row", q.tx != nil)
+	finish := func(err error) {
+		finishObservedQuery(span, operation, started, err)
+	}
+
+	var (
+		rows *sql.Rows
+		err  error
+	)
 	switch {
 	case stmt != nil && q.tx != nil:
-		return q.tx.StmtContext(ctx, stmt).QueryRowContext(ctx, args...)
+		rows, err = q.tx.StmtContext(ctx, stmt).QueryContext(ctx, args...)
 	case stmt != nil:
-		return stmt.QueryRowContext(ctx, args...)
+		rows, err = stmt.QueryContext(ctx, args...)
 	default:
-		return q.db.QueryRowContext(ctx, query, args...)
+		rows, err = q.db.QueryContext(ctx, query, args...)
 	}
+	if err != nil {
+		return &observedRow{err: err, finish: finish}
+	}
+	return &observedRow{rows: rows, finish: finish}
+}
+
+type observedRows struct {
+	rows   *sql.Rows
+	finish func(error)
+	once   sync.Once
+}
+
+func (r *observedRows) Close() error {
+	if r == nil || r.rows == nil {
+		r.finishOnce(nil)
+		return nil
+	}
+
+	err := r.rows.Close()
+	if err == nil {
+		err = r.rows.Err()
+	}
+	r.finishOnce(err)
+	return err
+}
+
+func (r *observedRows) Err() error {
+	if r == nil || r.rows == nil {
+		r.finishOnce(nil)
+		return nil
+	}
+	err := r.rows.Err()
+	if err != nil {
+		r.finishOnce(err)
+	}
+	return err
+}
+
+func (r *observedRows) Next() bool {
+	if r == nil || r.rows == nil {
+		return false
+	}
+	return r.rows.Next()
+}
+
+func (r *observedRows) Scan(dest ...interface{}) error {
+	if r == nil || r.rows == nil {
+		r.finishOnce(sql.ErrNoRows)
+		return sql.ErrNoRows
+	}
+	err := r.rows.Scan(dest...)
+	if err != nil {
+		r.finishOnce(err)
+	}
+	return err
+}
+
+func (r *observedRows) finishOnce(err error) {
+	if r == nil || r.finish == nil {
+		return
+	}
+	r.once.Do(func() {
+		r.finish(err)
+	})
+}
+
+type observedRow struct {
+	rows   *sql.Rows
+	err    error
+	finish func(error)
+	once   sync.Once
+}
+
+func (r *observedRow) Scan(dest ...interface{}) error {
+	if r == nil {
+		return sql.ErrNoRows
+	}
+	if r.err != nil {
+		r.finishOnce(r.err)
+		return r.err
+	}
+	if r.rows == nil {
+		r.finishOnce(sql.ErrNoRows)
+		return sql.ErrNoRows
+	}
+
+	if !r.rows.Next() {
+		err := r.rows.Err()
+		if err == nil {
+			err = sql.ErrNoRows
+		}
+		_ = r.rows.Close()
+		r.finishOnce(err)
+		return err
+	}
+
+	err := r.rows.Scan(dest...)
+	closeErr := r.rows.Close()
+	if err == nil && closeErr != nil {
+		err = closeErr
+	}
+	if err == nil {
+		err = r.rows.Err()
+	}
+	r.finishOnce(err)
+	return err
+}
+
+func (r *observedRow) finishOnce(err error) {
+	if r == nil || r.finish == nil {
+		return
+	}
+	r.once.Do(func() {
+		r.finish(err)
+	})
 }
 
 type Queries struct {

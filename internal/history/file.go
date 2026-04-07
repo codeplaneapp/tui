@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/crush/internal/db"
+	"github.com/charmbracelet/crush/internal/observability"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/google/uuid"
 )
@@ -90,13 +91,13 @@ func (s *service) createWithVersion(ctx context.Context, sessionID, path, conten
 	// Retry loop for transaction conflicts
 	for attempt := range maxRetries {
 		// Start a transaction
-		tx, txErr := s.db.BeginTx(ctx, nil)
+		tx, txErr := db.BeginObservedTx(ctx, s.db, "file_create", nil)
 		if txErr != nil {
 			return File{}, fmt.Errorf("failed to begin transaction: %w", txErr)
 		}
 
 		// Create a new queries instance with the transaction
-		qtx := s.q.WithTx(tx)
+		qtx := s.q.WithTx(tx.SQLTx())
 
 		// Try to create the file within the transaction
 		dbFile, txErr := qtx.CreateFile(ctx, db.CreateFileParams{
@@ -108,10 +109,11 @@ func (s *service) createWithVersion(ctx context.Context, sessionID, path, conten
 		})
 		if txErr != nil {
 			// Rollback the transaction
-			tx.Rollback()
+			_ = tx.Rollback()
 
 			// Check if this is a uniqueness constraint violation
 			if strings.Contains(txErr.Error(), "UNIQUE constraint failed") {
+				observability.RecordRetry("history_file_create", "sqlite", "unique_constraint", 0)
 				if attempt < maxRetries-1 {
 					// If we have retries left, increment version and try again
 					version++
