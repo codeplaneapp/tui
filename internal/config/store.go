@@ -32,8 +32,8 @@ type ConfigStore struct {
 	config         *Config
 	workingDir     string
 	resolver       VariableResolver
-	globalDataPath string // ~/.local/share/smithers-tui/smithers-tui.json
-	workspacePath  string // .smithers-tui/smithers-tui.json
+	globalDataPath string // ~/.local/share/codeplane/codeplane.json
+	workspacePath  string // .codeplane/codeplane.json
 	knownProviders []catwalk.Provider
 	overrides      RuntimeOverrides
 }

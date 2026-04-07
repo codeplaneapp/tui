@@ -150,13 +150,13 @@ func (s *service) Delete(ctx context.Context, id string) error {
 	defer func() {
 		observability.RecordSessionOperation("delete", time.Since(start), err)
 	}()
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := db.BeginObservedTx(ctx, s.db, "session_delete", nil)
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
 	defer tx.Rollback() //nolint:errcheck
 
-	qtx := s.q.WithTx(tx)
+	qtx := s.q.WithTx(tx.SQLTx())
 
 	dbSession, err := qtx.GetSessionByID(ctx, id)
 	if err != nil {

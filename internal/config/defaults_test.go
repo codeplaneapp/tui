@@ -97,7 +97,7 @@ func TestDefaultDisabledTools(t *testing.T) {
 func TestSmithersMCPFullWorkflowWithUserConfig(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "smithers-tui.json")
+	configPath := filepath.Join(tmpDir, "codeplane.json")
 
 	cfg := &Config{
 		MCP: make(map[string]MCPConfig),

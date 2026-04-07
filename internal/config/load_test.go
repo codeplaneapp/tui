@@ -60,7 +60,7 @@ func TestConfig_setDefaults(t *testing.T) {
 	require.Equal(t, 1.0, *cfg.Options.Observability.TraceSampleRatio)
 	require.NotNil(t, cfg.Options.Observability.OTLPInsecure)
 	require.False(t, *cfg.Options.Observability.OTLPInsecure)
-	require.Equal(t, filepath.Join("/tmp", ".smithers-tui"), cfg.Options.DataDirectory)
+	require.Equal(t, filepath.Join("/tmp", ".codeplane"), cfg.Options.DataDirectory)
 	require.Equal(t, "AGENTS.md", cfg.Options.InitializeAs)
 	for _, path := range defaultContextPaths {
 		require.Contains(t, cfg.Options.ContextPaths, path)
@@ -68,12 +68,12 @@ func TestConfig_setDefaults(t *testing.T) {
 }
 
 func TestConfig_setDefaultsObservabilityEnvOverrides(t *testing.T) {
-	t.Setenv("SMITHERS_TUI_OBSERVABILITY_ADDR", "127.0.0.1:9464")
-	t.Setenv("SMITHERS_TUI_TRACE_BUFFER_SIZE", "2048")
-	t.Setenv("SMITHERS_TUI_TRACE_SAMPLE_RATIO", "0.5")
-	t.Setenv("SMITHERS_TUI_OTLP_ENDPOINT", "http://localhost:4318")
-	t.Setenv("SMITHERS_TUI_OTLP_INSECURE", "true")
-	t.Setenv("SMITHERS_TUI_OTLP_HEADERS", "Authorization=Bearer token,X-Scope=test")
+	t.Setenv("CODEPLANE_OBSERVABILITY_ADDR", "127.0.0.1:9464")
+	t.Setenv("CODEPLANE_TRACE_BUFFER_SIZE", "2048")
+	t.Setenv("CODEPLANE_TRACE_SAMPLE_RATIO", "0.5")
+	t.Setenv("CODEPLANE_OTLP_ENDPOINT", "http://localhost:4318")
+	t.Setenv("CODEPLANE_OTLP_INSECURE", "true")
+	t.Setenv("CODEPLANE_OTLP_HEADERS", "Authorization=Bearer token,X-Scope=test")
 
 	cfg := &Config{}
 	cfg.setDefaults("/tmp", "")
@@ -111,8 +111,8 @@ func TestConfig_setDefaultsWithSmithers(t *testing.T) {
 	cfg.setDefaults("/tmp", "")
 
 	require.NotNil(t, cfg.Smithers)
-	require.Equal(t, filepath.Join(".smithers", "smithers.db"), cfg.Smithers.DBPath)
-	require.Equal(t, filepath.Join(".smithers", "workflows"), cfg.Smithers.WorkflowDir)
+	require.Equal(t, filepath.Join(".codeplane", "codeplane.db"), cfg.Smithers.DBPath)
+	require.Equal(t, filepath.Join(".codeplane", "workflows"), cfg.Smithers.WorkflowDir)
 }
 
 func TestConfig_configureProviders(t *testing.T) {
@@ -545,7 +545,7 @@ func TestConfig_setupAgentsWithSmithers(t *testing.T) {
 	smithersAgent, ok := cfg.Agents[AgentSmithers]
 	require.True(t, ok)
 	assert.Equal(t, AgentSmithers, smithersAgent.ID)
-	assert.Equal(t, "Smithers", smithersAgent.Name)
+	assert.Equal(t, "Codeplane", smithersAgent.Name)
 
 	// Smithers agent should not have sourcegraph or multiedit
 	assert.NotContains(t, smithersAgent.AllowedTools, "sourcegraph")
@@ -1545,10 +1545,13 @@ func TestConfig_configureSelectedModels(t *testing.T) {
 	})
 }
 
-// TestConfig_lookupConfigs verifies that both smithers-tui.json and crush.json
-// are discovered, with smithers-tui.json taking precedence.
+// TestConfig_lookupConfigs verifies that codeplane.json is preferred while
+// legacy config files are still discovered.
 func TestConfig_lookupConfigs(t *testing.T) {
 	dir := t.TempDir()
+
+	codeplanePath := filepath.Join(dir, "codeplane.json")
+	require.NoError(t, os.WriteFile(codeplanePath, []byte(`{}`), 0o644))
 
 	smithersPath := filepath.Join(dir, "smithers-tui.json")
 	require.NoError(t, os.WriteFile(smithersPath, []byte(`{}`), 0o644))
@@ -1558,45 +1561,51 @@ func TestConfig_lookupConfigs(t *testing.T) {
 
 	paths := lookupConfigs(dir)
 
+	require.Contains(t, paths, codeplanePath)
 	require.Contains(t, paths, smithersPath)
 	require.Contains(t, paths, legacyPath)
+	require.Greater(t, slices.Index(paths, codeplanePath), slices.Index(paths, smithersPath))
 	require.Greater(t, slices.Index(paths, smithersPath), slices.Index(paths, legacyPath))
 }
 
-// TestConfig_envVarFallback verifies that CRUSH_* variables are honoured when
-// SMITHERS_TUI_* equivalents are not set, and that SMITHERS_TUI_* takes
-// precedence when both are set.
+// TestConfig_envVarFallback verifies that legacy environment variables are
+// honoured when CODEPLANE_* equivalents are not set, and that CODEPLANE_*
+// takes precedence when both are set.
 func TestConfig_envVarFallback(t *testing.T) {
-	t.Run("CRUSH_GLOBAL_CONFIG is used when SMITHERS_TUI_GLOBAL_CONFIG is unset", func(t *testing.T) {
+	t.Run("CRUSH_GLOBAL_CONFIG is used when CODEPLANE_GLOBAL_CONFIG is unset", func(t *testing.T) {
+		t.Setenv("CODEPLANE_GLOBAL_CONFIG", "")
 		t.Setenv("SMITHERS_TUI_GLOBAL_CONFIG", "")
 		t.Setenv("CRUSH_GLOBAL_CONFIG", "/tmp/legacy")
 
 		got := GlobalConfig()
-		require.Equal(t, filepath.Join("/tmp/legacy", "crush.json"), got)
+		require.Equal(t, filepath.Join("/tmp/legacy", "codeplane.json"), got)
 	})
 
-	t.Run("SMITHERS_TUI_GLOBAL_CONFIG takes precedence over CRUSH_GLOBAL_CONFIG", func(t *testing.T) {
+	t.Run("CODEPLANE_GLOBAL_CONFIG takes precedence over legacy names", func(t *testing.T) {
+		t.Setenv("CODEPLANE_GLOBAL_CONFIG", "/tmp/primary")
 		t.Setenv("SMITHERS_TUI_GLOBAL_CONFIG", "/tmp/primary")
 		t.Setenv("CRUSH_GLOBAL_CONFIG", "/tmp/legacy")
 
 		got := GlobalConfig()
-		require.Equal(t, filepath.Join("/tmp/primary", "smithers-tui.json"), got)
+		require.Equal(t, filepath.Join("/tmp/primary", "codeplane.json"), got)
 	})
 
-	t.Run("CRUSH_GLOBAL_DATA is used when SMITHERS_TUI_GLOBAL_DATA is unset", func(t *testing.T) {
+	t.Run("CRUSH_GLOBAL_DATA is used when CODEPLANE_GLOBAL_DATA is unset", func(t *testing.T) {
+		t.Setenv("CODEPLANE_GLOBAL_DATA", "")
 		t.Setenv("SMITHERS_TUI_GLOBAL_DATA", "")
 		t.Setenv("CRUSH_GLOBAL_DATA", "/tmp/legacy-data")
 
 		got := GlobalConfigData()
-		require.Equal(t, filepath.Join("/tmp/legacy-data", "crush.json"), got)
+		require.Equal(t, filepath.Join("/tmp/legacy-data", "codeplane.json"), got)
 	})
 
-	t.Run("SMITHERS_TUI_GLOBAL_DATA takes precedence over CRUSH_GLOBAL_DATA", func(t *testing.T) {
+	t.Run("CODEPLANE_GLOBAL_DATA takes precedence over legacy names", func(t *testing.T) {
+		t.Setenv("CODEPLANE_GLOBAL_DATA", "/tmp/primary-data")
 		t.Setenv("SMITHERS_TUI_GLOBAL_DATA", "/tmp/primary-data")
 		t.Setenv("CRUSH_GLOBAL_DATA", "/tmp/legacy-data")
 
 		got := GlobalConfigData()
-		require.Equal(t, filepath.Join("/tmp/primary-data", "smithers-tui.json"), got)
+		require.Equal(t, filepath.Join("/tmp/primary-data", "codeplane.json"), got)
 	})
 }
 
@@ -1604,6 +1613,7 @@ func TestConfig_prefersExistingLegacyPaths(t *testing.T) {
 	t.Run("GlobalConfig falls back to legacy config file", func(t *testing.T) {
 		cfgHome := t.TempDir()
 		t.Setenv("XDG_CONFIG_HOME", cfgHome)
+		t.Setenv("CODEPLANE_GLOBAL_CONFIG", "")
 		t.Setenv("SMITHERS_TUI_GLOBAL_CONFIG", "")
 		t.Setenv("CRUSH_GLOBAL_CONFIG", "")
 
@@ -1617,6 +1627,7 @@ func TestConfig_prefersExistingLegacyPaths(t *testing.T) {
 	t.Run("GlobalConfigData falls back to legacy data file", func(t *testing.T) {
 		dataHome := t.TempDir()
 		t.Setenv("XDG_DATA_HOME", dataHome)
+		t.Setenv("CODEPLANE_GLOBAL_DATA", "")
 		t.Setenv("SMITHERS_TUI_GLOBAL_DATA", "")
 		t.Setenv("CRUSH_GLOBAL_DATA", "")
 
@@ -1637,23 +1648,26 @@ func TestConfig_prefersExistingLegacyPaths(t *testing.T) {
 }
 
 // TestConfig_GlobalSkillsDirs asserts that global skills dirs reference
-// smithers-tui, crush, and agents.
+// codeplane, smithers-tui, crush, and agents.
 func TestConfig_GlobalSkillsDirs(t *testing.T) {
 	cfgHome := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", cfgHome)
+	t.Setenv("CODEPLANE_SKILLS_DIR", "")
 	t.Setenv("SMITHERS_TUI_SKILLS_DIR", "")
 	t.Setenv("CRUSH_SKILLS_DIR", "")
 
 	dirs := GlobalSkillsDirs()
+	require.Contains(t, dirs, filepath.Join(cfgHome, "codeplane", "skills"))
 	require.Contains(t, dirs, filepath.Join(cfgHome, "smithers-tui", "skills"))
 	require.Contains(t, dirs, filepath.Join(cfgHome, "crush", "skills"))
 	require.Contains(t, dirs, filepath.Join(cfgHome, "agents", "skills"))
 }
 
-// TestConfig_ProjectSkillsDir asserts that both .smithers-tui/skills and
-// .crush/skills are discovered.
+// TestConfig_ProjectSkillsDir asserts that modern and legacy project skill
+// directories are discovered.
 func TestConfig_ProjectSkillsDir(t *testing.T) {
 	dirs := ProjectSkillsDir("/tmp/proj")
+	require.Contains(t, dirs, filepath.Join("/tmp/proj", ".codeplane", "skills"))
 	require.Contains(t, dirs, filepath.Join("/tmp/proj", ".smithers-tui", "skills"))
 	require.Contains(t, dirs, filepath.Join("/tmp/proj", ".crush", "skills"))
 }

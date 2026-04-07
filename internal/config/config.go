@@ -23,12 +23,14 @@ import (
 )
 
 const (
-	appName              = "smithers-tui"
-	legacyAppName        = "crush"
-	defaultDataDirectory = ".smithers-tui"
-	legacyDataDirectory  = ".crush"
+	appName              = "codeplane"
+	defaultDataDirectory = ".codeplane"
 	defaultInitializeAs  = "AGENTS.md"
 )
+
+var legacyAppNames = []string{"smithers-tui", "crush"}
+
+var legacyDataDirectories = []string{".smithers-tui", ".crush"}
 
 var defaultContextPaths = []string{
 	".github/copilot-instructions.md",
@@ -38,6 +40,12 @@ var defaultContextPaths = []string{
 	"CLAUDE.local.md",
 	"GEMINI.md",
 	"gemini.md",
+	"codeplane.md",
+	"codeplane.local.md",
+	"Codeplane.md",
+	"Codeplane.local.md",
+	"CODEPLANE.md",
+	"CODEPLANE.local.md",
 	"smithers-tui.md",
 	"smithers-tui.local.md",
 	"Smithers-tui.md",
@@ -237,7 +245,7 @@ const (
 type Attribution struct {
 	TrailerStyle  TrailerStyle `json:"trailer_style,omitempty" jsonschema:"description=Style of attribution trailer to add to commits,enum=none,enum=co-authored-by,enum=assisted-by,default=assisted-by"`
 	CoAuthoredBy  *bool        `json:"co_authored_by,omitempty" jsonschema:"description=Deprecated: use trailer_style instead"`
-	GeneratedWith bool         `json:"generated_with,omitempty" jsonschema:"description=Add Generated with Smithers TUI line to commit messages and issues and PRs,default=true"`
+	GeneratedWith bool         `json:"generated_with,omitempty" jsonschema:"description=Add Generated with Codeplane line to commit messages and issues and PRs,default=true"`
 }
 
 type ObservabilityOptions struct {
@@ -265,12 +273,12 @@ func (Attribution) JSONSchemaExtend(schema *jsonschema.Schema) {
 
 type Options struct {
 	ContextPaths              []string              `json:"context_paths,omitempty" jsonschema:"description=Paths to files containing context information for the AI,example=.cursorrules,example=SMITHERS-TUI.md"`
-	SkillsPaths               []string              `json:"skills_paths,omitempty" jsonschema:"description=Paths to directories containing Agent Skills (folders with SKILL.md files),example=~/.config/smithers-tui/skills,example=./skills"`
+	SkillsPaths               []string              `json:"skills_paths,omitempty" jsonschema:"description=Paths to directories containing Agent Skills (folders with SKILL.md files),example=~/.config/codeplane/skills,example=./skills"`
 	TUI                       *TUIOptions           `json:"tui,omitempty" jsonschema:"description=Terminal user interface options"`
 	Debug                     bool                  `json:"debug,omitempty" jsonschema:"description=Enable debug logging,default=false"`
 	DebugLSP                  bool                  `json:"debug_lsp,omitempty" jsonschema:"description=Enable debug logging for LSP servers,default=false"`
 	DisableAutoSummarize      bool                  `json:"disable_auto_summarize,omitempty" jsonschema:"description=Disable automatic conversation summarization,default=false"`
-	DataDirectory             string                `json:"data_directory,omitempty" jsonschema:"description=Directory for storing application data (relative to working directory),default=.smithers-tui,example=.smithers-tui"` // Relative to the cwd
+	DataDirectory             string                `json:"data_directory,omitempty" jsonschema:"description=Directory for storing application data (relative to working directory),default=.codeplane,example=.codeplane"` // Relative to the cwd
 	DisabledTools             []string              `json:"disabled_tools,omitempty" jsonschema:"description=List of built-in tools to disable and hide from the agent,example=bash,example=sourcegraph"`
 	DisableProviderAutoUpdate bool                  `json:"disable_provider_auto_update,omitempty" jsonschema:"description=Disable providers auto-update,default=false"`
 	DisableDefaultProviders   bool                  `json:"disable_default_providers,omitempty" jsonschema:"description=Ignore all default/embedded providers. When enabled, providers must be fully specified in the config file with base_url, models, and api_key - no merging with defaults occurs,default=false"`
@@ -280,7 +288,7 @@ type Options struct {
 	AutoLSP                   *bool                 `json:"auto_lsp,omitempty" jsonschema:"description=Automatically setup LSPs based on root markers,default=true"`
 	Progress                  *bool                 `json:"progress,omitempty" jsonschema:"description=Show indeterminate progress updates during long operations,default=true"`
 	DisableNotifications      bool                  `json:"disable_notifications,omitempty" jsonschema:"description=Disable desktop notifications,default=false"`
-	DisabledSkills            []string              `json:"disabled_skills,omitempty" jsonschema:"description=List of skill names to disable and hide from the agent,example=crush-config"`
+	DisabledSkills            []string              `json:"disabled_skills,omitempty" jsonschema:"description=List of skill names to disable and hide from the agent,example=codeplane-config"`
 	Observability             *ObservabilityOptions `json:"observability,omitempty" jsonschema:"description=Observability settings for tracing, metrics, and debug endpoints"`
 }
 
@@ -395,13 +403,13 @@ func (t ToolGrep) GetTimeout() time.Duration {
 }
 
 type SmithersConfig struct {
-	DBPath      string `json:"dbPath,omitempty" jsonschema:"description=Path to the Smithers SQLite database file,example=.smithers/smithers.db"`
-	APIURL      string `json:"apiUrl,omitempty" jsonschema:"description=Base URL for the Smithers HTTP API,example=http://localhost:7331"`
-	APIToken    string `json:"apiToken,omitempty" jsonschema:"description=Bearer token used for the Smithers HTTP API"`
-	WorkflowDir string `json:"workflowDir,omitempty" jsonschema:"description=Path to Smithers workflow definitions,example=.smithers/workflows"`
+	DBPath      string `json:"dbPath,omitempty" jsonschema:"description=Path to the Codeplane workflow SQLite database file,example=.codeplane/codeplane.db"`
+	APIURL      string `json:"apiUrl,omitempty" jsonschema:"description=Base URL for the Codeplane workflow HTTP API,example=http://localhost:7331"`
+	APIToken    string `json:"apiToken,omitempty" jsonschema:"description=Bearer token used for the Codeplane workflow HTTP API"`
+	WorkflowDir string `json:"workflowDir,omitempty" jsonschema:"description=Path to Codeplane workflow definitions,example=.codeplane/workflows"`
 }
 
-// Config holds the configuration for smithers-tui.
+// Config holds the configuration for Codeplane.
 type Config struct {
 	Schema string `json:"$schema,omitempty"`
 
@@ -424,7 +432,7 @@ type Config struct {
 
 	Tools Tools `json:"tools,omitzero" jsonschema:"description=Tool configurations"`
 
-	Smithers *SmithersConfig `json:"smithers,omitempty" jsonschema:"description=Smithers integration settings"`
+	Smithers *SmithersConfig `json:"smithers,omitempty" jsonschema:"description=Codeplane workflow integration settings"`
 
 	Agents map[string]Agent `json:"-"`
 }
@@ -570,20 +578,20 @@ func (c *Config) SetupAgents() {
 	}
 
 	if c.Smithers != nil {
-		// The Smithers agent disables tools that are irrelevant to
-		// workflow orchestration and explicitly allows only the
-		// smithers MCP server (nil value = all tools from that server).
+		// The Codeplane workflow agent disables tools that are irrelevant to
+		// workflow orchestration and explicitly allows only the workflow MCP
+		// server (nil value = all tools from that server).
 		smithersDisabled := []string{"sourcegraph", "multiedit"}
 		smithersTools := filterSlice(allowedTools, smithersDisabled, false)
 
 		agents[AgentSmithers] = Agent{
 			ID:           AgentSmithers,
-			Name:         "Smithers",
-			Description:  "A specialized agent for managing Smithers AI workflows.",
+			Name:         "Codeplane",
+			Description:  "A specialized agent for managing Codeplane workflows.",
 			Model:        SelectedModelTypeLarge,
 			ContextPaths: c.Options.ContextPaths,
 			AllowedTools: smithersTools,
-			AllowedMCP:   map[string][]string{"smithers": nil},
+			AllowedMCP:   map[string][]string{SmithersMCPName: nil},
 		}
 	}
 	c.Agents = agents

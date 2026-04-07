@@ -12,6 +12,8 @@ import (
 func init() {
 	os.Setenv("XDG_CONFIG_HOME", "/tmp/fakeconfig")
 	os.Setenv("XDG_DATA_HOME", "/tmp/fakedata")
+	os.Unsetenv("CODEPLANE_GLOBAL_CONFIG")
+	os.Unsetenv("CODEPLANE_GLOBAL_DATA")
 	os.Unsetenv("SMITHERS_TUI_GLOBAL_CONFIG")
 	os.Unsetenv("SMITHERS_TUI_GLOBAL_DATA")
 }
@@ -22,8 +24,8 @@ func TestDirs(t *testing.T) {
 	dirsCmd.SetErr(&b)
 	dirsCmd.SetIn(bytes.NewReader(nil))
 	dirsCmd.Run(dirsCmd, nil)
-	expected := filepath.FromSlash("/tmp/fakeconfig/smithers-tui") + "\n" +
-		filepath.FromSlash("/tmp/fakedata/smithers-tui") + "\n"
+	expected := filepath.FromSlash("/tmp/fakeconfig/codeplane") + "\n" +
+		filepath.FromSlash("/tmp/fakedata/codeplane") + "\n"
 	require.Equal(t, expected, b.String())
 }
 
@@ -33,7 +35,7 @@ func TestConfigDir(t *testing.T) {
 	configDirCmd.SetErr(&b)
 	configDirCmd.SetIn(bytes.NewReader(nil))
 	configDirCmd.Run(configDirCmd, nil)
-	expected := filepath.FromSlash("/tmp/fakeconfig/smithers-tui") + "\n"
+	expected := filepath.FromSlash("/tmp/fakeconfig/codeplane") + "\n"
 	require.Equal(t, expected, b.String())
 }
 
@@ -43,6 +45,6 @@ func TestDataDir(t *testing.T) {
 	dataDirCmd.SetErr(&b)
 	dataDirCmd.SetIn(bytes.NewReader(nil))
 	dataDirCmd.Run(dataDirCmd, nil)
-	expected := filepath.FromSlash("/tmp/fakedata/smithers-tui") + "\n"
+	expected := filepath.FromSlash("/tmp/fakedata/codeplane") + "\n"
 	require.Equal(t, expected, b.String())
 }

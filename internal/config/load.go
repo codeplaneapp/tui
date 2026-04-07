@@ -115,37 +115,47 @@ func mustMarshalConfig(cfg *Config) []byte {
 	return data
 }
 
-func PushPopSmithersTUIEnv() func() {
-	var found []string
+func PushPopCodeplaneEnv() func() {
+	prefixes := []string{"CRUSH_", "SMITHERS_TUI_", "CODEPLANE_"}
+	found := make(map[string]struct{})
 	for _, ev := range os.Environ() {
-		if strings.HasPrefix(ev, "SMITHERS_TUI_") {
-			pair := strings.SplitN(ev, "=", 2)
-			if len(pair) != 2 {
-				continue
+		for _, prefix := range prefixes {
+			if strings.HasPrefix(ev, prefix) {
+				pair := strings.SplitN(ev, "=", 2)
+				if len(pair) != 2 {
+					continue
+				}
+				found[strings.TrimPrefix(pair[0], prefix)] = struct{}{}
 			}
-			found = append(found, strings.TrimPrefix(pair[0], "SMITHERS_TUI_"))
 		}
 	}
-	backups := make(map[string]string)
-	for _, ev := range found {
+
+	backups := make(map[string]string, len(found))
+	for ev := range found {
 		backups[ev] = os.Getenv(ev)
 	}
 
-	for _, ev := range found {
-		os.Setenv(ev, os.Getenv("SMITHERS_TUI_"+ev))
+	for ev := range found {
+		switch {
+		case os.Getenv("CODEPLANE_"+ev) != "":
+			os.Setenv(ev, os.Getenv("CODEPLANE_"+ev))
+		case os.Getenv("SMITHERS_TUI_"+ev) != "":
+			os.Setenv(ev, os.Getenv("SMITHERS_TUI_"+ev))
+		case os.Getenv("CRUSH_"+ev) != "":
+			os.Setenv(ev, os.Getenv("CRUSH_"+ev))
+		}
 	}
 
-	restore := func() {
+	return func() {
 		for k, v := range backups {
 			os.Setenv(k, v)
 		}
 	}
-	return restore
 }
 
 func (c *Config) configureProviders(store *ConfigStore, env env.Env, resolver VariableResolver, knownProviders []catwalk.Provider) error {
 	knownProviderNames := make(map[string]bool)
-	restore := PushPopSmithersTUIEnv()
+	restore := PushPopCodeplaneEnv()
 	defer restore()
 
 	// When disable_default_providers is enabled, skip all default/embedded
@@ -372,10 +382,16 @@ func (c *Config) setDefaults(workingDir, dataDir string) {
 	} else if c.Options.DataDirectory == "" {
 		if path, ok := fsext.LookupClosest(workingDir, defaultDataDirectory); ok {
 			c.Options.DataDirectory = path
-		} else if path, ok := fsext.LookupClosest(workingDir, legacyDataDirectory); ok {
-			c.Options.DataDirectory = path
 		} else {
-			c.Options.DataDirectory = filepath.Join(workingDir, defaultDataDirectory)
+			for _, legacyDataDirectory := range legacyDataDirectories {
+				if path, ok := fsext.LookupClosest(workingDir, legacyDataDirectory); ok {
+					c.Options.DataDirectory = path
+					break
+				}
+			}
+			if c.Options.DataDirectory == "" {
+				c.Options.DataDirectory = filepath.Join(workingDir, defaultDataDirectory)
+			}
 		}
 	}
 	if c.Providers == nil {
@@ -393,17 +409,32 @@ func (c *Config) setDefaults(workingDir, dataDir string) {
 	if c.LSP == nil {
 		c.LSP = make(map[string]LSPConfig)
 	}
-	// Auto-detect Smithers mode: if .smithers/ directory exists in cwd, activate Smithers.
+	// Auto-detect workflow mode from modern and legacy project directories.
 	if c.Smithers == nil {
-		if info, err := os.Stat(".smithers"); err == nil && info.IsDir() {
-			c.Smithers = &SmithersConfig{}
+		for _, dir := range []string{defaultDataDirectory, ".smithers"} {
+			if info, err := os.Stat(dir); err == nil && info.IsDir() {
+				c.Smithers = &SmithersConfig{}
+				break
+			}
 		}
 	}
 	if c.Smithers != nil {
-		c.Smithers.DBPath = cmp.Or(c.Smithers.DBPath, filepath.Join(".smithers", "smithers.db"))
-		c.Smithers.WorkflowDir = cmp.Or(c.Smithers.WorkflowDir, filepath.Join(".smithers", "workflows"))
+		c.Smithers.DBPath = cmp.Or(
+			c.Smithers.DBPath,
+			preferExistingPath(
+				filepath.Join(defaultDataDirectory, "codeplane.db"),
+				filepath.Join(".smithers", "smithers.db"),
+			),
+		)
+		c.Smithers.WorkflowDir = cmp.Or(
+			c.Smithers.WorkflowDir,
+			preferExistingPath(
+				filepath.Join(defaultDataDirectory, "workflows"),
+				filepath.Join(".smithers", "workflows"),
+			),
+		)
 
-		// Default the large model to claude-opus-4-6 when Smithers config is
+		// Default the large model to claude-opus-4-6 when workflow config is
 		// present and the user has not explicitly chosen a large model.
 		if _, ok := c.Models[SelectedModelTypeLarge]; !ok {
 			if c.Models == nil {
@@ -417,7 +448,7 @@ func (c *Config) setDefaults(workingDir, dataDir string) {
 		}
 	}
 
-	// Add default Smithers MCP server if not already configured by user.
+	// Add default workflow MCP server if not already configured by user.
 	if _, exists := c.MCP[SmithersMCPName]; !exists {
 		c.MCP[SmithersMCPName] = DefaultSmithersMCPConfig()
 	}
@@ -445,11 +476,11 @@ func (c *Config) setDefaults(workingDir, dataDir string) {
 	// Project specific skills dirs.
 	c.Options.SkillsPaths = append(c.Options.SkillsPaths, ProjectSkillsDir(workingDir)...)
 
-	if str := envWithFallback("SMITHERS_TUI_DISABLE_PROVIDER_AUTO_UPDATE", "CRUSH_DISABLE_PROVIDER_AUTO_UPDATE"); str != "" {
+	if str := envWithFallback("CODEPLANE_DISABLE_PROVIDER_AUTO_UPDATE", "SMITHERS_TUI_DISABLE_PROVIDER_AUTO_UPDATE", "CRUSH_DISABLE_PROVIDER_AUTO_UPDATE"); str != "" {
 		c.Options.DisableProviderAutoUpdate, _ = strconv.ParseBool(str)
 	}
 
-	if str := envWithFallback("SMITHERS_TUI_DISABLE_DEFAULT_PROVIDERS", "CRUSH_DISABLE_DEFAULT_PROVIDERS"); str != "" {
+	if str := envWithFallback("CODEPLANE_DISABLE_DEFAULT_PROVIDERS", "SMITHERS_TUI_DISABLE_DEFAULT_PROVIDERS", "CRUSH_DISABLE_DEFAULT_PROVIDERS"); str != "" {
 		c.Options.DisableDefaultProviders, _ = strconv.ParseBool(str)
 	}
 
@@ -480,29 +511,29 @@ func (c *Config) setDefaults(workingDir, dataDir string) {
 	assignIfNil(&c.Options.Observability.TraceSampleRatio, 1.0)
 	assignIfNil(&c.Options.Observability.OTLPInsecure, false)
 
-	if str := envWithFallback("SMITHERS_TUI_OBSERVABILITY_ADDR", "CRUSH_OBSERVABILITY_ADDR"); str != "" {
+	if str := envWithFallback("CODEPLANE_OBSERVABILITY_ADDR", "SMITHERS_TUI_OBSERVABILITY_ADDR", "CRUSH_OBSERVABILITY_ADDR"); str != "" {
 		c.Options.Observability.Address = str
 	}
-	if str := envWithFallback("SMITHERS_TUI_TRACE_BUFFER_SIZE", "CRUSH_TRACE_BUFFER_SIZE"); str != "" {
+	if str := envWithFallback("CODEPLANE_TRACE_BUFFER_SIZE", "SMITHERS_TUI_TRACE_BUFFER_SIZE", "CRUSH_TRACE_BUFFER_SIZE"); str != "" {
 		if size, err := strconv.Atoi(str); err == nil && size > 0 {
 			c.Options.Observability.TraceBufferSize = size
 		}
 	}
-	if str := envWithFallback("SMITHERS_TUI_TRACE_SAMPLE_RATIO", "CRUSH_TRACE_SAMPLE_RATIO"); str != "" {
+	if str := envWithFallback("CODEPLANE_TRACE_SAMPLE_RATIO", "SMITHERS_TUI_TRACE_SAMPLE_RATIO", "CRUSH_TRACE_SAMPLE_RATIO"); str != "" {
 		if ratio, err := strconv.ParseFloat(str, 64); err == nil {
 			ratio = max(0, min(1, ratio))
 			c.Options.Observability.TraceSampleRatio = &ratio
 		}
 	}
-	if str := envWithFallback("SMITHERS_TUI_OTLP_ENDPOINT", "CRUSH_OTLP_ENDPOINT"); str != "" {
+	if str := envWithFallback("CODEPLANE_OTLP_ENDPOINT", "SMITHERS_TUI_OTLP_ENDPOINT", "CRUSH_OTLP_ENDPOINT"); str != "" {
 		c.Options.Observability.OTLPEndpoint = str
 	}
-	if str := envWithFallback("SMITHERS_TUI_OTLP_INSECURE", "CRUSH_OTLP_INSECURE"); str != "" {
+	if str := envWithFallback("CODEPLANE_OTLP_INSECURE", "SMITHERS_TUI_OTLP_INSECURE", "CRUSH_OTLP_INSECURE"); str != "" {
 		if insecure, err := strconv.ParseBool(str); err == nil {
 			c.Options.Observability.OTLPInsecure = &insecure
 		}
 	}
-	if str := envWithFallback("SMITHERS_TUI_OTLP_HEADERS", "CRUSH_OTLP_HEADERS"); str != "" {
+	if str := envWithFallback("CODEPLANE_OTLP_HEADERS", "SMITHERS_TUI_OTLP_HEADERS", "CRUSH_OTLP_HEADERS"); str != "" {
 		headers := parseKeyValueEnv(str)
 		if len(headers) > 0 {
 			if c.Options.Observability.OTLPHeaders == nil {
@@ -754,7 +785,9 @@ func lookupConfigs(cwd string) []string {
 	}
 
 	configNames := []string{appName + ".json", "." + appName + ".json"}
-	configNames = append(configNames, legacyAppName+".json", "."+legacyAppName+".json")
+	for _, legacyAppName := range legacyAppNames {
+		configNames = append(configNames, legacyAppName+".json", "."+legacyAppName+".json")
+	}
 
 	foundConfigs, err := fsext.Lookup(cwd, configNames...)
 	if err != nil {
@@ -835,26 +868,18 @@ func hasAWSCredentials(env env.Env) bool {
 
 // GlobalConfig returns the global configuration file path for the application.
 func GlobalConfig() string {
-	if globalConfig := os.Getenv("SMITHERS_TUI_GLOBAL_CONFIG"); globalConfig != "" {
-		return filepath.Join(globalConfig, fmt.Sprintf("%s.json", appName))
-	}
-	if legacyConfig := os.Getenv("CRUSH_GLOBAL_CONFIG"); legacyConfig != "" {
-		slog.Warn("Using legacy environment variable; please migrate to the new name",
-			"legacy", "CRUSH_GLOBAL_CONFIG", "replacement", "SMITHERS_TUI_GLOBAL_CONFIG")
-		return filepath.Join(legacyConfig, fmt.Sprintf("%s.json", legacyAppName))
+	if globalConfig := envWithFallback("CODEPLANE_GLOBAL_CONFIG", "SMITHERS_TUI_GLOBAL_CONFIG", "CRUSH_GLOBAL_CONFIG"); globalConfig != "" {
+		return preferExistingPath(namedPathsInDir(globalConfig)...)
 	}
 
-	return preferExistingPath(
-		filepath.Join(home.Config(), appName, fmt.Sprintf("%s.json", appName)),
-		filepath.Join(home.Config(), legacyAppName, fmt.Sprintf("%s.json", legacyAppName)),
-	)
+	return preferExistingPath(configPathsFor(home.Config())...)
 }
 
 // GlobalCacheDir returns the path to the global cache directory for the
 // application.
 func GlobalCacheDir() string {
-	if crushCache := os.Getenv("CRUSH_CACHE_DIR"); crushCache != "" {
-		return crushCache
+	if cacheDir := envWithFallback("CODEPLANE_CACHE_DIR", "SMITHERS_TUI_CACHE_DIR", "CRUSH_CACHE_DIR"); cacheDir != "" {
+		return cacheDir
 	}
 	if xdgCacheHome := os.Getenv("XDG_CACHE_HOME"); xdgCacheHome != "" {
 		return filepath.Join(xdgCacheHome, appName)
@@ -872,39 +897,25 @@ func GlobalCacheDir() string {
 // GlobalConfigData returns the path to the main data directory for the application.
 // this config is used when the app overrides configurations instead of updating the global config.
 func GlobalConfigData() string {
-	if globalData := os.Getenv("SMITHERS_TUI_GLOBAL_DATA"); globalData != "" {
-		return filepath.Join(globalData, fmt.Sprintf("%s.json", appName))
-	}
-	if legacyData := os.Getenv("CRUSH_GLOBAL_DATA"); legacyData != "" {
-		slog.Warn("Using legacy environment variable; please migrate to the new name",
-			"legacy", "CRUSH_GLOBAL_DATA", "replacement", "SMITHERS_TUI_GLOBAL_DATA")
-		return filepath.Join(legacyData, fmt.Sprintf("%s.json", legacyAppName))
+	if globalData := envWithFallback("CODEPLANE_GLOBAL_DATA", "SMITHERS_TUI_GLOBAL_DATA", "CRUSH_GLOBAL_DATA"); globalData != "" {
+		return preferExistingPath(namedPathsInDir(globalData)...)
 	}
 	if xdgDataHome := os.Getenv("XDG_DATA_HOME"); xdgDataHome != "" {
-		return preferExistingPath(
-			filepath.Join(xdgDataHome, appName, fmt.Sprintf("%s.json", appName)),
-			filepath.Join(xdgDataHome, legacyAppName, fmt.Sprintf("%s.json", legacyAppName)),
-		)
+		return preferExistingPath(dataPathsFor(xdgDataHome)...)
 	}
 
-	// return the path to the main data directory
-	// for windows, it should be in `%LOCALAPPDATA%/smithers-tui/`
-	// for linux and macOS, it should be in `$HOME/.local/share/smithers-tui/`
+	// Return the path to the main data directory.
+	// For windows, it should be in `%LOCALAPPDATA%/codeplane/`.
+	// For linux and macOS, it should be in `$HOME/.local/share/codeplane/`.
 	if runtime.GOOS == "windows" {
 		localAppData := cmp.Or(
 			os.Getenv("LOCALAPPDATA"),
 			filepath.Join(os.Getenv("USERPROFILE"), "AppData", "Local"),
 		)
-		return preferExistingPath(
-			filepath.Join(localAppData, appName, fmt.Sprintf("%s.json", appName)),
-			filepath.Join(localAppData, legacyAppName, fmt.Sprintf("%s.json", legacyAppName)),
-		)
+		return preferExistingPath(dataPathsFor(localAppData)...)
 	}
 
-	return preferExistingPath(
-		filepath.Join(home.Dir(), ".local", "share", appName, fmt.Sprintf("%s.json", appName)),
-		filepath.Join(home.Dir(), ".local", "share", legacyAppName, fmt.Sprintf("%s.json", legacyAppName)),
-	)
+	return preferExistingPath(dataPathsFor(filepath.Join(home.Dir(), ".local", "share"))...)
 }
 
 // GlobalWorkspaceDir returns the path to the global server workspace
@@ -935,17 +946,19 @@ func isInsideWorktree() bool {
 // Skills in these directories are auto-discovered and their files can be read
 // without permission prompts.
 func GlobalSkillsDirs() []string {
-	if skillsDir := envWithFallback("SMITHERS_TUI_SKILLS_DIR", "CRUSH_SKILLS_DIR"); skillsDir != "" {
+	if skillsDir := envWithFallback("CODEPLANE_SKILLS_DIR", "SMITHERS_TUI_SKILLS_DIR", "CRUSH_SKILLS_DIR"); skillsDir != "" {
 		return []string{skillsDir}
 	}
 
 	paths := []string{
 		filepath.Join(home.Config(), appName, "skills"),
-		filepath.Join(home.Config(), legacyAppName, "skills"),
 		filepath.Join(home.Config(), "agents", "skills"),
 	}
+	for _, legacyAppName := range legacyAppNames {
+		paths = append(paths, filepath.Join(home.Config(), legacyAppName, "skills"))
+	}
 
-	// On Windows, also load from app data on top of `$HOME/.config/smithers-tui`.
+	// On Windows, also load from app data on top of `$HOME/.config/codeplane`.
 	// This is here mostly for backwards compatibility.
 	if runtime.GOOS == "windows" {
 		appData := cmp.Or(
@@ -955,19 +968,22 @@ func GlobalSkillsDirs() []string {
 		paths = append(
 			paths,
 			filepath.Join(appData, appName, "skills"),
-			filepath.Join(appData, legacyAppName, "skills"),
 			filepath.Join(appData, "agents", "skills"),
 		)
+		for _, legacyAppName := range legacyAppNames {
+			paths = append(paths, filepath.Join(appData, legacyAppName, "skills"))
+		}
 	}
 
 	return paths
 }
 
-// ProjectSkillsDir returns the default project directories for which Smithers TUI
+// ProjectSkillsDir returns the default project directories for which Codeplane
 // will look for skills.
 func ProjectSkillsDir(workingDir string) []string {
 	return []string{
 		filepath.Join(workingDir, ".agents/skills"),
+		filepath.Join(workingDir, ".codeplane/skills"),
 		filepath.Join(workingDir, ".smithers-tui/skills"),
 		filepath.Join(workingDir, ".crush/skills"),
 		filepath.Join(workingDir, ".claude/skills"),
@@ -978,34 +994,75 @@ func ProjectSkillsDir(workingDir string) []string {
 func isAppleTerminal() bool { return os.Getenv("TERM_PROGRAM") == "Apple_Terminal" }
 
 // envWithFallback returns the value of the primary env var, falling back to
-// the legacy CRUSH_* name if unset. A warning is logged when the legacy name
-// is used so operators can migrate.
-// TODO(smithers-tui): remove CRUSH_* fallback after v1.0
-func envWithFallback(primary, legacy string) string {
+// legacy names if unset. A warning is logged when a legacy name is used so
+// operators can migrate.
+// TODO(codeplane): remove SMITHERS_TUI_* and CRUSH_* fallbacks after v1.0.
+func envWithFallback(primary string, legacy ...string) string {
 	if v := os.Getenv(primary); v != "" {
 		return v
 	}
-	if v := os.Getenv(legacy); v != "" {
-		slog.Warn("Using legacy environment variable; please migrate to the new name",
-			"legacy", legacy, "replacement", primary)
-		return v
+	for _, name := range legacy {
+		if v := os.Getenv(name); v != "" {
+			slog.Warn("Using legacy environment variable; please migrate to the new name",
+				"legacy", name, "replacement", primary)
+			return v
+		}
 	}
 	return ""
 }
 
-func preferExistingPath(primary, legacy string) string {
-	if _, err := os.Stat(primary); err == nil {
-		return primary
+func preferExistingPath(paths ...string) string {
+	for _, path := range paths {
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
 	}
-	if _, err := os.Stat(legacy); err == nil {
-		return legacy
+	if len(paths) == 0 {
+		return ""
 	}
-	return primary
+	return paths[0]
 }
 
 func workspaceConfigPath(dataDir string) string {
-	return preferExistingPath(
+	return preferExistingPath(workspaceConfigPathsFor(dataDir)...)
+}
+
+func configPathsFor(baseDir string) []string {
+	paths := []string{
+		filepath.Join(baseDir, appName, fmt.Sprintf("%s.json", appName)),
+	}
+	for _, legacyAppName := range legacyAppNames {
+		paths = append(paths, filepath.Join(baseDir, legacyAppName, fmt.Sprintf("%s.json", legacyAppName)))
+	}
+	return paths
+}
+
+func dataPathsFor(baseDir string) []string {
+	paths := []string{
+		filepath.Join(baseDir, appName, fmt.Sprintf("%s.json", appName)),
+	}
+	for _, legacyAppName := range legacyAppNames {
+		paths = append(paths, filepath.Join(baseDir, legacyAppName, fmt.Sprintf("%s.json", legacyAppName)))
+	}
+	return paths
+}
+
+func workspaceConfigPathsFor(dataDir string) []string {
+	paths := []string{
 		filepath.Join(dataDir, fmt.Sprintf("%s.json", appName)),
-		filepath.Join(dataDir, fmt.Sprintf("%s.json", legacyAppName)),
-	)
+	}
+	for _, legacyAppName := range legacyAppNames {
+		paths = append(paths, filepath.Join(dataDir, fmt.Sprintf("%s.json", legacyAppName)))
+	}
+	return paths
+}
+
+func namedPathsInDir(dir string) []string {
+	paths := []string{
+		filepath.Join(dir, fmt.Sprintf("%s.json", appName)),
+	}
+	for _, legacyAppName := range legacyAppNames {
+		paths = append(paths, filepath.Join(dir, fmt.Sprintf("%s.json", legacyAppName)))
+	}
+	return paths
 }

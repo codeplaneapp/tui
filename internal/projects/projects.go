@@ -43,7 +43,9 @@ func projectsFilePath() string {
 }
 
 func legacyProjectsFilePath() string {
-	if legacyData := os.Getenv("CRUSH_GLOBAL_DATA"); legacyData != "" && os.Getenv("SMITHERS_TUI_GLOBAL_DATA") == "" {
+	if legacyData := os.Getenv("CRUSH_GLOBAL_DATA"); legacyData != "" &&
+		os.Getenv("SMITHERS_TUI_GLOBAL_DATA") == "" &&
+		os.Getenv("CODEPLANE_GLOBAL_DATA") == "" {
 		return filepath.Join(legacyData, projectsFileName)
 	}
 	if xdgDataHome := os.Getenv("XDG_DATA_HOME"); xdgDataHome != "" {

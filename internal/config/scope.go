@@ -6,9 +6,9 @@ import "fmt"
 type Scope int
 
 const (
-	// ScopeGlobal targets the global data config (~/.local/share/smithers-tui/smithers-tui.json).
+	// ScopeGlobal targets the global data config (~/.local/share/codeplane/codeplane.json).
 	ScopeGlobal Scope = iota
-	// ScopeWorkspace targets the workspace config (.smithers-tui/smithers-tui.json).
+	// ScopeWorkspace targets the workspace config (.codeplane/codeplane.json).
 	ScopeWorkspace
 )
 
