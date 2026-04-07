@@ -437,16 +437,16 @@ func (c *Config) setDefaults(workingDir, dataDir string) {
 				Think:    true,
 			}
 		}
+	}
 
-		// Add default workflow MCP server if not already configured by user.
-		if _, exists := c.MCP[SmithersMCPName]; !exists {
-			c.MCP[SmithersMCPName] = DefaultSmithersMCPConfig()
-		}
+	// Add default workflow MCP server if not already configured by user.
+	if _, exists := c.MCP[SmithersMCPName]; !exists {
+		c.MCP[SmithersMCPName] = DefaultSmithersMCPConfig()
+	}
 
-		// Apply default disabled tools if user hasn't set any.
-		if c.Options.DisabledTools == nil {
-			c.Options.DisabledTools = DefaultDisabledTools()
-		}
+	// Apply default disabled tools if user hasn't set any.
+	if c.Options.DisabledTools == nil {
+		c.Options.DisabledTools = DefaultDisabledTools()
 	}
 
 	// Apply defaults to LSP configurations
@@ -550,8 +550,8 @@ func defaultSmithersPaths(workingDir string) (dbPath, workflowDir string) {
 		return filepath.Join(dir, "smithers.db"), filepath.Join(dir, "workflows")
 	}
 
-	return filepath.Join(workingDir, defaultDataDirectory, "codeplane.db"),
-		filepath.Join(workingDir, defaultDataDirectory, "workflows")
+	return filepath.Join(defaultDataDirectory, "codeplane.db"),
+		filepath.Join(defaultDataDirectory, "workflows")
 }
 
 func lookupSmithersProjectDir(workingDir string) (path string, modern bool, ok bool) {

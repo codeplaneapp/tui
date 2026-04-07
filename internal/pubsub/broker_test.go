@@ -215,7 +215,7 @@ func TestBroker_SubscribeDuringShutdownReturnsClosedChannel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	subscribeDone := make(chan<- chan Event[string], 1)
+	subscribeDone := make(chan (<-chan Event[string]), 1)
 	go func() {
 		subscribeDone <- b.Subscribe(ctx)
 	}()
