@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -98,10 +99,10 @@ func TestJsonBodySerializesAndIsReadable(t *testing.T) {
 
 func TestParseSSERetryHint(t *testing.T) {
 	tests := []struct {
-		name    string
-		line    string
-		want    time.Duration
-		wantOK  bool
+		name   string
+		line   string
+		want   time.Duration
+		wantOK bool
 	}{
 		{
 			name:   "valid retry hint",
@@ -227,4 +228,28 @@ func TestWorkspaceEventsStatusErrorMessage(t *testing.T) {
 	err := workspaceEventsStatusError{statusCode: 404}
 	assert.Contains(t, err.Error(), "404")
 	assert.Contains(t, err.Error(), "status code")
+}
+
+func TestDecodeWorkspaceEvent(t *testing.T) {
+	t.Run("malformed envelope", func(t *testing.T) {
+		ev, eventType, err := decodeWorkspaceEvent(`{"type":"permission_notification","payload":`)
+		require.Error(t, err)
+		assert.Nil(t, ev)
+		assert.Empty(t, eventType)
+		assert.Contains(t, err.Error(), "unmarshal event envelope")
+	})
+
+	t.Run("unknown event type", func(t *testing.T) {
+		envelope, err := json.Marshal(map[string]any{
+			"type":    "mystery_event",
+			"payload": map[string]any{"type": "created", "payload": map[string]any{"tool_call_id": "tool-1"}},
+		})
+		require.NoError(t, err)
+
+		ev, eventType, err := decodeWorkspaceEvent(string(envelope))
+		require.Error(t, err)
+		assert.Nil(t, ev)
+		assert.Equal(t, "unknown", eventType)
+		assert.Contains(t, err.Error(), `unknown event type "mystery_event"`)
+	})
 }
