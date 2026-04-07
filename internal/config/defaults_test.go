@@ -153,6 +153,35 @@ func TestSmithersDefaultsUseWorkspacePath(t *testing.T) {
 	assert.Contains(t, cfg.Options.DisabledTools, "sourcegraph")
 }
 
+func TestSmithersNotTriggeredByBareDataDirectory(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	// Create .codeplane without workflows/ — this is a normal project, not Smithers
+	require.NoError(t, os.MkdirAll(filepath.Join(projectDir, defaultDataDirectory), 0o755))
+
+	cfg := &Config{}
+	cfg.setDefaults(projectDir, "")
+
+	assert.Nil(t, cfg.Smithers, "bare .codeplane should not enable smithers mode")
+	_, exists := cfg.MCP[SmithersMCPName]
+	assert.False(t, exists, "smithers MCP should not be injected for bare data dir")
+}
+
+func TestSmithersTriggeredByDataDirWithWorkflows(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(projectDir, defaultDataDirectory, "workflows"), 0o755))
+
+	cfg := &Config{}
+	cfg.setDefaults(projectDir, "")
+
+	require.NotNil(t, cfg.Smithers, ".codeplane/workflows should enable smithers mode")
+	_, exists := cfg.MCP[SmithersMCPName]
+	assert.True(t, exists)
+}
+
 func TestSmithersDetectionUsesWorkingDirNotProcessCWD(t *testing.T) {
 	processDir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(processDir, ".smithers"), 0o755))

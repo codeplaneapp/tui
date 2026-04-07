@@ -54,14 +54,14 @@ func TestLoadAll_MixedSources(t *testing.T) {
 	require.Equal(t, "user:cmd", cmds[0].ID)
 }
 
-// TestBuildCommandSources asserts that both smithers-tui and legacy crush
-// command directories are searched.
+// TestBuildCommandSources asserts that Codeplane command directories are
+// preferred while legacy Smithers/Crush directories remain searchable.
 func TestBuildCommandSources(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
 	cfg := &config.Config{
 		Options: &config.Options{
-			DataDirectory: "/tmp/test-project/.smithers-tui",
+			DataDirectory: "/tmp/test-project/.codeplane",
 		},
 	}
 
@@ -73,10 +73,13 @@ func TestBuildCommandSources(t *testing.T) {
 		paths = append(paths, src.path)
 	}
 
+	require.Contains(t, paths, filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "codeplane", "commands"))
 	require.Contains(t, paths, filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "smithers-tui", "commands"))
 	require.Contains(t, paths, filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "crush", "commands"))
-	require.True(t, strings.HasSuffix(paths[2], filepath.Join(".smithers-tui", "commands")))
-	require.True(t, strings.HasSuffix(paths[3], filepath.Join(".crush", "commands")))
+	require.Contains(t, paths, filepath.Join(os.Getenv("HOME"), ".codeplane", "commands"))
+	require.Contains(t, paths, filepath.Join(os.Getenv("HOME"), ".smithers-tui", "commands"))
+	require.Contains(t, paths, filepath.Join(os.Getenv("HOME"), ".crush", "commands"))
+	require.True(t, strings.HasSuffix(paths[len(paths)-1], filepath.Join(".codeplane", "commands")))
 }
 
 func TestLoadCustomCommands_FromDirectory(t *testing.T) {

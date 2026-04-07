@@ -93,11 +93,19 @@ func LoadMCPPrompts() ([]MCPPrompt, error) {
 func buildCommandSources(cfg *config.Config) []commandSource {
 	return []commandSource{
 		{
+			path:   filepath.Join(home.Config(), "codeplane", "commands"),
+			prefix: userCommandPrefix,
+		},
+		{
 			path:   filepath.Join(home.Config(), "smithers-tui", "commands"),
 			prefix: userCommandPrefix,
 		},
 		{
 			path:   filepath.Join(home.Config(), "crush", "commands"),
+			prefix: userCommandPrefix,
+		},
+		{
+			path:   filepath.Join(home.Dir(), ".codeplane", "commands"),
 			prefix: userCommandPrefix,
 		},
 		{

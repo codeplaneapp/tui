@@ -10,18 +10,29 @@ import (
 )
 
 func TestResolveDBPath(t *testing.T) {
-	t.Run("prefers smithers db when present", func(t *testing.T) {
+	t.Run("prefers codeplane db when present", func(t *testing.T) {
 		dataDir := t.TempDir()
-		primary := filepath.Join(dataDir, "smithers-tui.db")
-		legacy := filepath.Join(dataDir, "crush.db")
+		primary := filepath.Join(dataDir, "codeplane.db")
+		legacySmithers := filepath.Join(dataDir, "smithers-tui.db")
+		legacyCrush := filepath.Join(dataDir, "crush.db")
 
 		require.NoError(t, os.WriteFile(primary, nil, 0o644))
-		require.NoError(t, os.WriteFile(legacy, nil, 0o644))
+		require.NoError(t, os.WriteFile(legacySmithers, nil, 0o644))
+		require.NoError(t, os.WriteFile(legacyCrush, nil, 0o644))
 
 		require.Equal(t, primary, resolveDBPath(dataDir))
 	})
 
-	t.Run("falls back to crush db when smithers db is absent", func(t *testing.T) {
+	t.Run("falls back to smithers db when codeplane db is absent", func(t *testing.T) {
+		dataDir := t.TempDir()
+		legacy := filepath.Join(dataDir, "smithers-tui.db")
+
+		require.NoError(t, os.WriteFile(legacy, nil, 0o644))
+
+		require.Equal(t, legacy, resolveDBPath(dataDir))
+	})
+
+	t.Run("falls back to crush db when newer names are absent", func(t *testing.T) {
 		dataDir := t.TempDir()
 		legacy := filepath.Join(dataDir, "crush.db")
 
@@ -39,7 +50,7 @@ func TestConnect_CreatesDatabase(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
 
-	dbPath := filepath.Join(dataDir, "smithers-tui.db")
+	dbPath := filepath.Join(dataDir, "codeplane.db")
 	assert.FileExists(t, dbPath, "database file should be created after Connect")
 }
 

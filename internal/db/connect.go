@@ -92,13 +92,17 @@ func Connect(ctx context.Context, dataDir string) (*sql.DB, error) {
 }
 
 func resolveDBPath(dataDir string) string {
-	primary := filepath.Join(dataDir, "smithers-tui.db")
-	legacy := filepath.Join(dataDir, "crush.db")
+	primary := filepath.Join(dataDir, "codeplane.db")
+	legacySmithers := filepath.Join(dataDir, "smithers-tui.db")
+	legacyCrush := filepath.Join(dataDir, "crush.db")
 	if _, err := os.Stat(primary); err == nil {
 		return primary
 	}
-	if _, err := os.Stat(legacy); err == nil {
-		return legacy
+	if _, err := os.Stat(legacySmithers); err == nil {
+		return legacySmithers
+	}
+	if _, err := os.Stat(legacyCrush); err == nil {
+		return legacyCrush
 	}
 	return primary
 }

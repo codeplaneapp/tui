@@ -572,11 +572,13 @@ func defaultSmithersPaths(workingDir string) (dbPath, workflowDir string) {
 }
 
 func lookupSmithersProjectDir(workingDir string) (path string, modern bool, ok bool) {
-	if path, ok := fsext.LookupClosest(workingDir, defaultDataDirectory); ok {
-		return path, true, true
+	// Require workflows/ subdir to distinguish Smithers projects from normal
+	// projects that just have a .codeplane data directory.
+	if path, ok := fsext.LookupClosest(workingDir, filepath.Join(defaultDataDirectory, "workflows")); ok {
+		return filepath.Dir(path), true, true
 	}
-	if path, ok := fsext.LookupClosest(workingDir, ".smithers"); ok {
-		return path, false, true
+	if path, ok := fsext.LookupClosest(workingDir, filepath.Join(".smithers", "workflows")); ok {
+		return filepath.Dir(path), false, true
 	}
 	return "", false, false
 }
