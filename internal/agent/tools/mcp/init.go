@@ -142,23 +142,26 @@ func Close(ctx context.Context) error {
 	var wg sync.WaitGroup
 	for name, session := range sessions.Seq2() {
 		wg.Go(func() {
-			done := make(chan error, 1)
-			go func() {
-				done <- session.Close()
-			}()
-			select {
-			case err := <-done:
-				if err != nil &&
-					!errors.Is(err, io.EOF) &&
-					!errors.Is(err, context.Canceled) &&
-					err.Error() != "signal: killed" {
-					slog.Warn("Failed to shutdown MCP client", "name", name, "error", err)
-				}
-			case <-ctx.Done():
+			if err := session.Close(); err != nil &&
+				!errors.Is(err, io.EOF) &&
+				!errors.Is(err, context.Canceled) &&
+				err.Error() != "signal: killed" {
+				slog.Warn("Failed to shutdown MCP client", "name", name, "error", err)
 			}
 		})
 	}
-	wg.Wait()
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-ctx.Done():
+	}
+
 	broker.Shutdown()
 	return nil
 }
