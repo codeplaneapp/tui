@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os/exec"
 	"strings"
 	"time"
@@ -235,9 +236,9 @@ type CodeSearchPage struct {
 }
 
 type CodeSearchItem struct {
-	Repository  string            `json:"repository"`
-	FilePath    string            `json:"file_path"`
-	TextMatches []CodeTextMatch   `json:"text_matches"`
+	Repository  string          `json:"repository"`
+	FilePath    string          `json:"file_path"`
+	TextMatches []CodeTextMatch `json:"text_matches"`
 }
 
 type CodeTextMatch struct {
@@ -687,9 +688,32 @@ func (c *Client) GetCurrentRepo(ctx context.Context) (*Repo, error) {
 }
 
 func (c *Client) LandingDiff(ctx context.Context, number int) (string, error) {
-	args := []string{"land", "diff", fmt.Sprint(number)}
-	args = append(args, c.repoArgs()...)
-	return c.runRawContext(ctx, args...)
+	detail, err := c.ViewLanding(ctx, number)
+	if err != nil {
+		return "", err
+	}
+	if detail == nil || len(detail.Changes) == 0 {
+		return "", nil
+	}
+
+	var b strings.Builder
+	for i, change := range detail.Changes {
+		diff, diffErr := c.ChangeDiff(ctx, change.ChangeID)
+		if diffErr != nil {
+			return "", diffErr
+		}
+		if i > 0 {
+			b.WriteString("\n")
+			b.WriteString(strings.Repeat("─", 72))
+			b.WriteString("\n")
+		}
+		b.WriteString("Change ")
+		b.WriteString(change.ChangeID)
+		b.WriteString("\n\n")
+		b.WriteString(strings.TrimRight(diff, "\n"))
+		b.WriteString("\n")
+	}
+	return strings.TrimRight(b.String(), "\n"), nil
 }
 
 func (c *Client) LandingChecks(ctx context.Context, number int) (string, error) {
@@ -789,7 +813,7 @@ func (c *Client) RerunWorkflowRun(ctx context.Context, runID int) (*WorkflowRunR
 }
 
 func (c *Client) SearchRepositories(ctx context.Context, query string, limit int) (*RepositorySearchPage, error) {
-	endpoint := fmt.Sprintf("/search/repositories?q=%s&limit=%d", query, limit)
+	endpoint := fmt.Sprintf("/search/repositories?q=%s&limit=%d", url.QueryEscape(query), limit)
 	out, err := c.apiContext(ctx, endpoint)
 	if err != nil {
 		return nil, err
@@ -798,9 +822,9 @@ func (c *Client) SearchRepositories(ctx context.Context, query string, limit int
 }
 
 func (c *Client) SearchIssues(ctx context.Context, query, state string, limit int) (*IssueSearchPage, error) {
-	endpoint := fmt.Sprintf("/search/issues?q=%s&limit=%d", query, limit)
+	endpoint := fmt.Sprintf("/search/issues?q=%s&limit=%d", url.QueryEscape(query), limit)
 	if strings.TrimSpace(state) != "" && !strings.EqualFold(state, "all") {
-		endpoint += "&state=" + state
+		endpoint += "&state=" + url.QueryEscape(state)
 	}
 	out, err := c.apiContext(ctx, endpoint)
 	if err != nil {
@@ -810,7 +834,7 @@ func (c *Client) SearchIssues(ctx context.Context, query, state string, limit in
 }
 
 func (c *Client) SearchCode(ctx context.Context, query string, limit int) (*CodeSearchPage, error) {
-	endpoint := fmt.Sprintf("/search/code?q=%s&limit=%d", query, limit)
+	endpoint := fmt.Sprintf("/search/code?q=%s&limit=%d", url.QueryEscape(query), limit)
 	out, err := c.apiContext(ctx, endpoint)
 	if err != nil {
 		return nil, err
