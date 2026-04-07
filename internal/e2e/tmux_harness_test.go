@@ -15,6 +15,7 @@ import (
 
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
 )
 
 const (
@@ -440,8 +441,7 @@ func normalizeForMatch(s string) string {
 	return strings.Join(strings.Fields(b.String()), " ")
 }
 
-// stripANSI removes ANSI escape sequences from text.
-
+type debugTraceSpan struct {
 	Name       string         `json:"name"`
 	Attributes map[string]any `json:"attributes"`
 }
@@ -504,7 +504,7 @@ func waitForMetricAtLeast(t *testing.T, addr, metricName string, labels map[stri
 			return fmt.Errorf("status %d", resp.StatusCode)
 		}
 
-		parser := expfmt.TextParser{}
+		parser := expfmt.NewTextParser(model.UTF8Validation)
 		families, err := parser.TextToMetricFamilies(resp.Body)
 		if err != nil {
 			return err

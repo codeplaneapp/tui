@@ -112,6 +112,10 @@ func buildLaunchScript(env []string, workingDir string, argv []string) string {
 func buildSharedTUIBinary(t *testing.T) string {
 	t.Helper()
 
+	if binary := os.Getenv("CRUSH_E2E_BINARY"); binary != "" {
+		return binary
+	}
+
 	builtTUIBinaryOnce.Do(func() {
 		buildDir, err := os.MkdirTemp("", "crush-tui-e2e-*")
 		if err != nil {
@@ -593,6 +597,16 @@ func launchFixtureTUI(t *testing.T, fixture tuiFixture, args ...string) *TUITest
 	})
 }
 
+func launchFixtureTUIWithOptions(t *testing.T, fixture tuiFixture, opts tuiLaunchOptions) *TUITestInstance {
+	t.Helper()
+
+	opts.env = mergeEnvVars(fixture.env(), opts.env)
+	if opts.workingDir == "" {
+		opts.workingDir = fixture.workingDir
+	}
+	return launchTUIWithOptions(t, opts)
+}
+
 func waitForConfiguredLanding(t *testing.T, tui *TUITestInstance) {
 	t.Helper()
 	require.NoError(t, tui.WaitForText("CRUSH", 15*time.Second))
@@ -647,6 +661,46 @@ func writePNGFixture(t *testing.T, dir, name string) string {
 	return path
 }
 
+func waitForFileText(path, text string, timeout time.Duration) error {
+	if timeout <= 0 {
+		timeout = defaultWaitTimeout
+	}
+
+	deadline := time.Now().Add(timeout)
+	var lastContents string
+	for time.Now().Before(deadline) {
+		data, err := os.ReadFile(path)
+		switch {
+		case err == nil:
+			lastContents = string(data)
+			if strings.Contains(lastContents, text) {
+				return nil
+			}
+		case !os.IsNotExist(err):
+			return err
+		}
+
+		time.Sleep(pollInterval)
+	}
+
+	return fmt.Errorf("waitForFileText: %q not found in %s within %s; last contents: %q", text, path, timeout, lastContents)
+}
+
+func mergeEnvVars(base, overrides map[string]string) map[string]string {
+	if len(base) == 0 && len(overrides) == 0 {
+		return nil
+	}
+
+	merged := make(map[string]string, len(base)+len(overrides))
+	for key, value := range base {
+		merged[key] = value
+	}
+	for key, value := range overrides {
+		merged[key] = value
+	}
+	return merged
+}
+
 func seedSessions(t *testing.T, dataDir string, seeds ...seededSession) []session.Session {
 	t.Helper()
 
@@ -678,6 +732,42 @@ func seedSessions(t *testing.T, dataDir string, seeds ...seededSession) []sessio
 	}
 
 	return created
+}
+
+func waitForSessionTitleState(t *testing.T, dataDir, title string, wantPresent bool, timeout time.Duration) {
+	t.Helper()
+
+	ctx := context.Background()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		conn, err := db.Connect(ctx, dataDir)
+		require.NoError(t, err)
+
+		queries := db.New(conn)
+		sessionsSvc := session.NewService(queries, conn)
+		sessions, listErr := sessionsSvc.List(ctx)
+		require.NoError(t, conn.Close())
+		require.NoError(t, listErr)
+
+		found := false
+		for _, sess := range sessions {
+			if sess.Title == title {
+				found = true
+				break
+			}
+		}
+		if found == wantPresent {
+			return
+		}
+
+		time.Sleep(pollInterval)
+	}
+
+	state := "absent"
+	if wantPresent {
+		state = "present"
+	}
+	t.Fatalf("session title %q did not become %s within %s", title, state, timeout)
 }
 
 func skipUnlessCrushTUIE2E(t *testing.T) {

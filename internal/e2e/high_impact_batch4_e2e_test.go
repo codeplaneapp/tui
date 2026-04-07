@@ -46,7 +46,6 @@ func TestChatScrollNavigation_TUI(t *testing.T) {
 
 		// Press 'j' (down) — should scroll down.
 		tui.SendKeys("j")
-		time.Sleep(300 * time.Millisecond)
 
 		// The messages should still be visible (no crash, no 'j'/'k' in editor).
 		require.NoError(t, tui.WaitForText("scroll message", 5*time.Second))
@@ -54,7 +53,6 @@ func TestChatScrollNavigation_TUI(t *testing.T) {
 		// The editor should NOT contain 'j' or 'k' as text — verify by
 		// switching back to editor focus and checking.
 		tui.SendKeys("\t") // back to editor focus
-		time.Sleep(200 * time.Millisecond)
 
 		// If j/k were incorrectly sent to editor, they'd appear as text.
 		// A clean editor means routing worked correctly.
@@ -94,14 +92,12 @@ func TestChatHomeEndNavigation_TUI(t *testing.T) {
 
 		// Press 'g' to jump to first message.
 		tui.SendKeys("g")
-		time.Sleep(300 * time.Millisecond)
 
 		// First message should be visible.
 		require.NoError(t, tui.WaitForText("first message at top", 5*time.Second))
 
 		// Press 'G' to jump to last message.
 		tui.SendKeys("G")
-		time.Sleep(300 * time.Millisecond)
 
 		// Last message should be visible.
 		require.NoError(t, tui.WaitForText("last message at bottom", 5*time.Second))
@@ -142,14 +138,12 @@ func TestChatExpandCollapse_TUI(t *testing.T) {
 
 		// Press space to toggle expand on selected item.
 		tui.SendKeys(" ")
-		time.Sleep(300 * time.Millisecond)
 
 		// Should not crash — messages still visible.
 		require.NoError(t, tui.WaitForText("message to expand", 5*time.Second))
 
 		// Press space again to toggle back.
 		tui.SendKeys(" ")
-		time.Sleep(300 * time.Millisecond)
 
 		require.NoError(t, tui.WaitForText("CRUSH", 3*time.Second))
 	})
@@ -195,7 +189,6 @@ func TestPromptsViewNavigation_TUI(t *testing.T) {
 
 		// 'r' to refresh should not crash.
 		tui.SendKeys("r")
-		time.Sleep(300 * time.Millisecond)
 
 		require.NoError(t, tui.WaitForAnyText([]string{
 			"Prompts", "Loading prompts", "No prompts found", "Error",
@@ -239,7 +232,6 @@ func TestTicketsPaneFocus_TUI(t *testing.T) {
 		// Tab should switch to the source-tab level or detail pane.
 		// With no tickets loaded, Tab cycles source tabs.
 		tui.SendKeys("\t")
-		time.Sleep(300 * time.Millisecond)
 
 		// After Tab, a different source should be active or help bar changed.
 		require.NoError(t, tui.WaitForText("WORK ITEMS", 5*time.Second))
@@ -247,7 +239,6 @@ func TestTicketsPaneFocus_TUI(t *testing.T) {
 		// Shift+Tab should go back.
 		// In tmux, we send the escape sequence for Shift+Tab.
 		tui.SendKeys("\x1b[Z") // Shift+Tab
-		time.Sleep(300 * time.Millisecond)
 
 		require.NoError(t, tui.WaitForText("WORK ITEMS", 5*time.Second))
 
@@ -329,7 +320,6 @@ func TestTicketsCreateFullFlow_TUI(t *testing.T) {
 
 		// Either the ticket is created (appears in list) or an error is shown.
 		// Either way, the form should close and view should remain stable.
-		time.Sleep(500 * time.Millisecond)
 		require.NoError(t, tui.WaitForAnyText([]string{
 			"WORK ITEMS", "SUBMIT-456", "Error",
 		}, 10*time.Second))
@@ -365,7 +355,6 @@ func TestAgentsRefresh_TUI(t *testing.T) {
 
 		// Press 'r' to refresh.
 		tui.SendKeys("r")
-		time.Sleep(500 * time.Millisecond)
 
 		// View should show loading or refreshed state, not crash.
 		require.NoError(t, tui.WaitForAnyText([]string{
@@ -376,7 +365,6 @@ func TestAgentsRefresh_TUI(t *testing.T) {
 		tui.SendKeys("j")
 		time.Sleep(200 * time.Millisecond)
 		tui.SendKeys("k")
-		time.Sleep(200 * time.Millisecond)
 
 		require.NoError(t, tui.WaitForAnyText([]string{
 			"Agents", "Available", "Not Detected", "Error",
@@ -418,7 +406,6 @@ func TestRunsExpandDetail_TUI(t *testing.T) {
 
 		// Press 'e' to toggle expand — no-op with no data, should not crash.
 		tui.SendKeys("e")
-		time.Sleep(300 * time.Millisecond)
 
 		// View should remain stable.
 		require.NoError(t, tui.WaitForAnyText([]string{
@@ -427,7 +414,6 @@ func TestRunsExpandDetail_TUI(t *testing.T) {
 
 		// Toggle again.
 		tui.SendKeys("e")
-		time.Sleep(200 * time.Millisecond)
 
 		require.NoError(t, tui.WaitForAnyText([]string{
 			"Runs", "No runs found",
@@ -460,7 +446,6 @@ func TestMultipleNewSessions_TUI(t *testing.T) {
 
 		// Ctrl+N to create a new session.
 		tui.SendKeys("\x0e") // ctrl+n
-		time.Sleep(500 * time.Millisecond)
 
 		// Should land on a fresh view — old text cleared.
 		require.NoError(t, tui.WaitForAnyText([]string{
@@ -476,7 +461,6 @@ func TestMultipleNewSessions_TUI(t *testing.T) {
 
 		// Create another session.
 		tui.SendKeys("\x0e") // ctrl+n
-		time.Sleep(500 * time.Millisecond)
 
 		require.NoError(t, tui.WaitForAnyText([]string{
 			"Start Chat", "MCPs", "CRUSH",

@@ -50,7 +50,6 @@ func TestTicketsTabSwitching_TUI(t *testing.T) {
 
 		// Tab again to cycle further.
 		tui.SendKeys("\t")
-		time.Sleep(300 * time.Millisecond)
 
 		// Should still be in WORK ITEMS view (no crash).
 		require.NoError(t, tui.WaitForText("WORK ITEMS", 5*time.Second))
@@ -115,7 +114,6 @@ func TestTicketsSearchFilter_TUI(t *testing.T) {
 
 		// Escape clears the filter and exits filter mode.
 		tui.SendKeys("\x1b")
-		time.Sleep(300 * time.Millisecond)
 
 		// View should still be stable.
 		require.NoError(t, tui.WaitForText("WORK ITEMS", 5*time.Second))
@@ -178,7 +176,6 @@ func TestTriggersView_TUI(t *testing.T) {
 		tui.SendKeys("j")
 		time.Sleep(200 * time.Millisecond)
 		tui.SendKeys("k")
-		time.Sleep(200 * time.Millisecond)
 
 		// Still in triggers view.
 		require.NoError(t, tui.WaitForAnyText([]string{
@@ -306,7 +303,6 @@ func TestMemoryBrowserView_TUI(t *testing.T) {
 		tui.SendKeys("j")
 		time.Sleep(200 * time.Millisecond)
 		tui.SendKeys("k")
-		time.Sleep(200 * time.Millisecond)
 
 		// View still present.
 		require.NoError(t, tui.WaitForAnyText([]string{
@@ -371,7 +367,6 @@ func TestSQLBrowserView_TUI(t *testing.T) {
 
 		// Tab to switch focus to the right pane (editor).
 		tui.SendKeys("\t")
-		time.Sleep(300 * time.Millisecond)
 
 		// After switching to editor pane, help bar should change to execute/history hints.
 		require.NoError(t, tui.WaitForAnyText([]string{
@@ -380,7 +375,6 @@ func TestSQLBrowserView_TUI(t *testing.T) {
 
 		// Tab back to tables pane.
 		tui.SendKeys("\t")
-		time.Sleep(300 * time.Millisecond)
 
 		// Should show table-focused hints again.
 		require.NoError(t, tui.WaitForAnyText([]string{
@@ -442,7 +436,6 @@ func TestScoresDashboardView_TUI(t *testing.T) {
 
 		// Tab to switch to Details tab.
 		tui.SendKeys("\t")
-		time.Sleep(300 * time.Millisecond)
 
 		// Should show Details tab indicator.
 		require.NoError(t, tui.WaitForAnyText([]string{
@@ -451,7 +444,6 @@ func TestScoresDashboardView_TUI(t *testing.T) {
 
 		// Tab back to Summary.
 		tui.SendKeys("\t")
-		time.Sleep(300 * time.Millisecond)
 
 		require.NoError(t, tui.WaitForAnyText([]string{
 			"Summary", "Scores",
@@ -491,7 +483,6 @@ func TestChatFocusToggle_TUI(t *testing.T) {
 
 		// Tab to switch focus to messages panel.
 		tui.SendKeys("\t")
-		time.Sleep(300 * time.Millisecond)
 
 		// The help bar should now show "focus editor" since we're in main focus.
 		require.NoError(t, tui.WaitForAnyText([]string{
@@ -500,7 +491,6 @@ func TestChatFocusToggle_TUI(t *testing.T) {
 
 		// Tab back to editor.
 		tui.SendKeys("\t")
-		time.Sleep(300 * time.Millisecond)
 
 		// Should be back in editor focus — help bar says "focus chat".
 		require.NoError(t, tui.WaitForAnyText([]string{

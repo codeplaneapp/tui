@@ -404,7 +404,6 @@ func TestTerminalResize_TUI(t *testing.T) {
 
 		// Resize the pane to a smaller size.
 		resizeTmuxPane(t, tui, 80, 24)
-		time.Sleep(500 * time.Millisecond)
 
 		// The app should still be rendering.
 		require.NoError(t, tui.WaitForAnyText([]string{
@@ -413,7 +412,6 @@ func TestTerminalResize_TUI(t *testing.T) {
 
 		// Resize to a larger size.
 		resizeTmuxPane(t, tui, 160, 50)
-		time.Sleep(500 * time.Millisecond)
 
 		require.NoError(t, tui.WaitForAnyText([]string{
 			"CRUSH", "Start Chat",
@@ -421,7 +419,6 @@ func TestTerminalResize_TUI(t *testing.T) {
 
 		// Resize to a very narrow terminal.
 		resizeTmuxPane(t, tui, 60, 20)
-		time.Sleep(500 * time.Millisecond)
 
 		// Should still render without crashing.
 		require.NoError(t, tui.WaitForAnyText([]string{
@@ -454,7 +451,6 @@ func TestToggleSidebar_TUI(t *testing.T) {
 
 		// The sidebar should be toggled. The app should not crash.
 		// Wait a moment for the layout to settle.
-		time.Sleep(500 * time.Millisecond)
 		require.NoError(t, tui.WaitForText("CRUSH", 5*time.Second))
 
 		// Toggle it back.
@@ -462,7 +458,6 @@ func TestToggleSidebar_TUI(t *testing.T) {
 		tui.SendKeys("Toggle Sidebar")
 		require.NoError(t, tui.WaitForText("Toggle Sidebar", 5*time.Second))
 		tui.SendKeys("\r")
-		time.Sleep(500 * time.Millisecond)
 		require.NoError(t, tui.WaitForText("CRUSH", 5*time.Second))
 	})
 }

@@ -7,7 +7,6 @@ import (
 
 // TestRunsAndInspection exercises the RUNS_AND_INSPECTION feature group
 // using the real compiled binary running inside a tmux session.
-// Enable with: SMITHERS_E2E=1 go test -v ./internal/e2e/ -run TestRunsAndInspection -timeout 300s
 func TestRunsAndInspection(t *testing.T) {
 	skipUnlessCrushTUIE2E(t)
 	binary := buildBinary(t)
@@ -219,7 +218,6 @@ func TestRunsAndInspection(t *testing.T) {
 		// Escape clears the search.
 		s.SendKeys("Escape")
 		// First Escape clears query, second exits search mode.
-		time.Sleep(300 * time.Millisecond)
 		s.SendKeys("Escape")
 		// Should still be in runs view.
 		s.WaitForAnyText([]string{"Runs", "All"}, 5*time.Second)

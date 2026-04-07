@@ -34,7 +34,6 @@ func TestPromptHistoryNavigation_TUI(t *testing.T) {
 		// Press Up arrow to navigate to the most recent prompt in history.
 		// The editor starts empty; up should load "third prompt".
 		tui.SendKeys("\x1b[A") // up arrow escape sequence
-		time.Sleep(500 * time.Millisecond)
 
 		// The editor should now contain the last sent message.
 		require.NoError(t, tui.WaitForAnyText([]string{
@@ -65,7 +64,6 @@ func TestPromptHistoryNavigation_TUI(t *testing.T) {
 
 		// Down to go forward in history.
 		tui.SendKeys("\x1b[B") // down
-		time.Sleep(500 * time.Millisecond)
 
 		// Should not crash; editor should contain a history entry or be back to draft.
 		require.NoError(t, tui.WaitForAnyText([]string{
@@ -180,7 +178,6 @@ func TestDashboardRefresh_TUI(t *testing.T) {
 
 		// Press 'r' to refresh.
 		tui.SendKeys("r")
-		time.Sleep(500 * time.Millisecond)
 
 		// Dashboard should still be visible (refresh is in-place, not a navigation).
 		require.NoError(t, tui.WaitForText("Start Chat", 5*time.Second))
@@ -212,7 +209,6 @@ func TestYoloModeToggle_TUI(t *testing.T) {
 		tui.SendKeys("\r")
 
 		// After enabling, the editor prompt should change to show "!" icon.
-		time.Sleep(500 * time.Millisecond)
 		require.NoError(t, tui.WaitForAnyText([]string{
 			"!", "CRUSH",
 		}, 5*time.Second))
@@ -223,7 +219,6 @@ func TestYoloModeToggle_TUI(t *testing.T) {
 		require.NoError(t, tui.WaitForText("Toggle Yolo", 5*time.Second))
 		tui.SendKeys("\r")
 
-		time.Sleep(500 * time.Millisecond)
 		// App should still be functional.
 		require.NoError(t, tui.WaitForText("CRUSH", 5*time.Second))
 	})
@@ -310,7 +305,6 @@ func TestWorkflowsInfoOverlay_TUI(t *testing.T) {
 
 		// Press 'i' to open info overlay.
 		tui.SendKeys("i")
-		time.Sleep(500 * time.Millisecond)
 
 		// The overlay may show DAG info, or it may be a no-op with no workflows.
 		// Either way, the view should not crash.
@@ -399,7 +393,6 @@ func TestQuitFromDashboard_TUI(t *testing.T) {
 
 		// In chat view, 'q' should type into the editor, not quit.
 		tui.SendKeys("q")
-		time.Sleep(300 * time.Millisecond)
 
 		// Should NOT have exited.
 		require.NoError(t, tui.WaitForNoText("[crush exited", 3*time.Second))

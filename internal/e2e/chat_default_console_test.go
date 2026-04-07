@@ -1,7 +1,6 @@
 package e2e_test
 
 import (
-	"os"
 	"testing"
 	"time"
 
