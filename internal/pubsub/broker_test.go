@@ -151,6 +151,99 @@ func TestBroker_ShutdownClosesAllChannels(t *testing.T) {
 	assert.Equal(t, 0, b.GetSubscriberCount())
 }
 
+func TestBroker_ShutdownWaitsToCloseDoneUntilLockHeld(t *testing.T) {
+	b := NewBroker[string]()
+
+	locked := true
+	b.mu.Lock()
+	defer func() {
+		if locked {
+			b.mu.Unlock()
+		}
+	}()
+
+	shutdownDone := make(chan struct{})
+	go func() {
+		b.Shutdown()
+		close(shutdownDone)
+	}()
+
+	assert.Never(t, func() bool {
+		select {
+		case <-b.done:
+			return true
+		default:
+			return false
+		}
+	}, 100*time.Millisecond, 10*time.Millisecond)
+
+	b.mu.Unlock()
+	locked = false
+
+	select {
+	case <-shutdownDone:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for shutdown to complete")
+	}
+
+	select {
+	case <-b.done:
+	default:
+		t.Fatal("done channel was not closed after shutdown completed")
+	}
+}
+
+func TestBroker_SubscribeDuringShutdownReturnsClosedChannel(t *testing.T) {
+	b := NewBroker[string]()
+
+	locked := true
+	b.mu.Lock()
+	defer func() {
+		if locked {
+			b.mu.Unlock()
+		}
+	}()
+
+	shutdownDone := make(chan struct{})
+	go func() {
+		b.Shutdown()
+		close(shutdownDone)
+	}()
+
+	require.Eventually(t, b.shutdown.Load, time.Second, 10*time.Millisecond)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	subscribeDone := make(chan<- chan Event[string], 1)
+	go func() {
+		subscribeDone <- b.Subscribe(ctx)
+	}()
+
+	select {
+	case ch := <-subscribeDone:
+		select {
+		case _, ok := <-ch:
+			assert.False(t, ok, "channel from subscribe during shutdown should be closed")
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for closed channel from subscribe during shutdown")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("subscribe blocked while shutdown was in progress")
+	}
+
+	b.mu.Unlock()
+	locked = false
+
+	select {
+	case <-shutdownDone:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for shutdown to complete")
+	}
+
+	assert.Equal(t, 0, b.GetSubscriberCount())
+}
+
 func TestBroker_SubscribeAfterShutdown(t *testing.T) {
 	b := NewBroker[string]()
 	b.Shutdown()

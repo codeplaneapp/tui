@@ -3,6 +3,7 @@ package pubsub
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 
 	"github.com/charmbracelet/crush/internal/observability"
 )
@@ -13,10 +14,17 @@ type Broker[T any] struct {
 	subs      map[chan Event[T]]struct{}
 	mu        sync.RWMutex
 	done      chan struct{}
+	shutdown  atomic.Bool
 	name      string
 	bufSize   int
 	subCount  int
 	maxEvents int
+}
+
+func closedEventChan[T any]() <-chan Event[T] {
+	ch := make(chan Event[T])
+	close(ch)
+	return ch
 }
 
 func NewBroker[T any]() *Broker[T] {
@@ -45,15 +53,14 @@ func NewNamedBrokerWithOptions[T any](name string, channelBufferSize, maxEvents 
 }
 
 func (b *Broker[T]) Shutdown() {
-	select {
-	case <-b.done: // Already closed
+	if !b.shutdown.CompareAndSwap(false, true) {
 		return
-	default:
-		close(b.done)
 	}
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
+	close(b.done)
 
 	for ch := range b.subs {
 		delete(b.subs, ch)
@@ -65,15 +72,15 @@ func (b *Broker[T]) Shutdown() {
 }
 
 func (b *Broker[T]) Subscribe(ctx context.Context) <-chan Event[T] {
+	if b.shutdown.Load() {
+		return closedEventChan[T]()
+	}
+
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	select {
-	case <-b.done:
-		ch := make(chan Event[T])
-		close(ch)
-		return ch
-	default:
+	if b.shutdown.Load() {
+		return closedEventChan[T]()
 	}
 
 	sub := make(chan Event[T], b.bufSize)
@@ -87,10 +94,8 @@ func (b *Broker[T]) Subscribe(ctx context.Context) <-chan Event[T] {
 		b.mu.Lock()
 		defer b.mu.Unlock()
 
-		select {
-		case <-b.done:
+		if b.shutdown.Load() {
 			return
-		default:
 		}
 
 		delete(b.subs, sub)
@@ -109,13 +114,15 @@ func (b *Broker[T]) GetSubscriberCount() int {
 }
 
 func (b *Broker[T]) Publish(t EventType, payload T) {
+	if b.shutdown.Load() {
+		return
+	}
+
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
-	select {
-	case <-b.done:
+	if b.shutdown.Load() {
 		return
-	default:
 	}
 
 	event := Event[T]{Type: t, Payload: payload}
