@@ -1,8 +1,8 @@
-// Package main is the entry point for the Crush CLI.
+// Package main is the entry point for the Codeplane CLI.
 //
-//	@title			Crush API
+//	@title			Codeplane API
 //	@version		1.0
-//	@description	Crush is a terminal-based AI coding assistant. This API is served over a Unix socket (or Windows named pipe) and provides programmatic access to workspaces, sessions, agents, LSP, MCP, and more.
+//	@description	Codeplane is a terminal-based AI coding assistant. This API is served over a Unix socket (or Windows named pipe) and provides programmatic access to workspaces, sessions, agents, LSP, MCP, and more.
 //	@contact.name	Charm
 //	@contact.url	https://charm.sh
 //	@license.name	MIT
@@ -20,8 +20,17 @@ import (
 	_ "github.com/joho/godotenv/autoload"
 )
 
+func profileEnabled() bool {
+	for _, key := range []string{"CODEPLANE_PROFILE", "SMITHERS_TUI_PROFILE", "CRUSH_PROFILE"} {
+		if os.Getenv(key) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func main() {
-	if os.Getenv("SMITHERS_TUI_PROFILE") != "" {
+	if profileEnabled() {
 		go func() {
 			slog.Info("Serving pprof at localhost:6060")
 			if httpErr := http.ListenAndServe("localhost:6060", nil); httpErr != nil {

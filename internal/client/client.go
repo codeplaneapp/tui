@@ -57,7 +57,7 @@ func NewClient(path, network, address string) (*Client, error) {
 	c.h = &http.Client{
 		Transport: &crushlog.HTTPRoundTripLogger{
 			Transport: tr,
-			Component: "crush_client",
+			Component: "codeplane_client",
 		},
 		Timeout: 0,
 	}

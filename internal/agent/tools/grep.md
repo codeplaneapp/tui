@@ -31,8 +31,8 @@ When literal_text=false (supports standard regex):
 
 <ignore_support>
 - Respects .gitignore patterns to skip ignored files/directories
-- Respects .smithersignore patterns for additional ignore rules
-- Also honors legacy .crushignore files for backward compatibility
+- Respects .codeplaneignore patterns for additional ignore rules
+- Also honors legacy .smithersignore and .crushignore files for backward compatibility
 - Both ignore files auto-detected in search root directory
 </ignore_support>
 

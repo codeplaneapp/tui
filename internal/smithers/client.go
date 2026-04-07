@@ -532,7 +532,7 @@ func (c *Client) ListRecentDecisions(ctx context.Context, limit int) ([]Approval
 			`SELECT id, run_id, node_id, workflow_path, gate,
 			status, resolved_at, resolved_by, requested_at
 			FROM _smithers_approvals
-			WHERE status IN ('"approved"', '"denied"')
+			WHERE status IN ('approved', 'denied')
 			ORDER BY resolved_at DESC
 			LIMIT ?`, limit)
 		if err == nil {

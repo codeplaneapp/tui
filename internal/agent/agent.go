@@ -1,4 +1,4 @@
-// Package agent is the core orchestration layer for Smithers TUI AI agents.
+// Package agent is the core orchestration layer for Codeplane AI agents.
 //
 // It provides session-based AI agent functionality for managing
 // conversations, tool execution, and message handling. It coordinates
@@ -59,7 +59,7 @@ const (
 	smallContextWindowRatio     = 0.2
 )
 
-var userAgent = fmt.Sprintf("Charm-SmithersTUI/%s (https://charm.land/smithers-tui)", version.Version)
+var userAgent = fmt.Sprintf("Charm-Codeplane/%s (https://charm.land/codeplane)", version.Version)
 
 //go:embed templates/title.md
 var titlePrompt []byte

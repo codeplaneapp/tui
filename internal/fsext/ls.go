@@ -34,6 +34,7 @@ var fastIgnoreDirs = map[string]bool{
 	".Trash":          true,
 	".Spotlight-V100": true,
 	".fseventsd":      true,
+	".codeplane":      true,
 	".crush":          true,
 	".smithers-tui":   true,
 	"OrbStack":        true,
@@ -124,6 +125,12 @@ func appGlobalIgnorePatterns(appDir string) []gitignore.Pattern {
 	return parsePatterns(lines, nil)
 }
 
+// codeplaneGlobalIgnorePatterns returns patterns from the user's
+// ~/.config/codeplane/ignore file.
+var codeplaneGlobalIgnorePatterns = sync.OnceValue(func() []gitignore.Pattern {
+	return appGlobalIgnorePatterns("codeplane")
+})
+
 // crushGlobalIgnorePatterns returns patterns from the user's
 // ~/.config/crush/ignore file.
 var crushGlobalIgnorePatterns = sync.OnceValue(func() []gitignore.Pattern {
@@ -152,7 +159,8 @@ func parsePatterns(lines []string, domain []string) []gitignore.Pattern {
 
 type directoryLister struct {
 	// dirPatterns caches parsed patterns from
-	// .gitignore/.crushignore/.smithersignore for each directory.
+	// .gitignore/.codeplaneignore/.crushignore/.smithersignore for each
+	// directory.
 	// This avoids re-reading files when building combined matchers.
 	dirPatterns *csync.Map[string, []gitignore.Pattern]
 	// combinedMatchers caches a combined matcher for each directory that includes
@@ -179,7 +187,8 @@ func pathToComponents(path string) []string {
 }
 
 // getDirPatterns returns the parsed patterns for a specific directory's
-// .gitignore, .crushignore, and .smithersignore files. Results are cached.
+// .gitignore, .codeplaneignore, .crushignore, and .smithersignore files.
+// Results are cached.
 func (dl *directoryLister) getDirPatterns(dir string) []gitignore.Pattern {
 	return dl.dirPatterns.GetOrSet(dir, func() []gitignore.Pattern {
 		var allPatterns []gitignore.Pattern
@@ -190,7 +199,7 @@ func (dl *directoryLister) getDirPatterns(dir string) []gitignore.Pattern {
 			domain = pathToComponents(relPath)
 		}
 
-		for _, ignoreFile := range []string{".gitignore", ".crushignore", ".smithersignore"} {
+		for _, ignoreFile := range []string{".gitignore", ".codeplaneignore", ".crushignore", ".smithersignore"} {
 			ignPath := filepath.Join(dir, ignoreFile)
 			if content, err := os.ReadFile(ignPath); err == nil {
 				lines := strings.Split(string(content), "\n")
@@ -211,9 +220,10 @@ func (dl *directoryLister) getCombinedMatcher(dir string) gitignore.Matcher {
 		// Add common patterns first (lowest priority).
 		allPatterns = append(allPatterns, commonIgnorePatterns()...)
 
-		// Add global ignore patterns (git core.excludesFile + legacy crush +
-		// smithers-tui global ignore).
+		// Add global ignore patterns (git core.excludesFile + Codeplane +
+		// legacy Crush/Smithers global ignore).
 		allPatterns = append(allPatterns, gitGlobalIgnorePatterns()...)
+		allPatterns = append(allPatterns, codeplaneGlobalIgnorePatterns()...)
 		allPatterns = append(allPatterns, crushGlobalIgnorePatterns()...)
 		allPatterns = append(allPatterns, smithersGlobalIgnorePatterns()...)
 
