@@ -58,10 +58,6 @@ func NewWriteTool(
 				return fantasy.NewTextErrorResponse("file_path is required"), nil
 			}
 
-			if params.Content == "" {
-				return fantasy.NewTextErrorResponse("content is required"), nil
-			}
-
 			sessionID := GetSessionFromContext(ctx)
 			if sessionID == "" {
 				return fantasy.ToolResponse{}, fmt.Errorf("session_id is required")
@@ -139,7 +135,7 @@ func NewWriteTool(
 			// Check if file exists in history
 			file, err := files.GetByPathAndSession(ctx, filePath, sessionID)
 			if err != nil {
-				_, err = files.Create(ctx, sessionID, filePath, oldContent)
+				file, err = files.Create(ctx, sessionID, filePath, oldContent)
 				if err != nil {
 					// Log error but don't fail the operation
 					return fantasy.ToolResponse{}, fmt.Errorf("error creating file history: %w", err)
@@ -160,7 +156,7 @@ func NewWriteTool(
 
 			filetracker.RecordRead(ctx, sessionID, filePath)
 
-			notifyLSPs(ctx, lspManager, params.FilePath)
+			notifyLSPs(ctx, lspManager, filePath)
 
 			result := fmt.Sprintf("File successfully written: %s", filePath)
 			result = fmt.Sprintf("<result>\n%s\n</result>", result)
