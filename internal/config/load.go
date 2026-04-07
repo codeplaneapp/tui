@@ -409,29 +409,20 @@ func (c *Config) setDefaults(workingDir, dataDir string) {
 	if c.LSP == nil {
 		c.LSP = make(map[string]LSPConfig)
 	}
-	// Auto-detect workflow mode from modern and legacy project directories.
-	if c.Smithers == nil {
-		for _, dir := range []string{defaultDataDirectory, ".smithers"} {
-			if info, err := os.Stat(dir); err == nil && info.IsDir() {
-				c.Smithers = &SmithersConfig{}
-				break
-			}
-		}
+	smithersMode := c.Smithers != nil
+	if !smithersMode && isSmithersProject(workingDir) {
+		c.Smithers = &SmithersConfig{}
+		smithersMode = true
 	}
-	if c.Smithers != nil {
+	if smithersMode {
+		defaultDBPath, defaultWorkflowDir := defaultSmithersPaths(workingDir)
 		c.Smithers.DBPath = cmp.Or(
 			c.Smithers.DBPath,
-			preferExistingPath(
-				filepath.Join(defaultDataDirectory, "codeplane.db"),
-				filepath.Join(".smithers", "smithers.db"),
-			),
+			defaultDBPath,
 		)
 		c.Smithers.WorkflowDir = cmp.Or(
 			c.Smithers.WorkflowDir,
-			preferExistingPath(
-				filepath.Join(defaultDataDirectory, "workflows"),
-				filepath.Join(".smithers", "workflows"),
-			),
+			defaultWorkflowDir,
 		)
 
 		// Default the large model to claude-opus-4-6 when workflow config is
@@ -446,16 +437,16 @@ func (c *Config) setDefaults(workingDir, dataDir string) {
 				Think:    true,
 			}
 		}
-	}
 
-	// Add default workflow MCP server if not already configured by user.
-	if _, exists := c.MCP[SmithersMCPName]; !exists {
-		c.MCP[SmithersMCPName] = DefaultSmithersMCPConfig()
-	}
+		// Add default workflow MCP server if not already configured by user.
+		if _, exists := c.MCP[SmithersMCPName]; !exists {
+			c.MCP[SmithersMCPName] = DefaultSmithersMCPConfig()
+		}
 
-	// Apply default disabled tools if user hasn't set any.
-	if c.Options.DisabledTools == nil {
-		c.Options.DisabledTools = DefaultDisabledTools()
+		// Apply default disabled tools if user hasn't set any.
+		if c.Options.DisabledTools == nil {
+			c.Options.DisabledTools = DefaultDisabledTools()
+		}
 	}
 
 	// Apply defaults to LSP configurations
@@ -544,6 +535,33 @@ func (c *Config) setDefaults(workingDir, dataDir string) {
 	}
 
 	c.Options.InitializeAs = cmp.Or(c.Options.InitializeAs, defaultInitializeAs)
+}
+
+func isSmithersProject(workingDir string) bool {
+	_, _, ok := lookupSmithersProjectDir(workingDir)
+	return ok
+}
+
+func defaultSmithersPaths(workingDir string) (dbPath, workflowDir string) {
+	if dir, modern, ok := lookupSmithersProjectDir(workingDir); ok {
+		if modern {
+			return filepath.Join(dir, "codeplane.db"), filepath.Join(dir, "workflows")
+		}
+		return filepath.Join(dir, "smithers.db"), filepath.Join(dir, "workflows")
+	}
+
+	return filepath.Join(workingDir, defaultDataDirectory, "codeplane.db"),
+		filepath.Join(workingDir, defaultDataDirectory, "workflows")
+}
+
+func lookupSmithersProjectDir(workingDir string) (path string, modern bool, ok bool) {
+	if path, ok := fsext.LookupClosest(workingDir, defaultDataDirectory); ok {
+		return path, true, true
+	}
+	if path, ok := fsext.LookupClosest(workingDir, ".smithers"); ok {
+		return path, false, true
+	}
+	return "", false, false
 }
 
 func parseKeyValueEnv(raw string) map[string]string {
