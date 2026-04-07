@@ -204,7 +204,7 @@ func runInteractive(cmd *cobra.Command, _ []string) error {
 	if _, err := program.Run(); err != nil {
 		event.Error(err)
 		slog.Error("TUI run error", "error", err)
-		return errors.New("Codeplane crashed. If metrics are enabled, we were notified about it. If you'd like to report it, please copy the stacktrace above and open an issue at https://github.com/charmbracelet/crush/issues/new?template=bug.yml") //nolint:staticcheck
+		return errors.New("Codeplane crashed. If metrics are enabled, we were notified about it. If you'd like to report it, please copy the stacktrace above and open an issue at https://github.com/charmbracelet/codeplane/issues/new?template=bug.yml") //nolint:staticcheck
 	}
 	return nil
 }
@@ -308,10 +308,7 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 	if err := configureObservability(ctx, cfg, observability.ModeLocal, true); err != nil {
 		return nil, nil, err
 	}
-	observability.RecordStartupFlow("workspace_mode", "local", "ok",
-		attribute.String("codeplane.cwd", cwd),
-		attribute.String("codeplane.data_dir", cfg.Options.DataDirectory),
-	)
+	recordLocalWorkspaceStartup(cwd, cfg.Options.DataDirectory)
 	recordConfigSelections(store)
 
 	appInstance, err := app.New(ctx, conn, store)
@@ -348,9 +345,7 @@ func setupClientServerWorkspace(cmd *cobra.Command) (workspace.Workspace, func()
 			slog.Error("Failed to initialize coder agent", "error", err)
 		}
 	}
-	observability.RecordStartupFlow("workspace_mode", "client_server", "ok",
-		attribute.String("codeplane.workspace_id", protoWs.ID),
-	)
+	recordClientServerWorkspaceStartup(protoWs.ID)
 
 	return clientWs, cleanupServer, nil
 }
@@ -450,16 +445,10 @@ func ensureServer(cmd *cobra.Command, hostURL *url.URL) error {
 		if needsStart {
 			startedAt := time.Now()
 			if err := startDetachedServer(cmd); err != nil {
-				observability.RecordStartupFlow("server_autostart", hostURL.Scheme, "error",
-					attribute.String("codeplane.server.host", hostURL.Host),
-					attribute.String("codeplane.error", err.Error()),
-				)
+				recordServerAutostart(hostURL.Scheme, hostURL.Host, time.Since(startedAt), err)
 				return err
 			}
-			observability.RecordStartupFlow("server_autostart", hostURL.Scheme, "ok",
-				attribute.String("codeplane.server.host", hostURL.Host),
-				attribute.Int64("codeplane.duration_ms", time.Since(startedAt).Milliseconds()),
-			)
+			recordServerAutostart(hostURL.Scheme, hostURL.Host, time.Since(startedAt), nil)
 		}
 
 		var err error
@@ -516,12 +505,7 @@ func restartIfStale(cmd *cobra.Command, hostURL *url.URL) error {
 	}
 	// Force-remove if the socket is still lingering.
 	_ = os.Remove(hostURL.Host)
-	observability.RecordStartupFlow("server_restart", hostURL.Scheme, "ok",
-		attribute.String("codeplane.server.host", hostURL.Host),
-		attribute.String("codeplane.server.version", vi.Version),
-		attribute.String("codeplane.client.version", version.Version),
-		attribute.Int64("codeplane.duration_ms", time.Since(startedAt).Milliseconds()),
-	)
+	recordServerRestart(hostURL.Scheme, hostURL.Host, vi.Version, version.Version, time.Since(startedAt))
 	return nil
 }
 
@@ -716,6 +700,41 @@ func recordConfigSelections(store *config.ConfigStore) {
 	recordConfigSelection("global_config", config.GlobalConfig())
 	recordConfigSelection("global_data", store.GlobalDataPath())
 	recordConfigSelection("workspace_config", store.WorkspaceConfigPath())
+}
+
+func recordLocalWorkspaceStartup(cwd, dataDir string) {
+	observability.RecordStartupFlow("workspace_mode", "local", "ok",
+		attribute.String("codeplane.cwd", cwd),
+		attribute.String("codeplane.data_dir", dataDir),
+	)
+}
+
+func recordClientServerWorkspaceStartup(workspaceID string) {
+	observability.RecordStartupFlow("workspace_mode", "client_server", "ok",
+		attribute.String("codeplane.workspace_id", workspaceID),
+	)
+}
+
+func recordServerAutostart(scheme, host string, duration time.Duration, err error) {
+	result := "ok"
+	attrs := []attribute.KeyValue{
+		attribute.String("codeplane.server.host", host),
+		attribute.Int64("codeplane.duration_ms", duration.Milliseconds()),
+	}
+	if err != nil {
+		result = "error"
+		attrs = append(attrs, attribute.String("codeplane.error", err.Error()))
+	}
+	observability.RecordStartupFlow("server_autostart", scheme, result, attrs...)
+}
+
+func recordServerRestart(scheme, host, serverVersion, clientVersion string, duration time.Duration) {
+	observability.RecordStartupFlow("server_restart", scheme, "ok",
+		attribute.String("codeplane.server.host", host),
+		attribute.String("codeplane.server.version", serverVersion),
+		attribute.String("codeplane.client.version", clientVersion),
+		attribute.Int64("codeplane.duration_ms", duration.Milliseconds()),
+	)
 }
 
 func recordConfigSelection(kind, path string) {

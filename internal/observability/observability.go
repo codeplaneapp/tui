@@ -199,6 +199,8 @@ type metrics struct {
 	droppedEventsTotal         *prometheus.CounterVec
 	startupFlowsTotal          *prometheus.CounterVec
 	uiNavigationTotal          *prometheus.CounterVec
+	uiActionsTotal             *prometheus.CounterVec
+	uiActionDuration           *prometheus.HistogramVec
 	snapshotOpsTotal           *prometheus.CounterVec
 	snapshotOpDuration         *prometheus.HistogramVec
 	activeAgentRuns            prometheus.Gauge
@@ -398,6 +400,15 @@ func newMetrics() *metrics {
 			Name: "codeplane_ui_navigation_total",
 			Help: "UI navigation events by entrypoint, target, and result.",
 		}, []string{"entrypoint", "target", "result"}),
+		uiActionsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "codeplane_ui_actions_total",
+			Help: "UI actions by view, action, and result.",
+		}, []string{"view", "action", "result"}),
+		uiActionDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "codeplane_ui_action_duration_seconds",
+			Help:    "Duration of UI actions.",
+			Buckets: prometheus.DefBuckets,
+		}, []string{"view", "action"}),
 		snapshotOpsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "codeplane_snapshot_operations_total",
 			Help: "Snapshot UI operations by operation and result.",
@@ -464,6 +475,8 @@ func newMetrics() *metrics {
 		m.droppedEventsTotal,
 		m.startupFlowsTotal,
 		m.uiNavigationTotal,
+		m.uiActionsTotal,
+		m.uiActionDuration,
 		m.snapshotOpsTotal,
 		m.snapshotOpDuration,
 		m.activeAgentRuns,
@@ -1221,13 +1234,26 @@ func RecordPermissionQueueDelay(tool, action string, duration time.Duration) {
 	}
 }
 
-func RecordWorkspaceLifecycle(operation, result string, duration time.Duration) {
+func RecordWorkspaceLifecycle(operation, result string, duration time.Duration, attrs ...attribute.KeyValue) {
+	operation = defaultValue(operation, "unknown")
+	result = defaultResult(result)
+
 	if st := getState(); st != nil {
-		operation = defaultValue(operation, "unknown")
-		result = defaultResult(result)
 		st.metrics.workspaceLifecycleTotal.WithLabelValues(operation, result).Inc()
 		st.metrics.workspaceLifecycleDuration.WithLabelValues(operation).Observe(duration.Seconds())
 	}
+
+	ctx := WithComponent(context.Background(), "workspace_lifecycle")
+	attrs = append([]attribute.KeyValue{
+		attribute.String("codeplane.workspace.operation", operation),
+		attribute.String("codeplane.workspace.result", result),
+		attribute.Int64("codeplane.workspace.duration_ms", duration.Milliseconds()),
+	}, attrs...)
+	_, span := StartSpan(ctx, "workspace.lifecycle", attrs...)
+	if result != "ok" {
+		span.SetStatus(codes.Error, result)
+	}
+	span.End()
 }
 
 func SetActiveWorkspaces(count int) {
@@ -1283,6 +1309,28 @@ func RecordUINavigation(entrypoint, target, result string, attrs ...attribute.Ke
 	if result != "ok" {
 		span.SetStatus(codes.Error, result)
 	}
+	span.End()
+}
+
+func RecordUIAction(view, action string, duration time.Duration, err error, attrs ...attribute.KeyValue) {
+	view = defaultValue(view, "unknown")
+	action = defaultValue(action, "unknown")
+	result := resultFromError(err)
+
+	if st := getState(); st != nil {
+		st.metrics.uiActionsTotal.WithLabelValues(view, action, result).Inc()
+		st.metrics.uiActionDuration.WithLabelValues(view, action).Observe(duration.Seconds())
+	}
+
+	ctx := WithComponent(context.Background(), "ui_action")
+	attrs = append([]attribute.KeyValue{
+		attribute.String("codeplane.ui.view", view),
+		attribute.String("codeplane.ui.action", action),
+		attribute.String("codeplane.ui.result", result),
+		attribute.Int64("codeplane.ui.duration_ms", duration.Milliseconds()),
+	}, attrs...)
+	_, span := StartSpan(ctx, "ui.action", attrs...)
+	RecordError(span, err)
 	span.End()
 }
 

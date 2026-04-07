@@ -242,6 +242,91 @@ func TestRecordUINavigation_CapturesSpanAndMetric(t *testing.T) {
 	require.Equal(t, float64(1), counter.GetCounter().GetValue())
 }
 
+func TestRecordUIAction_CapturesSpanAndMetric(t *testing.T) {
+	t.Cleanup(func() {
+		require.NoError(t, Shutdown(context.Background()))
+	})
+
+	require.NoError(t, Configure(context.Background(), Config{
+		ServiceName:      "test",
+		ServiceVersion:   "dev",
+		Mode:             ModeLocal,
+		TraceBufferSize:  16,
+		TraceSampleRatio: 1,
+	}))
+
+	RecordUIAction("search", "query", 150*time.Millisecond, nil,
+		attribute.String("codeplane.search.tab", "code"),
+	)
+
+	spans := RecentSpans(10)
+	require.Len(t, spans, 1)
+	require.Equal(t, "ui.action", spans[0].Name)
+	require.Equal(t, "search", spans[0].Attributes["codeplane.ui.view"])
+	require.Equal(t, "query", spans[0].Attributes["codeplane.ui.action"])
+	require.Equal(t, "ok", spans[0].Attributes["codeplane.ui.result"])
+	require.Equal(t, "code", spans[0].Attributes["codeplane.search.tab"])
+
+	st := getState()
+	require.NotNil(t, st)
+
+	counter := gatherMetric(t, st, "codeplane_ui_actions_total", map[string]string{
+		"view":   "search",
+		"action": "query",
+		"result": "ok",
+	})
+	require.Equal(t, float64(1), counter.GetCounter().GetValue())
+
+	metric := gatherMetric(t, st, "codeplane_ui_action_duration_seconds", map[string]string{
+		"view":   "search",
+		"action": "query",
+	})
+	require.Equal(t, uint64(1), metric.GetHistogram().GetSampleCount())
+	require.InDelta(t, 0.15, metric.GetHistogram().GetSampleSum(), 0.0001)
+}
+
+func TestRecordWorkspaceLifecycle_CapturesSpanAndMetric(t *testing.T) {
+	t.Cleanup(func() {
+		require.NoError(t, Shutdown(context.Background()))
+	})
+
+	require.NoError(t, Configure(context.Background(), Config{
+		ServiceName:      "test",
+		ServiceVersion:   "dev",
+		Mode:             ModeLocal,
+		TraceBufferSize:  16,
+		TraceSampleRatio: 1,
+	}))
+
+	RecordWorkspaceLifecycle("attach", "ok", 2*time.Second,
+		attribute.String("codeplane.workspace.source", "cli"),
+		attribute.String("codeplane.workspace.id", "ws-123"),
+	)
+
+	spans := RecentSpans(10)
+	require.Len(t, spans, 1)
+	require.Equal(t, "workspace.lifecycle", spans[0].Name)
+	require.Equal(t, "attach", spans[0].Attributes["codeplane.workspace.operation"])
+	require.Equal(t, "ok", spans[0].Attributes["codeplane.workspace.result"])
+	require.Equal(t, "cli", spans[0].Attributes["codeplane.workspace.source"])
+	require.Equal(t, "ws-123", spans[0].Attributes["codeplane.workspace.id"])
+
+	st := getState()
+	require.NotNil(t, st)
+
+	counter := gatherMetric(t, st, "codeplane_workspace_lifecycle_total", map[string]string{
+		"operation": "attach",
+		"result":    "ok",
+	})
+	require.Equal(t, float64(1), counter.GetCounter().GetValue())
+
+	metric := gatherMetric(t, st, "codeplane_workspace_lifecycle_duration_seconds", map[string]string{
+		"operation": "attach",
+	})
+	require.Equal(t, uint64(1), metric.GetHistogram().GetSampleCount())
+	require.InDelta(t, 2.0, metric.GetHistogram().GetSampleSum(), 0.0001)
+}
+
 func TestRecordStartupFlow_CapturesSpanAndMetric(t *testing.T) {
 	t.Cleanup(func() {
 		require.NoError(t, Shutdown(context.Background()))
