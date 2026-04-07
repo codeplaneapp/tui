@@ -211,6 +211,8 @@ func TestWorkspacesView_EmptySnapshotList_Rendering(t *testing.T) {
 	v.width = 80
 	v.height = 24
 	v.mode = snapshotMode
+	v.loading = false
+	v.err = nil
 	v.snapshotsLoading = false
 
 	output := v.View()
