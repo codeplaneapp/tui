@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/crush/internal/observability"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 var ErrorPermissionDenied = errors.New("user denied permission")
@@ -132,12 +133,23 @@ func (s *permissionService) Deny(permission PermissionRequest) {
 }
 
 func (s *permissionService) Request(ctx context.Context, opts CreatePermissionRequest) (bool, error) {
+	ctx = observability.WithSessionID(ctx, opts.SessionID)
+	ctx = observability.WithTool(ctx, opts.ToolName, opts.ToolCallID)
+	ctx = observability.WithComponent(ctx, "permission")
+	ctx, span := observability.StartSpan(ctx, "permission.request",
+		attribute.String("permission.tool", opts.ToolName),
+		attribute.String("permission.action", opts.Action),
+	)
+	defer span.End()
+
 	start := time.Now()
 	record := func(result string) {
+		span.SetAttributes(attribute.String("permission.result", result))
 		observability.RecordPermissionRequest(opts.ToolName, opts.Action, result, time.Since(start))
 	}
 
 	if s.skip {
+		span.AddEvent("permission.skipped")
 		record("skip")
 		return true, nil
 	}
@@ -145,11 +157,13 @@ func (s *permissionService) Request(ctx context.Context, opts CreatePermissionRe
 	// Check if the tool/action combination is in the allowlist
 	commandKey := opts.ToolName + ":" + opts.Action
 	if slices.Contains(s.allowedTools, commandKey) || slices.Contains(s.allowedTools, opts.ToolName) {
+		span.AddEvent("permission.allowlist")
 		record("allowlist")
 		return true, nil
 	}
 
 	// tell the UI that a permission was requested
+	span.AddEvent("permission.notification_published")
 	s.notificationBroker.Publish(pubsub.CreatedEvent, PermissionNotification{
 		ToolCallID: opts.ToolCallID,
 	})
@@ -159,6 +173,7 @@ func (s *permissionService) Request(ctx context.Context, opts CreatePermissionRe
 	s.autoApproveSessionsMu.RUnlock()
 
 	if autoApprove {
+		span.AddEvent("permission.auto_approved")
 		s.notificationBroker.Publish(pubsub.CreatedEvent, PermissionNotification{
 			ToolCallID: opts.ToolCallID,
 			Granted:    true,
@@ -195,6 +210,7 @@ func (s *permissionService) Request(ctx context.Context, opts CreatePermissionRe
 	for _, p := range s.sessionPermissions {
 		if p.ToolName == permission.ToolName && p.Action == permission.Action && p.SessionID == permission.SessionID && p.Path == permission.Path {
 			s.sessionPermissionsMu.RUnlock()
+			span.AddEvent("permission.cached_grant")
 			s.notificationBroker.Publish(pubsub.CreatedEvent, PermissionNotification{
 				ToolCallID: opts.ToolCallID,
 				Granted:    true,
@@ -220,11 +236,14 @@ func (s *permissionService) Request(ctx context.Context, opts CreatePermissionRe
 	queuedAt := time.Now()
 	s.requestMu.Lock()
 	defer s.requestMu.Unlock()
-	observability.RecordPermissionQueueDelay(opts.ToolName, opts.Action, time.Since(queuedAt))
+	queueDelay := time.Since(queuedAt)
+	observability.RecordPermissionQueueDelay(opts.ToolName, opts.Action, queueDelay)
+	span.SetAttributes(attribute.Int64("permission.queue_delay_ms", queueDelay.Milliseconds()))
 	observability.SetPermissionActive(true)
 	defer observability.SetPermissionActive(false)
 
 	// Publish the request
+	span.AddEvent("permission.request_published")
 	s.Publish(pubsub.CreatedEvent, permission)
 
 	select {
@@ -234,12 +253,16 @@ func (s *permissionService) Request(ctx context.Context, opts CreatePermissionRe
 			s.activeRequest = nil
 		}
 		s.activeRequestMu.Unlock()
+		span.AddEvent("permission.canceled")
+		observability.RecordError(span, ctx.Err())
 		record("canceled")
 		return false, ctx.Err()
 	case granted := <-respCh:
 		if granted {
+			span.AddEvent("permission.granted")
 			record("granted")
 		} else {
+			span.AddEvent("permission.denied")
 			record("denied")
 		}
 		return granted, nil

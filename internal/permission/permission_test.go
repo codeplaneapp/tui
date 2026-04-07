@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/crush/internal/observability"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -294,6 +295,73 @@ func TestPermission_RequestContextCancel(t *testing.T) {
 	assert.False(t, granted, "should not be granted when context is canceled")
 	assert.Error(t, reqErr, "should return an error on context cancellation")
 	assert.ErrorIs(t, reqErr, context.Canceled)
+}
+
+func TestPermission_RequestRecordsLifecycleSpanAndNotifications(t *testing.T) {
+	t.Cleanup(func() {
+		require.NoError(t, observability.Shutdown(context.Background()))
+	})
+	require.NoError(t, observability.Configure(context.Background(), observability.Config{
+		ServiceName:      "test",
+		ServiceVersion:   "dev",
+		Mode:             observability.ModeLocal,
+		TraceBufferSize:  16,
+		TraceSampleRatio: 1,
+	}))
+
+	service := NewPermissionService("/tmp", false, []string{})
+	requests := service.Subscribe(t.Context())
+	notifications := service.SubscribeNotifications(t.Context())
+
+	resultCh := make(chan struct {
+		granted bool
+		err     error
+	}, 1)
+	go func() {
+		granted, err := service.Request(t.Context(), CreatePermissionRequest{
+			SessionID:   "session-1",
+			ToolCallID:  "tool-call-1",
+			ToolName:    "bash",
+			Action:      "execute",
+			Description: "run command",
+			Path:        "/tmp/test.sh",
+		})
+		resultCh <- struct {
+			granted bool
+			err     error
+		}{granted: granted, err: err}
+	}()
+
+	pending := <-notifications
+	require.Equal(t, "tool-call-1", pending.Payload.ToolCallID)
+	require.False(t, pending.Payload.Granted)
+	require.False(t, pending.Payload.Denied)
+
+	request := <-requests
+	service.Grant(request.Payload)
+
+	granted := <-notifications
+	require.Equal(t, "tool-call-1", granted.Payload.ToolCallID)
+	require.True(t, granted.Payload.Granted)
+
+	result := <-resultCh
+	require.NoError(t, result.err)
+	require.True(t, result.granted)
+
+	spans := observability.RecentSpans(10)
+	require.NotEmpty(t, spans)
+
+	found := false
+	for _, span := range spans {
+		if span.Name != "permission.request" {
+			continue
+		}
+		found = true
+		require.Equal(t, "granted", span.Attributes["permission.result"])
+		require.Equal(t, "bash", span.Attributes["permission.tool"])
+		require.Equal(t, "execute", span.Attributes["permission.action"])
+	}
+	require.True(t, found)
 }
 
 func TestPermission_SessionAutoApprove(t *testing.T) {
