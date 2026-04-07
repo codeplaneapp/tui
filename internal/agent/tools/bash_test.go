@@ -9,6 +9,7 @@ import (
 
 	"charm.land/fantasy"
 	"github.com/charmbracelet/crush/internal/config"
+	"github.com/charmbracelet/crush/internal/observability"
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/charmbracelet/crush/internal/shell"
@@ -80,6 +81,61 @@ func TestBashTool_CustomAutoBackgroundThreshold(t *testing.T) {
 
 	bgManager := shell.GetBackgroundShellManager()
 	require.NoError(t, bgManager.Kill(meta.ShellID))
+}
+
+func TestBashTool_BackgroundRunPreservesObservabilityContext(t *testing.T) {
+	t.Cleanup(func() {
+		require.NoError(t, observability.Shutdown(context.Background()))
+	})
+	require.NoError(t, observability.Configure(context.Background(), observability.Config{
+		ServiceName:      "test",
+		ServiceVersion:   "dev",
+		Mode:             observability.ModeLocal,
+		TraceBufferSize:  64,
+		TraceSampleRatio: 1,
+	}))
+
+	workingDir := t.TempDir()
+	tool := newBashToolForTest(workingDir)
+	ctx := context.WithValue(t.Context(), SessionIDContextKey, "test-session")
+	ctx = observability.WithSessionID(ctx, "test-session")
+	ctx = observability.WithWorkspaceID(ctx, "ws-123")
+	ctx = observability.WithTool(ctx, BashToolName, "test-call")
+
+	resp := runBashTool(t, tool, ctx, BashParams{
+		Description:     "background context propagation",
+		Command:         "sleep 10",
+		RunInBackground: true,
+	})
+
+	require.False(t, resp.IsError)
+
+	var meta BashResponseMetadata
+	require.NoError(t, json.Unmarshal([]byte(resp.Metadata), &meta))
+	require.NotEmpty(t, meta.ShellID)
+
+	bgManager := shell.GetBackgroundShellManager()
+	t.Cleanup(func() {
+		bgManager.KillAll(context.Background())
+	})
+	require.NoError(t, bgManager.Kill(meta.ShellID))
+
+	spans := observability.RecentSpans(50)
+	var backgroundSpanFound bool
+	for _, span := range spans {
+		if span.Name != "shell.background" {
+			continue
+		}
+		if span.Attributes["crush.background_job.id"] != meta.ShellID {
+			continue
+		}
+		backgroundSpanFound = true
+		require.Equal(t, "ws-123", span.Attributes["crush.workspace_id"])
+		require.Equal(t, "test-session", span.Attributes["crush.session_id"])
+		require.Equal(t, BashToolName, span.Attributes["crush.tool"])
+		require.Equal(t, "test-call", span.Attributes["crush.tool_call_id"])
+	}
+	require.True(t, backgroundSpanFound)
 }
 
 func TestFormatOutput(t *testing.T) {

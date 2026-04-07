@@ -241,8 +241,9 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 				startTime := time.Now()
 				bgManager := shell.GetBackgroundShellManager()
 				bgManager.Cleanup()
-				// Use background context so it continues after tool returns
-				bgShell, err := bgManager.Start(context.Background(), execWorkingDir, blockFuncs(), params.Command, params.Description)
+				// Detach cancellation but preserve observability context so the
+				// background job remains attributable after the tool returns.
+				bgShell, err := bgManager.Start(context.WithoutCancel(ctx), execWorkingDir, blockFuncs(), params.Command, params.Description)
 				if err != nil {
 					return fantasy.ToolResponse{}, fmt.Errorf("error starting background shell: %w", err)
 				}
@@ -294,10 +295,11 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 			// Start synchronous execution with auto-background support
 			startTime := time.Now()
 
-			// Start with detached context so it can survive if moved to background
+			// Start with detached context so it can survive if moved to
+			// background while keeping the current observability metadata.
 			bgManager := shell.GetBackgroundShellManager()
 			bgManager.Cleanup()
-			bgShell, err := bgManager.Start(context.Background(), execWorkingDir, blockFuncs(), params.Command, params.Description)
+			bgShell, err := bgManager.Start(context.WithoutCancel(ctx), execWorkingDir, blockFuncs(), params.Command, params.Description)
 			if err != nil {
 				return fantasy.ToolResponse{}, fmt.Errorf("error starting shell: %w", err)
 			}
