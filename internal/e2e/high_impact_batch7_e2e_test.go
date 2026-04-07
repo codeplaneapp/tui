@@ -451,7 +451,7 @@ func TestDashboardSessionsTab_TUI(t *testing.T) {
 		waitForDashboard(t, tui)
 
 		// Jump to Sessions tab.
-		tui.SendKeys("4")
+		tui.SendKeys("5")
 		time.Sleep(500 * time.Millisecond)
 
 		// Should display at least one session title.
@@ -460,7 +460,7 @@ func TestDashboardSessionsTab_TUI(t *testing.T) {
 		}, 5*time.Second))
 
 		// Navigate back to Overview tab.
-		tui.SendKeys("1")
+		tui.SendKeys("2")
 		require.NoError(t, tui.WaitForText("At a Glance", 5*time.Second))
 	})
 }

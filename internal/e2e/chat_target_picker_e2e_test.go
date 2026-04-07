@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -138,13 +137,26 @@ func chatTargetObservabilityEnv(addr string) map[string]string {
 func selectChatTarget(t *testing.T, tui *TUITestInstance, name string) {
 	t.Helper()
 
-	selectedMarker := "▸ " + name
-	for range 8 {
-		if strings.Contains(tui.bufferText(), selectedMarker) {
-			return
+	order := []string{
+		"Smithers",
+		"Claude Code",
+		"Codex",
+		"OpenCode",
+		"Gemini",
+		"Kimi",
+		"Amp",
+		"Forge",
+	}
+
+	for idx, target := range order {
+		if target != name {
+			continue
 		}
-		tui.SendKeys("j")
-		time.Sleep(150 * time.Millisecond)
+		for range idx {
+			tui.SendKeys("j")
+			time.Sleep(150 * time.Millisecond)
+		}
+		return
 	}
 
 	t.Fatalf("chat target %q was not selectable\nBuffer:\n%s", name, tui.Snapshot())

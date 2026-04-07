@@ -311,8 +311,12 @@ func TestWorkspacesLifecycleE2E(t *testing.T) {
 	require.NoError(t, tui.WaitForAnyText([]string{"Overview", "New Chat"}, 20*time.Second),
 		"dashboard must render; buffer:\n%s", tui.Snapshot())
 
-	tui.SendKeys("jjjjjjjjjjjjjjjjjjjj\n")
-	require.NoError(t, tui.WaitForText("JJHUB › Workspaces", 10*time.Second),
+	openCommandsPalette(t, tui)
+	tui.SendText("JJHub Workspaces")
+	require.NoError(t, tui.WaitForText("JJHub Workspaces", 5*time.Second),
+		"workspaces command must appear; buffer:\n%s", tui.Snapshot())
+	tui.SendKeys("\n")
+	require.NoError(t, tui.WaitForAnyText([]string{"Persistence", "SSH"}, 10*time.Second),
 		"workspaces view must open; buffer:\n%s", tui.Snapshot())
 	require.NoError(t, tui.WaitForText("alpha", 10*time.Second),
 		"seed workspace must appear; buffer:\n%s", tui.Snapshot())

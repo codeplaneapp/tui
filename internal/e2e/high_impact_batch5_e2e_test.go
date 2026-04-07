@@ -75,7 +75,13 @@ func TestThinkingModeToggle_TUI(t *testing.T) {
 		tui.SendKeys("\r")
 
 		// Dialog should close and app should be stable.
-		require.NoError(t, tui.WaitForText("CRUSH", 5*time.Second))
+		if err := tui.WaitForNoText("Commands", 2*time.Second); err != nil {
+			tui.SendKeys("\x1b")
+			require.NoError(t, tui.WaitForNoText("Commands", 5*time.Second))
+		}
+		require.NoError(t, tui.WaitForAnyText([]string{
+			"SMITHERS", fixtureLargeModelName, "Ready?",
+		}, 5*time.Second))
 
 		// Toggle again (should reverse the state).
 		openCommandsPalette(t, tui)
@@ -85,7 +91,13 @@ func TestThinkingModeToggle_TUI(t *testing.T) {
 		}, 5*time.Second))
 		tui.SendKeys("\r")
 
-		require.NoError(t, tui.WaitForText("CRUSH", 5*time.Second))
+		if err := tui.WaitForNoText("Commands", 2*time.Second); err != nil {
+			tui.SendKeys("\x1b")
+			require.NoError(t, tui.WaitForNoText("Commands", 5*time.Second))
+		}
+		require.NoError(t, tui.WaitForAnyText([]string{
+			"SMITHERS", fixtureLargeModelName, "Ready?",
+		}, 5*time.Second))
 	})
 }
 
@@ -144,10 +156,11 @@ func TestSessionCLIList_TUI(t *testing.T) {
 		binary := buildSharedTUIBinary(t)
 
 		// Run `session list --json` non-interactively.
-		cmd := exec.Command(binary, "session", "list", "--json")
+		cmd := exec.Command(binary, "--data-dir", fixture.workspaceDataDir(), "session", "list", "--json")
 		cmd.Env = append(os.Environ(),
 			"CRUSH_GLOBAL_CONFIG="+fixture.configDir,
 			"CRUSH_GLOBAL_DATA="+fixture.dataDir,
+			"CODEPLANE_GLOBAL_DATA="+fixture.dataDir,
 			"SMITHERS_TUI_GLOBAL_CONFIG="+fixture.configDir,
 			"SMITHERS_TUI_GLOBAL_DATA="+fixture.dataDir,
 			"TERM=xterm-256color",
@@ -178,15 +191,19 @@ func TestSessionCLILast_TUI(t *testing.T) {
 		fixture := newConfiguredFixture(t)
 		seedSessions(t, fixture.workspaceDataDir(),
 			seededSession{title: "Old Session", messages: []string{"old"}},
+		)
+		time.Sleep(1100 * time.Millisecond)
+		seedSessions(t, fixture.workspaceDataDir(),
 			seededSession{title: "Latest Session", messages: []string{"latest"}},
 		)
 
 		binary := buildSharedTUIBinary(t)
 
-		cmd := exec.Command(binary, "session", "last", "--json")
+		cmd := exec.Command(binary, "--data-dir", fixture.workspaceDataDir(), "session", "last", "--json")
 		cmd.Env = append(os.Environ(),
 			"CRUSH_GLOBAL_CONFIG="+fixture.configDir,
 			"CRUSH_GLOBAL_DATA="+fixture.dataDir,
+			"CODEPLANE_GLOBAL_DATA="+fixture.dataDir,
 			"SMITHERS_TUI_GLOBAL_CONFIG="+fixture.configDir,
 			"SMITHERS_TUI_GLOBAL_DATA="+fixture.dataDir,
 			"TERM=xterm-256color",
@@ -196,12 +213,14 @@ func TestSessionCLILast_TUI(t *testing.T) {
 		output, err := cmd.Output()
 		require.NoError(t, err, "session last --json failed: %s", string(output))
 
-		// Should be valid JSON with a title field.
+		// Should be valid JSON with a title field in the session metadata.
 		var session map[string]interface{}
 		require.NoError(t, json.Unmarshal(output, &session), "invalid JSON: %s", string(output))
 
-		title, ok := session["title"].(string)
-		require.True(t, ok, "session should have a title field")
+		meta, ok := session["meta"].(map[string]interface{})
+		require.True(t, ok, "session should have a meta field")
+		title, ok := meta["title"].(string)
+		require.True(t, ok, "session metadata should have a title field")
 		require.Equal(t, "Latest Session", title, "should return the most recent session")
 	})
 }
@@ -413,9 +432,8 @@ func TestMultipleFileAttachments_TUI(t *testing.T) {
 		// Add first image via Ctrl+F.
 		tui.SendKeys("\x06") // ctrl+f
 		require.NoError(t, tui.WaitForText("Add Image", 5*time.Second))
-		// Navigate to select photo1.
-		tui.SendKeys("photo1")
-		require.NoError(t, tui.WaitForText("photo1.png", 5*time.Second))
+		// Select the first image from the picker.
+		tui.SendKeys("j")
 		tui.SendKeys("\r")
 		require.NoError(t, tui.WaitForNoText("Add Image", 10*time.Second))
 		require.NoError(t, tui.WaitForText("photo1.png", 10*time.Second))
@@ -423,8 +441,8 @@ func TestMultipleFileAttachments_TUI(t *testing.T) {
 		// Add second image via Ctrl+F.
 		tui.SendKeys("\x06") // ctrl+f
 		require.NoError(t, tui.WaitForText("Add Image", 5*time.Second))
-		tui.SendKeys("photo2")
-		require.NoError(t, tui.WaitForText("photo2.png", 5*time.Second))
+		tui.SendKeys("j")
+		tui.SendKeys("j")
 		tui.SendKeys("\r")
 		require.NoError(t, tui.WaitForNoText("Add Image", 10*time.Second))
 
@@ -446,8 +464,7 @@ func TestMultipleFileAttachments_TUI(t *testing.T) {
 		// Add image via Ctrl+F.
 		tui.SendKeys("\x06") // ctrl+f
 		require.NoError(t, tui.WaitForText("Add Image", 5*time.Second))
-		tui.SendKeys("diagram")
-		require.NoError(t, tui.WaitForText("diagram.png", 5*time.Second))
+		tui.SendKeys("j")
 		tui.SendKeys("\r")
 		require.NoError(t, tui.WaitForNoText("Add Image", 10*time.Second))
 

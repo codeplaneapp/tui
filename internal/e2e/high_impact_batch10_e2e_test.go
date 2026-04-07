@@ -238,7 +238,11 @@ func TestOnboardingAPIKeyInput_TUI(t *testing.T) {
 		defer tui.Terminate()
 
 		// Wait for onboarding.
-		require.NoError(t, tui.WaitForText("Find your fave", 15*time.Second))
+		require.NoError(t, tui.WaitForAnyText([]string{
+			"Find your fave",
+			"choose a provider",
+			"To start, let's choose a provider and model.",
+		}, 15*time.Second))
 
 		// Type to filter and select a provider.
 		tui.SendKeys("claude")
@@ -258,7 +262,11 @@ func TestOnboardingAPIKeyInput_TUI(t *testing.T) {
 
 		// Escape to cancel and return to provider selection.
 		tui.SendKeys("\x1b")
-		require.NoError(t, tui.WaitForText("Find your fave", 10*time.Second))
+		require.NoError(t, tui.WaitForAnyText([]string{
+			"Find your fave",
+			"choose a provider",
+			"To start, let's choose a provider and model.",
+		}, 10*time.Second))
 	})
 }
 
@@ -279,7 +287,7 @@ func TestDashboardQuickChatFromAnyTab_TUI(t *testing.T) {
 		waitForDashboard(t, tui)
 
 		// Switch to Runs tab.
-		tui.SendKeys("2")
+		tui.SendKeys("3")
 		time.Sleep(300 * time.Millisecond)
 		require.NoError(t, tui.WaitForAnyText([]string{
 			"Recent Runs", "No runs yet",
@@ -302,7 +310,7 @@ func TestDashboardQuickChatFromAnyTab_TUI(t *testing.T) {
 		waitForDashboard(t, tui)
 
 		// Switch to Sessions tab.
-		tui.SendKeys("4")
+		tui.SendKeys("5")
 		time.Sleep(300 * time.Millisecond)
 		require.NoError(t, tui.WaitForAnyText([]string{
 			"Chat Sessions", "Sessions",

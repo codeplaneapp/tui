@@ -56,8 +56,8 @@ func TestQuickApprovalsFromChat_TUI(t *testing.T) {
 		tui.SendKeys("a")
 		time.Sleep(200 * time.Millisecond)
 
-		// Should NOT navigate to approvals.
-		require.NoError(t, tui.WaitForNoText("Approvals", 2*time.Second))
+		// Should NOT navigate to the approvals view.
+		require.NoError(t, tui.WaitForNoText("Pending Approvals", 2*time.Second))
 
 		// 'a' should appear as text in the editor.
 		require.NoError(t, tui.WaitForText("a", 2*time.Second))
@@ -83,10 +83,11 @@ func TestApprovalsHelpBarVariant_TUI(t *testing.T) {
 		// Open approvals.
 		tui.SendKeys("\x01") // ctrl+a
 		require.NoError(t, tui.WaitForAnyText([]string{
-			"Approvals", "approve",
+			"Pending Approvals", "No pending approvals",
 		}, 10*time.Second))
 
-		// On pending tab, help bar shows approve/deny.
+		// On pending tab, the help bar should at least expose the history toggle.
+		// approve/deny only appear when a pending item is selected.
 		require.NoError(t, tui.WaitForAnyText([]string{
 			"approve", "deny", "history",
 		}, 5*time.Second))
@@ -104,9 +105,9 @@ func TestApprovalsHelpBarVariant_TUI(t *testing.T) {
 		tui.SendKeys("\t")
 		time.Sleep(300 * time.Millisecond)
 
-		// approve/deny should reappear.
+		// Switching back to pending should restore the pending-tab help state.
 		require.NoError(t, tui.WaitForAnyText([]string{
-			"approve", "deny",
+			"approve", "deny", "history", "No pending approvals",
 		}, 5*time.Second))
 
 		tui.SendKeys("\x1b")
@@ -130,7 +131,7 @@ func TestDashboardWorkflowsTabContent_TUI(t *testing.T) {
 		waitForDashboard(t, tui)
 
 		// Switch to Workflows tab.
-		tui.SendKeys("3")
+		tui.SendKeys("4")
 		time.Sleep(500 * time.Millisecond)
 
 		// Should show workflow-specific inline content.
@@ -139,7 +140,7 @@ func TestDashboardWorkflowsTabContent_TUI(t *testing.T) {
 		}, 5*time.Second))
 
 		// Return to Overview.
-		tui.SendKeys("1")
+		tui.SendKeys("2")
 		require.NoError(t, tui.WaitForText("At a Glance", 5*time.Second))
 	})
 }
@@ -365,7 +366,11 @@ func TestOnboardingNoProviders_TUI(t *testing.T) {
 		tui := launchFixtureTUI(t, fixture)
 		defer tui.Terminate()
 
-		require.NoError(t, tui.WaitForText("Find your fave", 15*time.Second))
+		require.NoError(t, tui.WaitForAnyText([]string{
+			"Find your fave",
+			"choose a provider",
+			"To start, let's choose a provider and model.",
+		}, 15*time.Second))
 
 		// j/k should navigate through available providers/models.
 		tui.SendKeys("j")
@@ -376,7 +381,11 @@ func TestOnboardingNoProviders_TUI(t *testing.T) {
 		time.Sleep(200 * time.Millisecond)
 
 		// Should still be in onboarding after navigation.
-		require.NoError(t, tui.WaitForText("Find your fave", 5*time.Second))
+		require.NoError(t, tui.WaitForAnyText([]string{
+			"Find your fave",
+			"choose a provider",
+			"To start, let's choose a provider and model.",
+		}, 5*time.Second))
 	})
 }
 

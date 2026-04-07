@@ -36,7 +36,9 @@ func TestHelpbarShortcuts_TUI(t *testing.T) {
 	require.NoError(t, tui.WaitForText("more", 15*time.Second))
 
 	tui.SendKeys("\x12") // ctrl+r
-	require.NoError(t, tui.WaitForAnyText([]string{"CRUSH › Runs", "SMITHERS › Runs"}, 10*time.Second))
+	require.NoError(t, tui.WaitForAnyText([]string{
+		"Runs [All]", "No runs found", "Loading runs", "toggle details",
+	}, 10*time.Second))
 
 	tuiApprovals := launchTUI(t)
 	defer tuiApprovals.Terminate()

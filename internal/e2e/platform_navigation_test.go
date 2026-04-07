@@ -57,13 +57,12 @@ func TestPlatformAndNavigation(t *testing.T) {
 
 		s.WaitForText("SMITHERS", 20*time.Second)
 
-		// Push runs view — look for the view-specific header.
-		s.SendKeys("C-r")
-		s.WaitForAnyText([]string{"Runs [All]", "Runs [", "Loading"}, 10*time.Second)
+		openRunsDashboardWithFallback(t, s)
+		waitForRunsView(t, s, 10*time.Second)
 
 		// Pop back to chat/dashboard — the Runs view header disappears.
 		s.SendKeys("Escape")
-		s.WaitForNoText("Runs [", 10*time.Second)
+		s.WaitForNoText("SMITHERS › Runs", 10*time.Second)
 	})
 
 	// PLATFORM_BACK_STACK_NAVIGATION
@@ -74,10 +73,10 @@ func TestPlatformAndNavigation(t *testing.T) {
 		s.WaitForText("SMITHERS", 20*time.Second)
 
 		// Push runs view, then pop.
-		s.SendKeys("C-r")
-		s.WaitForAnyText([]string{"Runs [All]", "Runs [", "Loading"}, 10*time.Second)
+		openRunsDashboardWithFallback(t, s)
+		waitForRunsView(t, s, 10*time.Second)
 		s.SendKeys("Escape")
-		s.WaitForNoText("Runs [", 10*time.Second)
+		s.WaitForNoText("SMITHERS › Runs", 10*time.Second)
 
 		// Push approvals view, then pop.
 		s.SendKeys("C-a")
@@ -97,10 +96,10 @@ func TestPlatformAndNavigation(t *testing.T) {
 		s.WaitForText("SMITHERS", 20*time.Second)
 
 		// Ctrl+R -> Runs view
-		s.SendKeys("C-r")
-		s.WaitForAnyText([]string{"Runs [All]", "Runs [", "Loading"}, 10*time.Second)
+		openRunsDashboardWithFallback(t, s)
+		waitForRunsView(t, s, 10*time.Second)
 		s.SendKeys("Escape")
-		s.WaitForNoText("Runs [", 10*time.Second)
+		s.WaitForNoText("SMITHERS › Runs", 10*time.Second)
 
 		// Ctrl+A -> Approvals view
 		s.SendKeys("C-a")

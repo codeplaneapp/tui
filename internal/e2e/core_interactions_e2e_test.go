@@ -88,7 +88,9 @@ func TestOnboardingAndGlobalDialogs_TUI(t *testing.T) {
 		tui.SendText("Run Dashboard")
 		require.NoError(t, tui.WaitForText("Run Dashboard", 5*time.Second))
 		tui.SendKeys("\r")
-		require.NoError(t, tui.WaitForText("SMITHERS › Runs", 10*time.Second))
+		require.NoError(t, tui.WaitForAnyText([]string{
+			"Runs [All]", "No runs found", "Loading runs", "toggle details",
+		}, 10*time.Second))
 	})
 
 	t.Run("CTRL_L_OPENS_MODELS_DIALOG", func(t *testing.T) {

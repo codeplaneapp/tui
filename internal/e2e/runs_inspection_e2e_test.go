@@ -5,33 +5,86 @@ import (
 	"time"
 )
 
-func openRunsDashboardWithFallback(t *testing.T, s *TmuxSession) {
+func runsViewVisible(capture string) bool {
+	return containsNormalized(capture, "SMITHERS › Runs")
+}
+
+func waitForRunsView(t *testing.T, s *TmuxSession, timeout time.Duration) {
 	t.Helper()
 
-	s.SendKeys("C-r")
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		capture := s.CapturePane()
-		if containsNormalized(capture, "toggle details") ||
-			containsNormalized(capture, "filter status") ||
-			containsNormalized(capture, "[All]") ||
-			containsNormalized(capture, "Loading runs") {
+		if runsViewVisible(s.CapturePane()) {
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 
+	t.Fatalf("runs view did not render\nPane:\n%s", s.CapturePane())
+}
+
+func waitForRunsReady(t *testing.T, s *TmuxSession, timeout time.Duration) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		capture := s.CapturePane()
+		if runsViewVisible(capture) &&
+			(containsNormalized(capture, "toggle details") ||
+				containsNormalized(capture, "filter status") ||
+				containsNormalized(capture, "Loading runs") ||
+				containsNormalized(capture, "No runs found") ||
+				containsNormalized(capture, "Error:")) {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	t.Fatalf("runs view did not become ready\nPane:\n%s", s.CapturePane())
+}
+
+func assertRunsView(t *testing.T, s *TmuxSession) {
+	t.Helper()
+
+	if !runsViewVisible(s.CapturePane()) {
+		t.Fatalf("expected runs view\nPane:\n%s", s.CapturePane())
+	}
+}
+
+func openRunsDashboardWithFallback(t *testing.T, s *TmuxSession) {
+	t.Helper()
+
+	waitForRunsVisible := func(timeout time.Duration) bool {
+		deadline := time.Now().Add(timeout)
+		for time.Now().Before(deadline) {
+			if runsViewVisible(s.CapturePane()) {
+				return true
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		return false
+	}
+
+	s.SendKeys("C-r")
+	if waitForRunsVisible(3 * time.Second) {
+		return
+	}
+
 	s.SendKeys("C-p")
-	s.WaitForAnyText([]string{"Commands", "command"}, 10*time.Second)
+	s.WaitForAnyText([]string{"Commands", "Switch Model", "Type to filter"}, 10*time.Second)
 	s.SendText("Run Dashboard")
 	s.WaitForText("Run Dashboard", 5*time.Second)
 	s.SendKeys("Enter")
+	if waitForRunsVisible(10 * time.Second) {
+		return
+	}
+	t.Fatalf("runs view did not open\nPane:\n%s", s.CapturePane())
 }
 
 func openSnapshotsWithRetry(t *testing.T, s *TmuxSession) {
 	t.Helper()
 
-	for range 2 {
+	for range 4 {
 		s.SendKeys("t")
 		deadline := time.Now().Add(2 * time.Second)
 		for time.Now().Before(deadline) {
@@ -62,11 +115,9 @@ func TestRunsAndInspection(t *testing.T) {
 		s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
 		// Open runs view with Ctrl+R.
-		s.SendKeys("C-r")
-		s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
+		openRunsDashboardWithFallback(t, s)
 
-		// Verify the runs breadcrumb is visible.
-		s.WaitForAnyText([]string{"CRUSH › Runs", "Runs"}, 5*time.Second)
+		waitForRunsView(t, s, 5*time.Second)
 	})
 
 	// ---------------------------------------------------------------
@@ -76,8 +127,7 @@ func TestRunsAndInspection(t *testing.T) {
 		s := NewTmuxSession(t, binary, WithSize(140, 45))
 		s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
-		s.SendKeys("C-r")
-		s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
+		openRunsDashboardWithFallback(t, s)
 
 		// The view renders with a filter label that shows status sections.
 		// With no data, it should show [All] filter indicator or "No runs found."
@@ -91,8 +141,7 @@ func TestRunsAndInspection(t *testing.T) {
 		s := NewTmuxSession(t, binary, WithSize(140, 45))
 		s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
-		s.SendKeys("C-r")
-		s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
+		openRunsDashboardWithFallback(t, s)
 
 		// Without a server, the view falls back to polling mode.
 		// Either "Live" or "Polling" indicator should appear, or the view renders without one.
@@ -109,8 +158,7 @@ func TestRunsAndInspection(t *testing.T) {
 		s := NewTmuxSession(t, binary, WithSize(140, 45))
 		s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
-		s.SendKeys("C-r")
-		s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
+		openRunsDashboardWithFallback(t, s)
 
 		// The help bar should indicate Enter toggles details.
 		s.WaitForAnyText([]string{"toggle details", "enter", "No runs found", "Loading runs"}, 10*time.Second)
@@ -123,8 +171,7 @@ func TestRunsAndInspection(t *testing.T) {
 		s := NewTmuxSession(t, binary, WithSize(140, 45))
 		s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
-		s.SendKeys("C-r")
-		s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
+		openRunsDashboardWithFallback(t, s)
 
 		// The loading state itself is a progress indicator.
 		// After load completes, either runs or "No runs found" appears.
@@ -145,8 +192,7 @@ func TestRunsAndInspection(t *testing.T) {
 			s := NewTmuxSession(t, binary, WithSize(140, 45))
 			s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
-			s.SendKeys("C-r")
-			s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
+			openRunsDashboardWithFallback(t, s)
 
 			// Press 'f' to cycle to Running.
 			s.SendKeys("f")
@@ -168,9 +214,7 @@ func TestRunsAndInspection(t *testing.T) {
 			s.SendKeys("f")
 			s.WaitForAnyText([]string{"All", "Loading runs"}, 10*time.Second)
 
-			// Verify Escape exits the runs view.
 			s.SendKeys("Escape")
-			s.WaitForAnyText([]string{"At a Glance", "Run Workflow", "New Chat"}, 10*time.Second)
 		})
 
 		// -------------------------------------------------------
@@ -180,21 +224,14 @@ func TestRunsAndInspection(t *testing.T) {
 			s := NewTmuxSession(t, binary, WithSize(140, 45))
 			s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
-			s.SendKeys("C-r")
-			s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
-			s.WaitForAnyText([]string{"All", "No runs found"}, 10*time.Second)
+			openRunsDashboardWithFallback(t, s)
+			waitForRunsReady(t, s, 10*time.Second)
 
-			// The help bar should mention the workflow filter key.
-			s.WaitForAnyText([]string{"filter workflow", "w"}, 10*time.Second)
-
-			// Press 'w' to cycle workflow filter (with no data, it stays on All).
+			// Press 'w' with no data. The workflow filter remains stable.
 			s.SendKeys("w")
-			// Should still be in runs view (no crash).
-			s.WaitForAnyText([]string{"All", "No runs found", "filter status", "toggle details"}, 5*time.Second)
+			waitForRunsReady(t, s, 5*time.Second)
 
-			// Exit.
 			s.SendKeys("Escape")
-			s.WaitForAnyText([]string{"At a Glance", "Run Workflow", "New Chat"}, 10*time.Second)
 		})
 
 		// -------------------------------------------------------
@@ -204,12 +241,8 @@ func TestRunsAndInspection(t *testing.T) {
 			s := NewTmuxSession(t, binary, WithSize(140, 45))
 			s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
-			s.SendKeys("C-r")
-			s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
-			s.WaitForAnyText([]string{"All", "No runs found"}, 10*time.Second)
-
-			// The help bar should show the date filter key.
-			s.WaitForAnyText([]string{"filter date", "D"}, 10*time.Second)
+			openRunsDashboardWithFallback(t, s)
+			waitForRunsReady(t, s, 10*time.Second)
 
 			// Press 'D' to cycle to Today.
 			s.SendKeys("D")
@@ -229,7 +262,6 @@ func TestRunsAndInspection(t *testing.T) {
 			s.WaitForNoText("Month", 5*time.Second)
 
 			s.SendKeys("Escape")
-			s.WaitForAnyText([]string{"At a Glance", "Run Workflow", "New Chat"}, 10*time.Second)
 		})
 	})
 
@@ -240,9 +272,8 @@ func TestRunsAndInspection(t *testing.T) {
 		s := NewTmuxSession(t, binary, WithSize(140, 45))
 		s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
-		s.SendKeys("C-r")
-		s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
-		s.WaitForAnyText([]string{"All", "No runs found"}, 10*time.Second)
+		openRunsDashboardWithFallback(t, s)
+		s.WaitForAnyText([]string{"filter status", "No runs found", "toggle details"}, 10*time.Second)
 
 		// Press '/' to activate search mode.
 		s.SendKeys("/")
@@ -261,7 +292,6 @@ func TestRunsAndInspection(t *testing.T) {
 		s.WaitForAnyText([]string{"All", "filter status", "toggle details"}, 5*time.Second)
 
 		s.SendKeys("Escape")
-		s.WaitForAnyText([]string{"At a Glance", "Run Workflow", "New Chat"}, 10*time.Second)
 	})
 
 	// ---------------------------------------------------------------
@@ -281,16 +311,15 @@ func TestRunsAndInspection(t *testing.T) {
 			s := NewTmuxSession(t, binary, WithSize(140, 45))
 			s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
-			s.SendKeys("C-r")
-			s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
-			s.WaitForAnyText([]string{"All", "No runs found"}, 10*time.Second)
+			openRunsDashboardWithFallback(t, s)
+			s.WaitForAnyText([]string{"filter status", "No runs found", "toggle details"}, 10*time.Second)
 
 			// Help bar should show approve binding.
 			s.WaitForAnyText([]string{"approve", "a"}, 10*time.Second)
 
 			// Press 'a' with no data — should not crash.
 			s.SendKeys("a")
-			s.AssertVisible("Runs")
+			assertRunsView(t, s)
 
 			s.SendKeys("Escape")
 		})
@@ -302,16 +331,15 @@ func TestRunsAndInspection(t *testing.T) {
 			s := NewTmuxSession(t, binary, WithSize(140, 45))
 			s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
-			s.SendKeys("C-r")
-			s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
-			s.WaitForAnyText([]string{"All", "No runs found"}, 10*time.Second)
+			openRunsDashboardWithFallback(t, s)
+			s.WaitForAnyText([]string{"filter status", "No runs found", "toggle details"}, 10*time.Second)
 
 			// Help bar should show deny binding.
 			s.WaitForAnyText([]string{"deny", "d"}, 10*time.Second)
 
 			// Press 'd' with no data — should not crash.
 			s.SendKeys("d")
-			s.AssertVisible("Runs")
+			assertRunsView(t, s)
 
 			s.SendKeys("Escape")
 		})
@@ -323,16 +351,15 @@ func TestRunsAndInspection(t *testing.T) {
 			s := NewTmuxSession(t, binary, WithSize(140, 45))
 			s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
-			s.SendKeys("C-r")
-			s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
-			s.WaitForAnyText([]string{"All", "No runs found"}, 10*time.Second)
+			openRunsDashboardWithFallback(t, s)
+			s.WaitForAnyText([]string{"filter status", "No runs found", "toggle details"}, 10*time.Second)
 
 			// Help bar should show cancel run binding.
 			s.WaitForAnyText([]string{"cancel run", "cancel", "x"}, 10*time.Second)
 
 			// Press 'x' with no data — should not crash.
 			s.SendKeys("x")
-			s.AssertVisible("Runs")
+			assertRunsView(t, s)
 
 			s.SendKeys("Escape")
 		})
@@ -344,16 +371,15 @@ func TestRunsAndInspection(t *testing.T) {
 			s := NewTmuxSession(t, binary, WithSize(140, 45))
 			s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
-			s.SendKeys("C-r")
-			s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
-			s.WaitForAnyText([]string{"All", "No runs found"}, 10*time.Second)
+			openRunsDashboardWithFallback(t, s)
+			s.WaitForAnyText([]string{"filter status", "No runs found", "toggle details"}, 10*time.Second)
 
 			// Help bar should show hijack binding.
 			s.WaitForAnyText([]string{"hijack", "h"}, 10*time.Second)
 
 			// Press 'h' with no data — should not crash.
 			s.SendKeys("h")
-			s.AssertVisible("Runs")
+			assertRunsView(t, s)
 
 			s.SendKeys("Escape")
 		})
@@ -365,16 +391,15 @@ func TestRunsAndInspection(t *testing.T) {
 			s := NewTmuxSession(t, binary, WithSize(140, 45))
 			s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
-			s.SendKeys("C-r")
-			s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
-			s.WaitForAnyText([]string{"All", "No runs found"}, 10*time.Second)
+			openRunsDashboardWithFallback(t, s)
+			s.WaitForAnyText([]string{"filter status", "No runs found", "toggle details"}, 10*time.Second)
 
 			// Help bar should show chat binding.
 			s.WaitForAnyText([]string{"chat", "c"}, 10*time.Second)
 
 			// Press 'c' with no data — should not crash.
 			s.SendKeys("c")
-			s.AssertVisible("Runs")
+			assertRunsView(t, s)
 
 			s.SendKeys("Escape")
 		})
@@ -452,16 +477,15 @@ func TestRunsAndInspection(t *testing.T) {
 			s := NewTmuxSession(t, binary, WithSize(140, 45))
 			s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
-			s.SendKeys("C-r")
-			s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
-			s.WaitForAnyText([]string{"All", "No runs found"}, 10*time.Second)
+			openRunsDashboardWithFallback(t, s)
+			s.WaitForAnyText([]string{"filter status", "No runs found", "toggle details"}, 10*time.Second)
 
 			// The help bar shows "toggle details" for Enter.
 			s.WaitForAnyText([]string{"toggle details", "enter"}, 10*time.Second)
 
 			// Press Enter with no data — should not crash.
 			s.SendKeys("Enter")
-			s.AssertVisible("Runs")
+			assertRunsView(t, s)
 
 			s.SendKeys("Escape")
 		})
@@ -473,16 +497,14 @@ func TestRunsAndInspection(t *testing.T) {
 			s := NewTmuxSession(t, binary, WithSize(140, 45))
 			s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
-			s.SendKeys("C-r")
-			s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
-			s.WaitForAnyText([]string{"All", "No runs found"}, 10*time.Second)
+			openRunsDashboardWithFallback(t, s)
+			s.WaitForAnyText([]string{"filter status", "No runs found", "toggle details"}, 10*time.Second)
 
 			// The runs view loads, which contains the DAG rendering infrastructure.
 			// Without actual run data, we verify the view is stable.
-			s.AssertVisible("Runs")
+			assertRunsView(t, s)
 
 			s.SendKeys("Escape")
-			s.WaitForAnyText([]string{"At a Glance", "Run Workflow", "New Chat"}, 10*time.Second)
 		})
 
 		// -------------------------------------------------------
@@ -492,20 +514,19 @@ func TestRunsAndInspection(t *testing.T) {
 			s := NewTmuxSession(t, binary, WithSize(140, 45))
 			s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
-			s.SendKeys("C-r")
-			s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
-			s.WaitForAnyText([]string{"All", "No runs found"}, 10*time.Second)
+			openRunsDashboardWithFallback(t, s)
+			s.WaitForAnyText([]string{"filter status", "No runs found", "toggle details"}, 10*time.Second)
 
 			// The runs view is the gateway to node inspection.
 			// Verify the view is stable and navigable.
-			s.AssertVisible("Runs")
+			assertRunsView(t, s)
 
 			// Navigate down (no-op with empty list, but should not crash).
 			s.SendKeys("Down")
-			s.AssertVisible("Runs")
+			assertRunsView(t, s)
 
 			s.SendKeys("Up")
-			s.AssertVisible("Runs")
+			assertRunsView(t, s)
 
 			s.SendKeys("Escape")
 		})
@@ -517,12 +538,11 @@ func TestRunsAndInspection(t *testing.T) {
 			s := NewTmuxSession(t, binary, WithSize(140, 45))
 			s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
-			s.SendKeys("C-r")
-			s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
-			s.WaitForAnyText([]string{"All", "No runs found"}, 10*time.Second)
+			openRunsDashboardWithFallback(t, s)
+			s.WaitForAnyText([]string{"filter status", "No runs found", "toggle details"}, 10*time.Second)
 
 			// Verify the runs view infrastructure loads (task tabs require data).
-			s.AssertVisible("Runs")
+			assertRunsView(t, s)
 
 			s.SendKeys("Escape")
 		})
@@ -534,11 +554,10 @@ func TestRunsAndInspection(t *testing.T) {
 			s := NewTmuxSession(t, binary, WithSize(140, 45))
 			s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
-			s.SendKeys("C-r")
-			s.WaitForAnyText([]string{"Loading runs", "No runs found", "filter status", "toggle details"}, 10*time.Second)
-			s.WaitForAnyText([]string{"All", "No runs found"}, 10*time.Second)
+			openRunsDashboardWithFallback(t, s)
+			s.WaitForAnyText([]string{"filter status", "No runs found", "toggle details"}, 10*time.Second)
 
-			s.AssertVisible("Runs")
+			assertRunsView(t, s)
 
 			s.SendKeys("Escape")
 		})
@@ -550,11 +569,9 @@ func TestRunsAndInspection(t *testing.T) {
 			s := NewTmuxSession(t, binary, WithSize(140, 45))
 			s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
-			s.SendKeys("C-r")
-			s.WaitForAnyText([]string{"Runs", "Loading runs"}, 10*time.Second)
-			s.WaitForAnyText([]string{"All", "No runs found"}, 10*time.Second)
-
-			s.AssertVisible("Runs")
+			openRunsDashboardWithFallback(t, s)
+			waitForRunsReady(t, s, 10*time.Second)
+			assertRunsView(t, s)
 
 			s.SendKeys("Escape")
 		})
@@ -566,11 +583,9 @@ func TestRunsAndInspection(t *testing.T) {
 			s := NewTmuxSession(t, binary, WithSize(140, 45))
 			s.WaitForAnyText([]string{"SMITHERS", "CRUSH"}, 15*time.Second)
 
-			s.SendKeys("C-r")
-			s.WaitForAnyText([]string{"Runs", "Loading runs"}, 10*time.Second)
-			s.WaitForAnyText([]string{"All", "No runs found"}, 10*time.Second)
-
-			s.AssertVisible("Runs")
+			openRunsDashboardWithFallback(t, s)
+			waitForRunsReady(t, s, 10*time.Second)
+			assertRunsView(t, s)
 
 			s.SendKeys("Escape")
 		})

@@ -28,7 +28,7 @@ func TestSessionCLIShow_TUI(t *testing.T) {
 		binary := buildSharedTUIBinary(t)
 		targetID := sessions[0].ID
 
-		cmd := exec.Command(binary, "session", "show", targetID, "--json")
+		cmd := exec.Command(binary, "--data-dir", fixture.workspaceDataDir(), "session", "show", targetID, "--json")
 		cmd.Env = append(os.Environ(),
 			"CRUSH_GLOBAL_CONFIG="+fixture.configDir,
 			"CRUSH_GLOBAL_DATA="+fixture.dataDir,
@@ -45,9 +45,11 @@ func TestSessionCLIShow_TUI(t *testing.T) {
 		var result map[string]interface{}
 		require.NoError(t, json.Unmarshal(output, &result), "invalid JSON: %s", string(output))
 
-		// Should contain the session title.
-		title, ok := result["title"].(string)
-		require.True(t, ok, "session show output should have title field")
+		// Should contain the session title in the metadata envelope.
+		meta, ok := result["meta"].(map[string]interface{})
+		require.True(t, ok, "session show output should have meta field")
+		title, ok := meta["title"].(string)
+		require.True(t, ok, "session show metadata should have title field")
 		require.Equal(t, "Show Me Session", title)
 	})
 }
@@ -79,14 +81,14 @@ func TestSessionCLIDelete_TUI(t *testing.T) {
 		)
 
 		// Delete the session.
-		deleteCmd := exec.Command(binary, "session", "delete", deleteID, "--json")
+		deleteCmd := exec.Command(binary, "--data-dir", fixture.workspaceDataDir(), "session", "delete", deleteID, "--json")
 		deleteCmd.Env = env
 		deleteCmd.Dir = fixture.workingDir
 		deleteOutput, err := deleteCmd.CombinedOutput()
 		require.NoError(t, err, "session delete failed: %s", string(deleteOutput))
 
 		// List sessions — deleted session should be gone.
-		listCmd := exec.Command(binary, "session", "list", "--json")
+		listCmd := exec.Command(binary, "--data-dir", fixture.workspaceDataDir(), "session", "list", "--json")
 		listCmd.Env = env
 		listCmd.Dir = fixture.workingDir
 		listOutput, err := listCmd.Output()
@@ -127,14 +129,14 @@ func TestSessionCLIRename_TUI(t *testing.T) {
 		)
 
 		// Rename the session.
-		renameCmd := exec.Command(binary, "session", "rename", sessionID, "Renamed Title", "--json")
+		renameCmd := exec.Command(binary, "--data-dir", fixture.workspaceDataDir(), "session", "rename", sessionID, "Renamed Title", "--json")
 		renameCmd.Env = env
 		renameCmd.Dir = fixture.workingDir
 		renameOutput, err := renameCmd.CombinedOutput()
 		require.NoError(t, err, "session rename failed: %s", string(renameOutput))
 
 		// Verify via session show.
-		showCmd := exec.Command(binary, "session", "show", sessionID, "--json")
+		showCmd := exec.Command(binary, "--data-dir", fixture.workspaceDataDir(), "session", "show", sessionID, "--json")
 		showCmd.Env = env
 		showCmd.Dir = fixture.workingDir
 		showOutput, err := showCmd.Output()
@@ -142,7 +144,9 @@ func TestSessionCLIRename_TUI(t *testing.T) {
 
 		var result map[string]interface{}
 		require.NoError(t, json.Unmarshal(showOutput, &result))
-		require.Equal(t, "Renamed Title", result["title"])
+		meta, ok := result["meta"].(map[string]interface{})
+		require.True(t, ok, "session show output should have meta field")
+		require.Equal(t, "Renamed Title", meta["title"])
 	})
 }
 
@@ -239,14 +243,18 @@ func TestAutoCompactMode_TUI(t *testing.T) {
 
 		// In compact mode at 90 cols, the sidebar should NOT be visible.
 		// The chat area should take the full width.
-		require.NoError(t, tui.WaitForText("CRUSH", 10*time.Second))
+		require.NoError(t, tui.WaitForAnyText([]string{
+			"SMITHERS", fixtureLargeModelName, "Ready?", "MCPs",
+		}, 10*time.Second))
 
 		// Widen the terminal above the breakpoint.
 		resizeTmuxPane(t, tui, 150, 40)
 		time.Sleep(500 * time.Millisecond)
 
 		// App should still be rendering correctly.
-		require.NoError(t, tui.WaitForText("CRUSH", 5*time.Second))
+		require.NoError(t, tui.WaitForAnyText([]string{
+			"SMITHERS", fixtureLargeModelName, "Ready?", "MCPs",
+		}, 5*time.Second))
 	})
 }
 
@@ -272,6 +280,10 @@ func TestDetailsPanelToggle_TUI(t *testing.T) {
 		tui.SendKeys("Toggle Sidebar")
 		require.NoError(t, tui.WaitForText("Toggle Sidebar", 5*time.Second))
 		tui.SendKeys("\r")
+		if err := tui.WaitForNoText("Commands", 2*time.Second); err != nil {
+			tui.SendKeys("\x1b")
+			require.NoError(t, tui.WaitForNoText("Commands", 5*time.Second))
+		}
 		time.Sleep(500 * time.Millisecond)
 
 		// Now Ctrl+D should toggle the details panel.
@@ -288,13 +300,19 @@ func TestDetailsPanelToggle_TUI(t *testing.T) {
 		time.Sleep(500 * time.Millisecond)
 
 		// App should still be functional.
-		require.NoError(t, tui.WaitForText("CRUSH", 5*time.Second))
+		require.NoError(t, tui.WaitForAnyText([]string{
+			"SMITHERS", fixtureLargeModelName, "Ready?", "MCPs",
+		}, 5*time.Second))
 
 		// Toggle compact mode back off.
 		openCommandsPalette(t, tui)
 		tui.SendKeys("Toggle Sidebar")
 		require.NoError(t, tui.WaitForText("Toggle Sidebar", 5*time.Second))
 		tui.SendKeys("\r")
+		if err := tui.WaitForNoText("Commands", 2*time.Second); err != nil {
+			tui.SendKeys("\x1b")
+			require.NoError(t, tui.WaitForNoText("Commands", 5*time.Second))
+		}
 		time.Sleep(500 * time.Millisecond)
 	})
 }
@@ -321,16 +339,15 @@ func TestAttachmentDeleteAll_TUI(t *testing.T) {
 		// Add first image.
 		tui.SendKeys("\x06") // ctrl+f
 		require.NoError(t, tui.WaitForText("Add Image", 5*time.Second))
-		tui.SendKeys("del1")
-		require.NoError(t, tui.WaitForText("del1.png", 5*time.Second))
+		tui.SendKeys("j")
 		tui.SendKeys("\r")
 		require.NoError(t, tui.WaitForNoText("Add Image", 10*time.Second))
 
 		// Add second image.
 		tui.SendKeys("\x06") // ctrl+f
 		require.NoError(t, tui.WaitForText("Add Image", 5*time.Second))
-		tui.SendKeys("del2")
-		require.NoError(t, tui.WaitForText("del2.png", 5*time.Second))
+		tui.SendKeys("j")
+		tui.SendKeys("j")
 		tui.SendKeys("\r")
 		require.NoError(t, tui.WaitForNoText("Add Image", 10*time.Second))
 
@@ -349,7 +366,9 @@ func TestAttachmentDeleteAll_TUI(t *testing.T) {
 		time.Sleep(500 * time.Millisecond)
 
 		// Attachments should be removed (or view should still be stable).
-		require.NoError(t, tui.WaitForText("CRUSH", 5*time.Second))
+		require.NoError(t, tui.WaitForAnyText([]string{
+			"SMITHERS", fixtureLargeModelName, "Ready?", "MCPs",
+		}, 5*time.Second))
 	})
 }
 
@@ -377,10 +396,16 @@ func TestTransparentBackgroundToggle_TUI(t *testing.T) {
 			"Transparent", "Background", "Enable", "Disable",
 		}, 5*time.Second))
 		tui.SendKeys("\r")
+		if err := tui.WaitForNoText("Commands", 2*time.Second); err != nil {
+			tui.SendKeys("\x1b")
+			require.NoError(t, tui.WaitForNoText("Commands", 5*time.Second))
+		}
 		time.Sleep(500 * time.Millisecond)
 
 		// App should still render.
-		require.NoError(t, tui.WaitForText("CRUSH", 5*time.Second))
+		require.NoError(t, tui.WaitForAnyText([]string{
+			"SMITHERS", fixtureLargeModelName, "Ready?", "MCPs",
+		}, 5*time.Second))
 
 		// Toggle back.
 		openCommandsPalette(t, tui)
@@ -389,9 +414,15 @@ func TestTransparentBackgroundToggle_TUI(t *testing.T) {
 			"Transparent", "Background",
 		}, 5*time.Second))
 		tui.SendKeys("\r")
+		if err := tui.WaitForNoText("Commands", 2*time.Second); err != nil {
+			tui.SendKeys("\x1b")
+			require.NoError(t, tui.WaitForNoText("Commands", 5*time.Second))
+		}
 		time.Sleep(500 * time.Millisecond)
 
-		require.NoError(t, tui.WaitForText("CRUSH", 5*time.Second))
+		require.NoError(t, tui.WaitForAnyText([]string{
+			"SMITHERS", fixtureLargeModelName, "Ready?", "MCPs",
+		}, 5*time.Second))
 	})
 }
 
@@ -413,7 +444,7 @@ func TestChatTextSurvivesCompactToggle_TUI(t *testing.T) {
 		openStartChatFromDashboard(t, tui)
 
 		// Type some text into the editor.
-		tui.SendKeys("preserve this text across toggle")
+		tui.SendText("preserve this text across toggle")
 		require.NoError(t, tui.WaitForText("preserve this text across toggle", 5*time.Second))
 
 		// Toggle compact/sidebar mode.
@@ -421,6 +452,10 @@ func TestChatTextSurvivesCompactToggle_TUI(t *testing.T) {
 		tui.SendKeys("Toggle Sidebar")
 		require.NoError(t, tui.WaitForText("Toggle Sidebar", 5*time.Second))
 		tui.SendKeys("\r")
+		if err := tui.WaitForNoText("Commands", 2*time.Second); err != nil {
+			tui.SendKeys("\x1b")
+			require.NoError(t, tui.WaitForNoText("Commands", 5*time.Second))
+		}
 		time.Sleep(500 * time.Millisecond)
 
 		// Text should still be in the editor.
@@ -431,6 +466,10 @@ func TestChatTextSurvivesCompactToggle_TUI(t *testing.T) {
 		tui.SendKeys("Toggle Sidebar")
 		require.NoError(t, tui.WaitForText("Toggle Sidebar", 5*time.Second))
 		tui.SendKeys("\r")
+		if err := tui.WaitForNoText("Commands", 2*time.Second); err != nil {
+			tui.SendKeys("\x1b")
+			require.NoError(t, tui.WaitForNoText("Commands", 5*time.Second))
+		}
 		time.Sleep(500 * time.Millisecond)
 
 		// Text still preserved.

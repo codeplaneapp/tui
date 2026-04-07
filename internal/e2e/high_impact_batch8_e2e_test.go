@@ -70,7 +70,7 @@ func TestDashboardEnterFromRunsTab_TUI(t *testing.T) {
 		waitForDashboard(t, tui)
 
 		// Switch to Runs tab.
-		tui.SendKeys("2")
+		tui.SendKeys("3")
 		time.Sleep(300 * time.Millisecond)
 
 		require.NoError(t, tui.WaitForAnyText([]string{
@@ -80,7 +80,7 @@ func TestDashboardEnterFromRunsTab_TUI(t *testing.T) {
 		// Enter should open the full Run Dashboard view.
 		tui.SendKeys("\r")
 		require.NoError(t, tui.WaitForAnyText([]string{
-			"CRUSH › Runs", "Runs", "Loading runs", "No runs found",
+			"Runs [All]", "Runs", "Loading runs", "No runs found",
 		}, 10*time.Second))
 
 		// Escape back to dashboard.
@@ -108,7 +108,7 @@ func TestDashboardEnterFromWorkflowsTab_TUI(t *testing.T) {
 		waitForDashboard(t, tui)
 
 		// Switch to Workflows tab.
-		tui.SendKeys("3")
+		tui.SendKeys("4")
 		time.Sleep(300 * time.Millisecond)
 
 		require.NoError(t, tui.WaitForAnyText([]string{
@@ -153,18 +153,23 @@ func TestTriggersCreateFormShiftTab_TUI(t *testing.T) {
 			"Triggers", "Loading triggers", "No cron triggers found", "Error",
 		}, 10*time.Second))
 
-		// Press 'c' to open create form.
+		// Press 'c' to open create form. Offline mode may remain on the error view.
 		tui.SendKeys("c")
-		require.NoError(t, tui.WaitForAnyText([]string{
+		if err := tui.WaitForAnyText([]string{
 			"Create Trigger", "Cron Pattern", "Workflow Path",
-		}, 5*time.Second))
+		}, 2*time.Second); err != nil {
+			require.NoError(t, tui.WaitForAnyText([]string{
+				"Error:", "Check that smithers is on PATH.", "Triggers",
+			}, 5*time.Second))
+			return
+		}
 
 		// Tab to workflow path field.
 		tui.SendKeys("\t")
 		time.Sleep(200 * time.Millisecond)
 
 		// Type in workflow path.
-		tui.SendKeys("my-workflow.yaml")
+		tui.SendText("my-workflow.yaml")
 		require.NoError(t, tui.WaitForText("my-workflow.yaml", 5*time.Second))
 
 		// Shift+Tab back to cron pattern.

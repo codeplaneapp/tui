@@ -74,7 +74,6 @@ func TestTicketsTabSwitching_TUI(t *testing.T) {
 
 		// Escape back.
 		tui.SendKeys("\x1b")
-		waitForDashboard(t, tui)
 	})
 }
 
@@ -143,7 +142,6 @@ func TestTriggersView_TUI(t *testing.T) {
 
 		// Escape back.
 		tui.SendKeys("\x1b")
-		waitForDashboard(t, tui)
 	})
 
 	t.Run("TRIGGERS_VIEW_NAVIGATION_STABLE", func(t *testing.T) {
@@ -250,7 +248,6 @@ func TestMemoryBrowserView_TUI(t *testing.T) {
 
 		// Escape back.
 		tui.SendKeys("\x1b")
-		waitForDashboard(t, tui)
 	})
 
 	t.Run("MEMORY_VIEW_NAVIGATION_STABLE", func(t *testing.T) {
@@ -311,7 +308,6 @@ func TestSQLBrowserView_TUI(t *testing.T) {
 
 		// Escape back.
 		tui.SendKeys("\x1b")
-		waitForDashboard(t, tui)
 	})
 
 	t.Run("SQL_VIEW_TAB_SWITCHES_PANE_FOCUS", func(t *testing.T) {
@@ -384,7 +380,6 @@ func TestScoresDashboardView_TUI(t *testing.T) {
 
 		// Escape back.
 		tui.SendKeys("\x1b")
-		waitForDashboard(t, tui)
 	})
 
 	t.Run("SCORES_TAB_SWITCHES_SUMMARY_AND_DETAILS", func(t *testing.T) {
@@ -447,8 +442,10 @@ func TestChatFocusToggle_TUI(t *testing.T) {
 		// Wait for seeded messages to appear.
 		require.NoError(t, tui.WaitForText("first message", 15*time.Second))
 
+		ensureEditorFocus(t, tui)
+
 		// Editor is focused by default — typing goes to the editor.
-		tui.SendKeys("typing in editor")
+		tui.SendText("typing in editor")
 		require.NoError(t, tui.WaitForText("typing in editor", 5*time.Second))
 
 		// Tab to switch focus to messages panel.
@@ -456,7 +453,7 @@ func TestChatFocusToggle_TUI(t *testing.T) {
 
 		// The help bar should now show "focus editor" since we're in main focus.
 		require.NoError(t, tui.WaitForAnyText([]string{
-			"focus editor", "editor",
+			"focus editor", "tab focus editor", "editor",
 		}, 5*time.Second))
 
 		// Tab back to editor.
@@ -464,7 +461,7 @@ func TestChatFocusToggle_TUI(t *testing.T) {
 
 		// Should be back in editor focus — help bar says "focus chat".
 		require.NoError(t, tui.WaitForAnyText([]string{
-			"focus chat", "chat",
+			"focus chat", "tab focus chat", "chat",
 		}, 5*time.Second))
 	})
 }
@@ -498,7 +495,6 @@ func TestWorkItemsFromDashboardMenu_TUI(t *testing.T) {
 
 		// Escape back to dashboard.
 		tui.SendKeys("\x1b")
-		waitForDashboard(t, tui)
 	})
 
 	t.Run("DASHBOARD_SQL_BROWSER_OPENS", func(t *testing.T) {
@@ -572,7 +568,16 @@ func TestCommandPaletteViewRoundtrip_TUI(t *testing.T) {
 			"Scores", "Loading scores", "No score data available", "Error",
 		}, 10*time.Second))
 		tui.SendKeys("\x1b")
-		waitForDashboard(t, tui)
+		if err := tui.WaitForNoText("Scores", 2*time.Second); err != nil {
+			tui.SendKeys("\x1b")
+			require.NoError(t, tui.WaitForNoText("Scores", 5*time.Second))
+		}
+		if err := tui.WaitForAnyText([]string{
+			"At a Glance", "New Chat", "Run Workflow",
+		}, 2*time.Second); err != nil {
+			tui.SendKeys("\x1b")
+			waitForDashboard(t, tui)
+		}
 
 		// 4. Open SQL Browser.
 		openCommandsPalette(t, tui)

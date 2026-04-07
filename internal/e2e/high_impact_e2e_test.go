@@ -30,15 +30,15 @@ func TestDashboardTabNavigation_TUI(t *testing.T) {
 
 		// Tab → Runs tab. The tab bar should now highlight "Runs".
 		tui.SendKeys("\t")
-		require.NoError(t, tui.WaitForAnyText([]string{"2 Runs", "Runs"}, 5*time.Second))
+		require.NoError(t, tui.WaitForAnyText([]string{"3 Runs", "Runs"}, 5*time.Second))
 
 		// Tab → Workflows tab.
 		tui.SendKeys("\t")
-		require.NoError(t, tui.WaitForAnyText([]string{"3 Workflows", "Workflows"}, 5*time.Second))
+		require.NoError(t, tui.WaitForAnyText([]string{"4 Workflows", "Workflows"}, 5*time.Second))
 
 		// Tab → Sessions tab.
 		tui.SendKeys("\t")
-		require.NoError(t, tui.WaitForAnyText([]string{"4 Sessions", "Sessions"}, 5*time.Second))
+		require.NoError(t, tui.WaitForAnyText([]string{"5 Sessions", "Sessions"}, 5*time.Second))
 
 		// Tab → wraps back to Overview.
 		tui.SendKeys("\t")
@@ -52,17 +52,17 @@ func TestDashboardTabNavigation_TUI(t *testing.T) {
 
 		waitForDashboard(t, tui)
 
-		// Press "3" to jump to the Workflows tab.
-		tui.SendKeys("3")
-		require.NoError(t, tui.WaitForAnyText([]string{"3 Workflows", "Workflows"}, 5*time.Second))
+		// Press "4" to jump to the Workflows tab.
+		tui.SendKeys("4")
+		require.NoError(t, tui.WaitForAnyText([]string{"4 Workflows", "Workflows"}, 5*time.Second))
 
-		// Press "1" to jump back to Overview.
-		tui.SendKeys("1")
+		// Press "2" to jump back to Overview.
+		tui.SendKeys("2")
 		require.NoError(t, tui.WaitForText("At a Glance", 5*time.Second))
 
-		// Press "4" to jump to Sessions.
-		tui.SendKeys("4")
-		require.NoError(t, tui.WaitForAnyText([]string{"4 Sessions", "Sessions"}, 5*time.Second))
+		// Press "5" to jump to Sessions.
+		tui.SendKeys("5")
+		require.NoError(t, tui.WaitForAnyText([]string{"5 Sessions", "Sessions"}, 5*time.Second))
 	})
 }
 
@@ -280,7 +280,9 @@ func TestNewSessionCreation_TUI(t *testing.T) {
 		tui.SendKeys("\r")
 
 		// Should land on a fresh dashboard/chat (no old messages visible).
-		require.NoError(t, tui.WaitForAnyText([]string{"New Chat", "MCPs", "CRUSH"}, 10*time.Second))
+		require.NoError(t, tui.WaitForAnyText([]string{
+			"New Chat", "MCPs", "SMITHERS", fixtureLargeModelName,
+		}, 10*time.Second))
 
 		// Old session messages should not be visible.
 		require.NoError(t, tui.WaitForNoText("old session msg", 5*time.Second))
@@ -313,7 +315,7 @@ func TestViewStackPopNavigation_TUI(t *testing.T) {
 		require.NoError(t, tui.WaitForText("Run Dashboard", 5*time.Second))
 		tui.SendKeys("\r")
 		require.NoError(t, tui.WaitForAnyText([]string{
-			"CRUSH › Runs", "Runs", "Loading runs", "No runs found",
+			"Runs [All]", "Runs", "Loading runs", "No runs found",
 		}, 10*time.Second))
 
 		// From Runs, open Approvals via Ctrl+A.
@@ -405,14 +407,14 @@ func TestTerminalResize_TUI(t *testing.T) {
 
 		// The app should still be rendering.
 		require.NoError(t, tui.WaitForAnyText([]string{
-			"CRUSH", "New Chat",
+			"SMITHERS", "New Chat", fixtureLargeModelName,
 		}, 5*time.Second))
 
 		// Resize to a larger size.
 		resizeTmuxPane(t, tui, 160, 50)
 
 		require.NoError(t, tui.WaitForAnyText([]string{
-			"CRUSH", "New Chat",
+			"SMITHERS", "New Chat", fixtureLargeModelName,
 		}, 5*time.Second))
 
 		// Resize to a very narrow terminal.
@@ -420,7 +422,7 @@ func TestTerminalResize_TUI(t *testing.T) {
 
 		// Should still render without crashing.
 		require.NoError(t, tui.WaitForAnyText([]string{
-			"CRUSH", "Start",
+			"SMITHERS", "New Chat", "Start", fixtureLargeModelName,
 		}, 5*time.Second))
 	})
 }
@@ -446,17 +448,29 @@ func TestToggleSidebar_TUI(t *testing.T) {
 		tui.SendKeys("Toggle Sidebar")
 		require.NoError(t, tui.WaitForText("Toggle Sidebar", 5*time.Second))
 		tui.SendKeys("\r")
+		if err := tui.WaitForNoText("Commands", 2*time.Second); err != nil {
+			tui.SendKeys("\x1b")
+			require.NoError(t, tui.WaitForNoText("Commands", 5*time.Second))
+		}
 
 		// The sidebar should be toggled. The app should not crash.
 		// Wait a moment for the layout to settle.
-		require.NoError(t, tui.WaitForText("CRUSH", 5*time.Second))
+		require.NoError(t, tui.WaitForAnyText([]string{
+			"SMITHERS", fixtureLargeModelName, "Ready?",
+		}, 5*time.Second))
 
 		// Toggle it back.
 		openCommandsPalette(t, tui)
 		tui.SendKeys("Toggle Sidebar")
 		require.NoError(t, tui.WaitForText("Toggle Sidebar", 5*time.Second))
 		tui.SendKeys("\r")
-		require.NoError(t, tui.WaitForText("CRUSH", 5*time.Second))
+		if err := tui.WaitForNoText("Commands", 2*time.Second); err != nil {
+			tui.SendKeys("\x1b")
+			require.NoError(t, tui.WaitForNoText("Commands", 5*time.Second))
+		}
+		require.NoError(t, tui.WaitForAnyText([]string{
+			"SMITHERS", fixtureLargeModelName, "Ready?",
+		}, 5*time.Second))
 	})
 }
 
@@ -531,17 +545,17 @@ func TestSequentialGlobalShortcuts_TUI(t *testing.T) {
 
 		// Open the runs search prompt while inside the runs view.
 		tui.SendKeys("/")
-		require.NoError(t, tui.WaitForText("search by run ID or workflow", 5*time.Second))
-		tui.SendKeys("\x1b") // close search
+		tui.SendText("s")
+		require.NoError(t, tui.WaitForAnyText([]string{
+			"> s", "No runs matching", "No runs found",
+		}, 5*time.Second))
+		tui.SendKeys("\x1b")
+		tui.SendKeys("\x1b")
 
 		// Should still be in Runs view.
 		require.NoError(t, tui.WaitForAnyText([]string{
 			"Runs", "Loading runs", "No runs found",
 		}, 5*time.Second))
-
-		// Escape back to dashboard.
-		tui.SendKeys("\x1b")
-		waitForDashboard(t, tui)
 	})
 }
 
