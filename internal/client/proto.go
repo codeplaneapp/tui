@@ -11,50 +11,19 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/charmbracelet/crush/internal/config"
 	"github.com/charmbracelet/crush/internal/message"
-	"github.com/charmbracelet/crush/internal/observability"
 	"github.com/charmbracelet/crush/internal/proto"
 	"github.com/charmbracelet/crush/internal/pubsub"
 	"github.com/charmbracelet/x/powernap/pkg/lsp/protocol"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
 )
 
-const (
-	workspaceEventsClientStream       = "workspace_events_client"
-	workspaceEventsInitialRetryDelay  = 250 * time.Millisecond
-	workspaceEventsMaximumRetryDelay  = 5 * time.Second
-	workspaceEventsDefaultRetryHint   = time.Second
-	workspaceEventsScannerBufferBytes = 1 * 1024 * 1024
-)
-
-var errWorkspaceEventStreamClosed = errors.New("workspace event stream closed")
-
-type workspaceEventsStatusError struct {
-	statusCode int
-}
-
-func (e workspaceEventsStatusError) Error() string {
-	return fmt.Sprintf("failed to subscribe to events: status code %d", e.statusCode)
-}
-
-func (e workspaceEventsStatusError) reason() string {
-	switch e.statusCode {
-	case http.StatusUnauthorized:
-		return "unauthorized"
-	case http.StatusForbidden:
-		return "forbidden"
-	case http.StatusNotFound:
-		return "not_found"
-	default:
-		return "status_error"
-	}
-}
+// sseBufferSize is the buffer size for the SSE stream reader.
+// Large assistant/tool messages can exceed bufio's default 4 KiB buffer,
+// so we use 16 MiB to read them in a single pass without excessive copies.
+const sseBufferSize = 16 << 20 // 16 MiB
 
 // ListWorkspaces retrieves all workspaces from the server.
 func (c *Client) ListWorkspaces(ctx context.Context) ([]proto.Workspace, error) {
@@ -122,105 +91,7 @@ func (c *Client) DeleteWorkspace(ctx context.Context, id string) error {
 
 // SubscribeEvents subscribes to server-sent events for a workspace.
 func (c *Client) SubscribeEvents(ctx context.Context, id string) (<-chan any, error) {
-	ctx = observability.WithWorkspaceID(ctx, id)
-	ctx = observability.WithComponent(ctx, workspaceEventsClientStream)
-	ctx, span := observability.StartSpan(ctx, "client.workspace_events.subscribe",
-		attribute.String("codeplane.workspace_id", id),
-	)
-
-	rsp, retryDelay, err := c.openWorkspaceEventsStream(ctx, id)
-	if err != nil {
-		observability.RecordError(span, err)
-		span.End()
-		return nil, err
-	}
-
 	events := make(chan any, 100)
-	go c.consumeWorkspaceEvents(ctx, span, id, events, rsp, retryDelay)
-	return events, nil
-}
-
-func (c *Client) consumeWorkspaceEvents(ctx context.Context, span trace.Span, id string, events chan any, rsp *http.Response, retryDelay time.Duration) {
-	defer close(events)
-	defer span.End()
-
-	result := "ok"
-	reconnects := 0
-	defer func() {
-		span.SetAttributes(
-			attribute.String("workspace.events.result", result),
-			attribute.Int("workspace.events.reconnects", reconnects),
-		)
-	}()
-
-	delay := normalizeWorkspaceRetryDelay(retryDelay)
-
-	for {
-		nextRetry, err := c.readWorkspaceEventsStream(ctx, id, rsp, events)
-		if err == nil {
-			return
-		}
-		if ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			result = "canceled"
-			return
-		}
-
-		reason := workspaceReconnectReason(err)
-		var statusErr workspaceEventsStatusError
-		if errors.As(err, &statusErr) {
-			result = reason
-			observability.RecordError(span, err)
-			return
-		}
-
-		result = "reconnecting"
-		if nextRetry > 0 {
-			delay = normalizeWorkspaceRetryDelay(nextRetry)
-		}
-		reconnects++
-		observability.RecordRetry(workspaceEventsClientStream, "http", reason, delay)
-		observability.LogAttrs(ctx, slog.LevelWarn, "Workspace event stream disconnected",
-			slog.String("workspace_id", id),
-			slog.String("reason", reason),
-			slog.Duration("retry_in", delay),
-		)
-
-		if !waitForWorkspaceReconnect(ctx, delay) {
-			result = "canceled"
-			return
-		}
-
-		for {
-			var openErr error
-			rsp, retryDelay, openErr = c.openWorkspaceEventsStream(ctx, id)
-			if openErr == nil {
-				delay = normalizeWorkspaceRetryDelay(retryDelay)
-				break
-			}
-
-			reason = workspaceReconnectReason(openErr)
-			if errors.As(openErr, &statusErr) {
-				result = reason
-				observability.RecordError(span, openErr)
-				return
-			}
-
-			observability.RecordRetry(workspaceEventsClientStream, "http", reason, delay)
-			observability.LogAttrs(ctx, slog.LevelWarn, "Workspace event stream reconnect failed",
-				slog.String("workspace_id", id),
-				slog.String("reason", reason),
-				slog.Duration("retry_in", delay),
-			)
-			if !waitForWorkspaceReconnect(ctx, delay) {
-				result = "canceled"
-				return
-			}
-			delay = nextWorkspaceRetryDelay(delay)
-		}
-	}
-}
-
-func (c *Client) openWorkspaceEventsStream(ctx context.Context, id string) (*http.Response, time.Duration, error) {
 	//nolint:bodyclose
 	rsp, err := c.get(ctx, fmt.Sprintf("/workspaces/%s/events", id), nil, http.Header{
 		"Accept":        []string{"text/event-stream"},
@@ -228,240 +99,103 @@ func (c *Client) openWorkspaceEventsStream(ctx context.Context, id string) (*htt
 		"Connection":    []string{"keep-alive"},
 	})
 	if err != nil {
-		return nil, workspaceEventsDefaultRetryHint, fmt.Errorf("failed to subscribe to events: %w", err)
+		return nil, fmt.Errorf("failed to subscribe to events: %w", err)
 	}
 
 	if rsp.StatusCode != http.StatusOK {
-		_ = rsp.Body.Close()
-		return nil, workspaceEventsDefaultRetryHint, workspaceEventsStatusError{statusCode: rsp.StatusCode}
+		rsp.Body.Close()
+		return nil, fmt.Errorf("failed to subscribe to events: status code %d", rsp.StatusCode)
 	}
 
-	return rsp, workspaceEventsDefaultRetryHint, nil
-}
-
-func (c *Client) readWorkspaceEventsStream(ctx context.Context, id string, rsp *http.Response, events chan<- any) (time.Duration, error) {
-	streamCtx := observability.WithComponent(ctx, workspaceEventsClientStream)
-	streamCtx, span := observability.StartSpan(streamCtx, "client.workspace_events.stream",
-		attribute.String("codeplane.workspace_id", id),
-	)
-	started := time.Now()
-	result := "ok"
-	retryDelay := workspaceEventsDefaultRetryHint
-	observability.RecordSSEConnection(workspaceEventsClientStream, 1)
-	defer func() {
-		_ = rsp.Body.Close()
-		observability.RecordSSEConnection(workspaceEventsClientStream, -1)
-		observability.RecordSSEStreamDuration(workspaceEventsClientStream, result, time.Since(started))
-		span.SetAttributes(attribute.String("workspace.events.stream.result", result))
-		span.End()
+	go func() {
+		defer rsp.Body.Close()
+		readSSEStream(ctx, rsp.Body, events)
 	}()
 
-	scr := bufio.NewScanner(rsp.Body)
-	scr.Buffer(make([]byte, 0, 64*1024), workspaceEventsScannerBufferBytes)
+	return events, nil
+}
 
-	var data strings.Builder
-	dispatch := func() error {
-		if data.Len() == 0 {
-			return nil
+// readSSEStream reads SSE lines from r, parses them, and sends typed events
+// to the events channel.  It returns when r is exhausted (io.EOF) or ctx is
+// cancelled.
+func readSSEStream(ctx context.Context, r io.Reader, events chan any) {
+	scr := bufio.NewReaderSize(r, sseBufferSize)
+	for {
+		line, err := scr.ReadBytes('\n')
+		if errors.Is(err, io.EOF) {
+			break
 		}
-
-		ev, eventType, err := decodeWorkspaceEvent(data.String())
-		data.Reset()
 		if err != nil {
-			observability.RecordSSEEvent(workspaceEventsClientStream, "decode_error")
-			observability.LogAttrs(streamCtx, slog.LevelWarn, "Failed to decode workspace event",
-				slog.Any("error", err),
-			)
-			return nil
+			slog.Error("Reading from events stream", "error", err)
+			time.Sleep(time.Second * 2)
+			continue
 		}
-		observability.RecordSSEEvent(workspaceEventsClientStream, eventType)
-		return sendEvent(streamCtx, events, ev)
-	}
-
-	for scr.Scan() {
-		if ctx.Err() != nil {
-			result = "canceled"
-			return retryDelay, ctx.Err()
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
+			continue
 		}
 
-		line := scr.Text()
-		switch {
-		case line == "":
-			if err := dispatch(); err != nil {
-				result = "canceled"
-				return retryDelay, err
-			}
-		case strings.HasPrefix(line, ":"):
-			observability.RecordSSEEvent(workspaceEventsClientStream, "heartbeat")
-		case strings.HasPrefix(line, "retry:"):
-			if parsed, ok := parseSSERetryHint(line); ok {
-				retryDelay = parsed
-				observability.RecordSSEEvent(workspaceEventsClientStream, "retry_hint")
-			}
-		case strings.HasPrefix(line, "data:"):
-			if data.Len() > 0 {
-				data.WriteByte('\n')
-			}
-			data.WriteString(strings.TrimSpace(strings.TrimPrefix(line, "data:")))
+		data, ok := bytes.CutPrefix(line, []byte("data:"))
+		if !ok {
+			slog.Warn("Invalid event format", "line", string(line))
+			continue
 		}
-	}
 
-	if ctx.Err() != nil {
-		result = "canceled"
-		return retryDelay, ctx.Err()
-	}
-	if err := dispatch(); err != nil {
-		result = "canceled"
-		return retryDelay, err
-	}
-	if err := scr.Err(); err != nil {
-		result = "read_error"
-		observability.RecordSSEEvent(workspaceEventsClientStream, "read_error")
-		observability.RecordError(span, err)
-		return retryDelay, err
-	}
+		data = bytes.TrimSpace(data)
 
-	result = "server_disconnect"
-	observability.RecordSSEEvent(workspaceEventsClientStream, "server_disconnect")
-	return retryDelay, errWorkspaceEventStreamClosed
-}
+		var p pubsub.Payload
+		if err := json.Unmarshal(data, &p); err != nil {
+			slog.Error("Unmarshaling event envelope", "error", err)
+			continue
+		}
 
-func decodeWorkspaceEvent(data string) (any, string, error) {
-	var p pubsub.Payload
-	if err := json.Unmarshal([]byte(strings.TrimSpace(data)), &p); err != nil {
-		return nil, "", fmt.Errorf("unmarshal event envelope: %w", err)
-	}
-
-	switch p.Type {
-	case pubsub.PayloadTypeLSPEvent:
-		var e pubsub.Event[proto.LSPEvent]
-		if err := json.Unmarshal(p.Payload, &e); err != nil {
-			return nil, "", err
+		switch p.Type {
+		case pubsub.PayloadTypeLSPEvent:
+			var e pubsub.Event[proto.LSPEvent]
+			_ = json.Unmarshal(p.Payload, &e)
+			sendEvent(ctx, events, e)
+		case pubsub.PayloadTypeMCPEvent:
+			var e pubsub.Event[proto.MCPEvent]
+			_ = json.Unmarshal(p.Payload, &e)
+			sendEvent(ctx, events, e)
+		case pubsub.PayloadTypePermissionRequest:
+			var e pubsub.Event[proto.PermissionRequest]
+			_ = json.Unmarshal(p.Payload, &e)
+			sendEvent(ctx, events, e)
+		case pubsub.PayloadTypePermissionNotification:
+			var e pubsub.Event[proto.PermissionNotification]
+			_ = json.Unmarshal(p.Payload, &e)
+			sendEvent(ctx, events, e)
+		case pubsub.PayloadTypeMessage:
+			var e pubsub.Event[proto.Message]
+			_ = json.Unmarshal(p.Payload, &e)
+			sendEvent(ctx, events, e)
+		case pubsub.PayloadTypeSession:
+			var e pubsub.Event[proto.Session]
+			_ = json.Unmarshal(p.Payload, &e)
+			sendEvent(ctx, events, e)
+		case pubsub.PayloadTypeFile:
+			var e pubsub.Event[proto.File]
+			_ = json.Unmarshal(p.Payload, &e)
+			sendEvent(ctx, events, e)
+		case pubsub.PayloadTypeAgentEvent:
+			var e pubsub.Event[proto.AgentEvent]
+			_ = json.Unmarshal(p.Payload, &e)
+			sendEvent(ctx, events, e)
+		default:
+			slog.Warn("Unknown event type", "type", p.Type)
+			continue
 		}
-		return e, string(p.Type), nil
-	case pubsub.PayloadTypeMCPEvent:
-		var e pubsub.Event[proto.MCPEvent]
-		if err := json.Unmarshal(p.Payload, &e); err != nil {
-			return nil, "", err
-		}
-		return e, string(p.Type), nil
-	case pubsub.PayloadTypePermissionRequest:
-		var e pubsub.Event[proto.PermissionRequest]
-		if err := json.Unmarshal(p.Payload, &e); err != nil {
-			return nil, "", err
-		}
-		return e, string(p.Type), nil
-	case pubsub.PayloadTypePermissionNotification:
-		var e pubsub.Event[proto.PermissionNotification]
-		if err := json.Unmarshal(p.Payload, &e); err != nil {
-			return nil, "", err
-		}
-		return e, string(p.Type), nil
-	case pubsub.PayloadTypeMessage:
-		var e pubsub.Event[proto.Message]
-		if err := json.Unmarshal(p.Payload, &e); err != nil {
-			return nil, "", err
-		}
-		return e, string(p.Type), nil
-	case pubsub.PayloadTypeSession:
-		var e pubsub.Event[proto.Session]
-		if err := json.Unmarshal(p.Payload, &e); err != nil {
-			return nil, "", err
-		}
-		return e, string(p.Type), nil
-	case pubsub.PayloadTypeFile:
-		var e pubsub.Event[proto.File]
-		if err := json.Unmarshal(p.Payload, &e); err != nil {
-			return nil, "", err
-		}
-		return e, string(p.Type), nil
-	case pubsub.PayloadTypeAgentEvent:
-		var e pubsub.Event[proto.AgentEvent]
-		if err := json.Unmarshal(p.Payload, &e); err != nil {
-			return nil, "", err
-		}
-		return e, string(p.Type), nil
-	default:
-		return nil, "unknown", fmt.Errorf("unknown event type %q", p.Type)
 	}
 }
 
-func parseSSERetryHint(line string) (time.Duration, bool) {
-	value := strings.TrimSpace(strings.TrimPrefix(line, "retry:"))
-	if value == "" {
-		return 0, false
-	}
-
-	millis, err := strconv.Atoi(value)
-	if err != nil || millis <= 0 {
-		return 0, false
-	}
-	return normalizeWorkspaceRetryDelay(time.Duration(millis) * time.Millisecond), true
-}
-
-func normalizeWorkspaceRetryDelay(delay time.Duration) time.Duration {
-	switch {
-	case delay <= 0:
-		return workspaceEventsDefaultRetryHint
-	case delay < workspaceEventsInitialRetryDelay:
-		return workspaceEventsInitialRetryDelay
-	case delay > workspaceEventsMaximumRetryDelay:
-		return workspaceEventsMaximumRetryDelay
-	default:
-		return delay
-	}
-}
-
-func nextWorkspaceRetryDelay(delay time.Duration) time.Duration {
-	if delay <= 0 {
-		return workspaceEventsInitialRetryDelay
-	}
-	delay *= 2
-	if delay > workspaceEventsMaximumRetryDelay {
-		return workspaceEventsMaximumRetryDelay
-	}
-	return delay
-}
-
-func waitForWorkspaceReconnect(ctx context.Context, delay time.Duration) bool {
-	timer := time.NewTimer(delay)
-	defer timer.Stop()
-
-	select {
-	case <-ctx.Done():
-		return false
-	case <-timer.C:
-		return true
-	}
-}
-
-func workspaceReconnectReason(err error) string {
-	if err == nil {
-		return "unknown"
-	}
-
-	var statusErr workspaceEventsStatusError
-	if errors.As(err, &statusErr) {
-		return statusErr.reason()
-	}
-	if errors.Is(err, errWorkspaceEventStreamClosed) || errors.Is(err, io.EOF) {
-		return "stream_closed"
-	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return "canceled"
-	}
-	return "transport_error"
-}
-
-func sendEvent(ctx context.Context, evc chan<- any, ev any) error {
-	observability.LogAttrs(ctx, slog.LevelDebug, "Workspace event received",
-		slog.String("event_type", fmt.Sprintf("%T", ev)),
-	)
+func sendEvent(ctx context.Context, evc chan any, ev any) {
+	slog.Info("Event received", "event", fmt.Sprintf("%T %+v", ev, ev))
 	select {
 	case evc <- ev:
-		return nil
 	case <-ctx.Done():
-		return ctx.Err()
+		close(evc)
+		return
 	}
 }
 

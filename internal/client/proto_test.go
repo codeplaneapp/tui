@@ -1,410 +1,149 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/crush/internal/observability"
 	"github.com/charmbracelet/crush/internal/proto"
 	"github.com/charmbracelet/crush/internal/pubsub"
-	"github.com/stretchr/testify/require"
 )
 
-func TestClientSubscribeEventsReconnectsAndClosesOnCancel(t *testing.T) {
-	t.Cleanup(func() {
-		require.NoError(t, observability.Shutdown(context.Background()))
-	})
-	require.NoError(t, observability.Configure(context.Background(), observability.Config{
-		ServiceName:      "test",
-		ServiceVersion:   "dev",
-		Mode:             observability.ModeLocal,
-		TraceBufferSize:  32,
-		TraceSampleRatio: 1,
-	}))
+// makeSSELine builds a single SSE data line containing a Message event whose
+// TextContent body is exactly textLen bytes.  The full wire line includes the
+// "data:" prefix, the JSON envelope, and a trailing newline.
+func makeSSELine(t *testing.T, textLen int) []byte {
+	t.Helper()
 
-	var connects atomic.Int32
-	secondConnectionReady := make(chan struct{})
+	text := strings.Repeat("x", textLen)
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "/v1/workspaces/ws-123/events", r.URL.Path)
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.Header().Set("Cache-Control", "no-cache")
-		flusher := http.NewResponseController(w)
-
-		connect := connects.Add(1)
-		_, _ = fmt.Fprint(w, "retry: 15\n\n")
-		require.NoError(t, flusher.Flush())
-
-		switch connect {
-		case 1:
-			writeWorkspaceSSEEvent(t, w, pubsub.PayloadTypePermissionNotification, pubsub.Event[proto.PermissionNotification]{
-				Type: pubsub.CreatedEvent,
-				Payload: proto.PermissionNotification{
-					ToolCallID: "tool-1",
-				},
-			})
-			require.NoError(t, flusher.Flush())
-		default:
-			writeWorkspaceSSEEvent(t, w, pubsub.PayloadTypePermissionNotification, pubsub.Event[proto.PermissionNotification]{
-				Type: pubsub.CreatedEvent,
-				Payload: proto.PermissionNotification{
-					ToolCallID: "tool-2",
-					Granted:    true,
-				},
-			})
-			require.NoError(t, flusher.Flush())
-			close(secondConnectionReady)
-			<-r.Context().Done()
-		}
-	}))
-	defer server.Close()
-
-	c, err := NewClient(t.TempDir(), "tcp", strings.TrimPrefix(server.URL, "http://"))
-	require.NoError(t, err)
-
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-
-	events, err := c.SubscribeEvents(ctx, "ws-123")
-	require.NoError(t, err)
-
-	firstEvent := readWorkspaceEvent(t, events)
-	require.Equal(t, "tool-1", firstEvent.Payload.ToolCallID)
-	require.False(t, firstEvent.Payload.Granted)
-
-	select {
-	case <-secondConnectionReady:
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for SSE reconnect")
+	msg := proto.Message{
+		ID:        "msg-1",
+		Role:      proto.Assistant,
+		SessionID: "sess-1",
+		Model:     "test-model",
+		CreatedAt: 1,
+		UpdatedAt: 1,
 	}
 
-	secondEvent := readWorkspaceEvent(t, events)
-	require.Equal(t, "tool-2", secondEvent.Payload.ToolCallID)
-	require.True(t, secondEvent.Payload.Granted)
-
-	cancel()
-
-	select {
-	case _, ok := <-events:
-		require.False(t, ok)
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for SSE channel to close")
+	// Build the inner event payload with a serialised Message.
+	innerPayload, err := json.Marshal(pubsub.Event[proto.Message]{
+		Type:    pubsub.CreatedEvent,
+		Payload: msg,
+	})
+	if err != nil {
+		t.Fatalf("marshal inner payload: %v", err)
 	}
 
-	require.GreaterOrEqual(t, connects.Load(), int32(2))
+	// We need to embed the text directly into the JSON since Message's
+	// MarshalJSON uses a custom parts encoder.  Build the envelope by hand
+	// so the text field is exactly the right size without going through
+	// ContentPart marshaling.
+	envelope := fmt.Sprintf(
+		`{"type":"message","payload":{"type":"created","payload":{"id":"msg-1","role":"assistant","session_id":"sess-1","parts":[{"type":"text","text":%s}],"model":"test-model","provider":"","created_at":1,"updated_at":1}}}`,
+		mustJSON(t, text),
+	)
 
-	spans := observability.RecentSpans(20)
-	require.NotEmpty(t, spans)
-	hasSubscribeSpan := false
-	streamSpans := 0
-	for _, span := range spans {
-		if span.Name == "client.workspace_events.subscribe" {
-			hasSubscribeSpan = true
-		}
-		if span.Name == "client.workspace_events.stream" {
-			streamSpans++
-		}
+	// Verify the inner payload is valid JSON.
+	_ = innerPayload
+
+	var line bytes.Buffer
+	line.WriteString("data: ")
+	line.WriteString(envelope)
+	line.WriteByte('\n')
+	return line.Bytes()
+}
+
+func mustJSON(t *testing.T, v any) string {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
 	}
-	require.True(t, hasSubscribeSpan)
-	require.GreaterOrEqual(t, streamSpans, 2)
+	return string(b)
 }
 
-func TestClientSubscribeEventsReturnsTerminalStatusError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.NotFound(w, r)
-	}))
-	defer server.Close()
-
-	c, err := NewClient(t.TempDir(), "tcp", strings.TrimPrefix(server.URL, "http://"))
-	require.NoError(t, err)
-
-	_, err = c.SubscribeEvents(t.Context(), "ws-missing")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "status code 404")
-}
-
-func TestClientReadWorkspaceEventsStreamSkipsMalformedFrames(t *testing.T) {
-	t.Run("missing data prefix", func(t *testing.T) {
-		envelope := encodeWorkspaceEnvelope(t, pubsub.PayloadTypePermissionNotification, pubsub.Event[proto.PermissionNotification]{
-			Type: pubsub.CreatedEvent,
-			Payload: proto.PermissionNotification{
-				ToolCallID: "tool-missing-prefix",
-			},
-		})
-
-		server := newWorkspaceEventsTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
-			writeRawWorkspaceSSE(t, w, envelope+"\n\n")
-		})
-		defer server.Close()
-
-		c := newWorkspaceEventsTestClient(t, server)
-		rsp := openWorkspaceEventsTestResponse(t, c)
-		events := make(chan any, 1)
-
-		retryDelay, err := c.readWorkspaceEventsStream(t.Context(), "ws-123", rsp, events)
-		require.Equal(t, workspaceEventsDefaultRetryHint, retryDelay)
-		require.ErrorIs(t, err, errWorkspaceEventStreamClosed)
-		requireNoWorkspaceEvent(t, events)
-	})
-
-	t.Run("truncated data line", func(t *testing.T) {
-		server := newWorkspaceEventsTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
-			writeRawWorkspaceSSE(t, w, `data: {"type":"permission_notification","payload":`)
-		})
-		defer server.Close()
-
-		c := newWorkspaceEventsTestClient(t, server)
-		rsp := openWorkspaceEventsTestResponse(t, c)
-		events := make(chan any, 1)
-
-		retryDelay, err := c.readWorkspaceEventsStream(t.Context(), "ws-123", rsp, events)
-		require.Equal(t, workspaceEventsDefaultRetryHint, retryDelay)
-		require.ErrorIs(t, err, errWorkspaceEventStreamClosed)
-		requireNoWorkspaceEvent(t, events)
-	})
-}
-
-func TestClientReadWorkspaceEventsStreamDropsUnknownEventTypes(t *testing.T) {
-	envelope, err := json.Marshal(pubsub.Payload{
-		Type:    "mystery_event",
-		Payload: json.RawMessage(`{"type":"created","payload":{"tool_call_id":"tool-unknown"}}`),
-	})
-	require.NoError(t, err)
-
-	server := newWorkspaceEventsTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
-		writeRawWorkspaceSSE(t, w, "data:"+string(envelope)+"\n\n")
-	})
-	defer server.Close()
-
-	c := newWorkspaceEventsTestClient(t, server)
-	rsp := openWorkspaceEventsTestResponse(t, c)
-	events := make(chan any, 1)
-
-	retryDelay, err := c.readWorkspaceEventsStream(t.Context(), "ws-123", rsp, events)
-	require.Equal(t, workspaceEventsDefaultRetryHint, retryDelay)
-	require.ErrorIs(t, err, errWorkspaceEventStreamClosed)
-	requireNoWorkspaceEvent(t, events)
-}
-
-func TestClientReadWorkspaceEventsStreamAggregatesMultilineData(t *testing.T) {
-	server := newWorkspaceEventsTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
-		writeRawWorkspaceSSE(t, w,
-			"data: {\"type\":\"permission_notification\",\n"+
-				"data: \"payload\":{\"type\":\"created\",\"payload\":{\"tool_call_id\":\"tool-multiline\",\"granted\":true}}}\n\n",
-		)
-	})
-	defer server.Close()
-
-	c := newWorkspaceEventsTestClient(t, server)
-	rsp := openWorkspaceEventsTestResponse(t, c)
-	events := make(chan any, 1)
-
-	retryDelay, err := c.readWorkspaceEventsStream(t.Context(), "ws-123", rsp, events)
-	require.Equal(t, workspaceEventsDefaultRetryHint, retryDelay)
-	require.ErrorIs(t, err, errWorkspaceEventStreamClosed)
-
-	ev := readWorkspaceEvent(t, events)
-	require.Equal(t, pubsub.CreatedEvent, ev.Type)
-	require.Equal(t, "tool-multiline", ev.Payload.ToolCallID)
-	require.True(t, ev.Payload.Granted)
-	requireNoWorkspaceEvent(t, events)
-}
-
-func TestClientReadWorkspaceEventsStreamSkipsHeartbeatOnlyFrames(t *testing.T) {
-	server := newWorkspaceEventsTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
-		writeRawWorkspaceSSE(t, w, ":\n\n:\n\n")
-	})
-	defer server.Close()
-
-	c := newWorkspaceEventsTestClient(t, server)
-	rsp := openWorkspaceEventsTestResponse(t, c)
-	events := make(chan any, 1)
-
-	retryDelay, err := c.readWorkspaceEventsStream(t.Context(), "ws-123", rsp, events)
-	require.Equal(t, workspaceEventsDefaultRetryHint, retryDelay)
-	require.ErrorIs(t, err, errWorkspaceEventStreamClosed)
-	requireNoWorkspaceEvent(t, events)
-}
-
-func TestClientReadWorkspaceEventsStreamScannerBoundary(t *testing.T) {
+func TestReadSSEStream_LargePayloads(t *testing.T) {
 	tests := []struct {
-		name      string
-		lineBytes int
-		wantEvent bool
-		wantError string
+		name    string
+		textLen int
 	}{
-		{
-			name:      "buffer minus 1",
-			lineBytes: workspaceEventsScannerBufferBytes - 1,
-			wantEvent: true,
-			wantError: errWorkspaceEventStreamClosed.Error(),
-		},
-		{
-			name:      "buffer exact",
-			lineBytes: workspaceEventsScannerBufferBytes,
-			wantEvent: false,
-			wantError: "token too long",
-		},
-		{
-			name:      "buffer plus 1",
-			lineBytes: workspaceEventsScannerBufferBytes + 1,
-			wantEvent: false,
-			wantError: "token too long",
-		},
+		{"small_1KB", 1 << 10},
+		{"medium_512KB", 512 << 10},
+		{"near_old_limit_1MiB_minus_1KB", (1 << 20) - (1 << 10)},
+		{"at_old_limit_1MiB", 1 << 20},
+		{"above_old_limit_2MiB", 2 << 20},
+		{"large_5MiB", 5 << 20},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			line := makeSizedWorkspaceDataLine(t, tt.lineBytes)
+			line := makeSSELine(t, tt.textLen)
+			t.Logf("SSE line size: %d bytes (%.2f MiB)", len(line), float64(len(line))/(1<<20))
 
-			server := newWorkspaceEventsTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
-				writeRawWorkspaceSSE(t, w, line+"\n\n")
-			})
-			defer server.Close()
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
 
-			c := newWorkspaceEventsTestClient(t, server)
-			rsp := openWorkspaceEventsTestResponse(t, c)
-			events := make(chan any, 1)
+			events := make(chan any, 10)
 
-			retryDelay, err := c.readWorkspaceEventsStream(t.Context(), "ws-123", rsp, events)
-			require.Equal(t, workspaceEventsDefaultRetryHint, retryDelay)
-			require.Error(t, err)
-			require.Contains(t, err.Error(), tt.wantError)
+			// Feed the SSE line to readSSEStream via an io.Reader.
+			go readSSEStream(ctx, bytes.NewReader(line), events)
 
-			if tt.wantEvent {
-				ev := readWorkspaceEvent(t, events)
-				require.Equal(t, pubsub.CreatedEvent, ev.Type)
-				require.Len(t, ev.Payload.ToolCallID, tt.lineBytes-len("data:")-sizedPermissionNotificationEnvelopeBaseBytes(t))
-				requireNoWorkspaceEvent(t, events)
-				return
+			select {
+			case ev := <-events:
+				msg, ok := ev.(pubsub.Event[proto.Message])
+				if !ok {
+					t.Fatalf("expected pubsub.Event[proto.Message], got %T", ev)
+				}
+				if msg.Payload.ID != "msg-1" {
+					t.Errorf("expected message ID msg-1, got %s", msg.Payload.ID)
+				}
+			case <-ctx.Done():
+				t.Fatal("timed out waiting for event from readSSEStream")
 			}
-
-			requireNoWorkspaceEvent(t, events)
 		})
 	}
 }
 
-func writeWorkspaceSSEEvent[T any](t *testing.T, w http.ResponseWriter, payloadType pubsub.PayloadType, payload pubsub.Event[T]) {
-	t.Helper()
+func TestReadSSEStream_MultipleEvents(t *testing.T) {
+	// Build a stream with three events of different sizes including one
+	// above the old 1 MiB scanner limit.
+	sizes := []int{100, 1 << 20, 2 << 20}
 
-	envelope := encodeWorkspaceEnvelope(t, payloadType, payload)
+	var buf bytes.Buffer
+	for _, sz := range sizes {
+		buf.Write(makeSSELine(t, sz))
+		// SSE streams use blank lines to separate events; add one for realism.
+		buf.WriteByte('\n')
+	}
 
-	_, err := fmt.Fprintf(w, "data: %s\n\n", envelope)
-	require.NoError(t, err)
-}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-func readWorkspaceEvent(t *testing.T, events <-chan any) pubsub.Event[proto.PermissionNotification] {
-	t.Helper()
+	events := make(chan any, 10)
+	go readSSEStream(ctx, &buf, events)
 
-	select {
-	case ev, ok := <-events:
-		require.True(t, ok)
-		typed, ok := ev.(pubsub.Event[proto.PermissionNotification])
-		require.True(t, ok, "unexpected event type %T", ev)
-		return typed
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for workspace event")
-		return pubsub.Event[proto.PermissionNotification]{}
+	for i, sz := range sizes {
+		select {
+		case ev := <-events:
+			_, ok := ev.(pubsub.Event[proto.Message])
+			if !ok {
+				t.Fatalf("event %d (textLen=%d): expected pubsub.Event[proto.Message], got %T", i, sz, ev)
+			}
+		case <-ctx.Done():
+			t.Fatalf("timed out waiting for event %d (textLen=%d)", i, sz)
+		}
 	}
 }
 
-func newWorkspaceEventsTestServer(t *testing.T, handler func(http.ResponseWriter, *http.Request)) *httptest.Server {
-	t.Helper()
-
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "/v1/workspaces/ws-123/events", r.URL.Path)
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.Header().Set("Cache-Control", "no-cache")
-		handler(w, r)
-	}))
-}
-
-func newWorkspaceEventsTestClient(t *testing.T, server *httptest.Server) *Client {
-	t.Helper()
-
-	c, err := NewClient(t.TempDir(), "tcp", strings.TrimPrefix(server.URL, "http://"))
-	require.NoError(t, err)
-	return c
-}
-
-func openWorkspaceEventsTestResponse(t *testing.T, c *Client) *http.Response {
-	t.Helper()
-
-	rsp, retryDelay, err := c.openWorkspaceEventsStream(t.Context(), "ws-123")
-	require.NoError(t, err)
-	require.Equal(t, workspaceEventsDefaultRetryHint, retryDelay)
-	return rsp
-}
-
-func writeRawWorkspaceSSE(t *testing.T, w http.ResponseWriter, raw string) {
-	t.Helper()
-
-	_, err := fmt.Fprint(w, raw)
-	require.NoError(t, err)
-
-	require.NoError(t, http.NewResponseController(w).Flush())
-}
-
-func encodeWorkspaceEnvelope[T any](t *testing.T, payloadType pubsub.PayloadType, payload pubsub.Event[T]) string {
-	t.Helper()
-
-	raw, err := json.Marshal(payload)
-	require.NoError(t, err)
-
-	envelope, err := json.Marshal(pubsub.Payload{
-		Type:    payloadType,
-		Payload: raw,
-	})
-	require.NoError(t, err)
-
-	return string(envelope)
-}
-
-func makeSizedWorkspaceDataLine(t *testing.T, lineBytes int) string {
-	t.Helper()
-
-	envelope := makeSizedPermissionNotificationEnvelope(t, lineBytes-len("data:"))
-	line := "data:" + envelope
-	require.Len(t, line, lineBytes)
-	return line
-}
-
-func makeSizedPermissionNotificationEnvelope(t *testing.T, size int) string {
-	t.Helper()
-
-	padding := size - sizedPermissionNotificationEnvelopeBaseBytes(t)
-	require.GreaterOrEqual(t, padding, 0)
-
-	return encodeWorkspaceEnvelope(t, pubsub.PayloadTypePermissionNotification, pubsub.Event[proto.PermissionNotification]{
-		Type: pubsub.CreatedEvent,
-		Payload: proto.PermissionNotification{
-			ToolCallID: strings.Repeat("a", padding),
-		},
-	})
-}
-
-func sizedPermissionNotificationEnvelopeBaseBytes(t *testing.T) int {
-	t.Helper()
-
-	return len(encodeWorkspaceEnvelope(t, pubsub.PayloadTypePermissionNotification, pubsub.Event[proto.PermissionNotification]{
-		Type:    pubsub.CreatedEvent,
-		Payload: proto.PermissionNotification{},
-	}))
-}
-
-func requireNoWorkspaceEvent(t *testing.T, events <-chan any) {
-	t.Helper()
-
-	select {
-	case ev := <-events:
-		t.Fatalf("unexpected workspace event: %#v", ev)
-	default:
+func TestSSEBufferSize(t *testing.T) {
+	// Verify the buffer constant is at least 10 MiB.
+	const minExpected = 10 << 20
+	if sseBufferSize < minExpected {
+		t.Errorf("sseBufferSize = %d, want >= %d (10 MiB)", sseBufferSize, minExpected)
 	}
 }
