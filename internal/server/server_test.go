@@ -25,14 +25,14 @@ func TestParseHostURL_TCPWithPath(t *testing.T) {
 }
 
 func TestParseHostURL_Unix(t *testing.T) {
-	u, err := ParseHostURL("unix:///tmp/crush.sock")
+	u, err := ParseHostURL("unix:///tmp/codeplane.sock")
 	require.NoError(t, err)
 	assert.Equal(t, "unix", u.Scheme)
-	assert.Equal(t, "/tmp/crush.sock", u.Host)
+	assert.Equal(t, "/tmp/codeplane.sock", u.Host)
 }
 
 func TestParseHostURL_NamedPipe(t *testing.T) {
-	u, err := ParseHostURL("npipe:////./pipe/crush.sock")
+	u, err := ParseHostURL("npipe:////./pipe/codeplane.sock")
 	require.NoError(t, err)
 	assert.Equal(t, "npipe", u.Scheme)
 }
@@ -43,9 +43,9 @@ func TestParseHostURL_InvalidFormat(t *testing.T) {
 	assert.Contains(t, err.Error(), "invalid host format")
 }
 
-func TestDefaultHost_ContainsCrush(t *testing.T) {
+func TestDefaultHost_ContainsCodeplane(t *testing.T) {
 	host := DefaultHost()
-	assert.Contains(t, host, "crush")
+	assert.Contains(t, host, "codeplane")
 }
 
 func TestDefaultHost_HasScheme(t *testing.T) {

@@ -226,9 +226,26 @@ func (c *controllerV1) handleGetWorkspaceEvents(w http.ResponseWriter, r *http.R
 	}
 
 	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Cache-Control", "no-cache, no-transform")
 	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
 	w.Header().Set("X-Request-ID", observability.RequestIDFromContext(ctx))
+	if _, err := fmt.Fprint(w, "retry: 1000\n\n"); err != nil {
+		result = "write_error"
+		observability.RecordSSEEvent("workspace_events", "retry_hint_error")
+		c.server.logError(r, "Failed to write event stream retry hint", "error", err)
+		return
+	}
+	if err := flusher.Flush(); err != nil {
+		result = "flush_error"
+		observability.RecordSSEEvent("workspace_events", "retry_hint_flush_error")
+		c.server.logError(r, "Failed to flush event stream retry hint", "error", err)
+		return
+	}
+	observability.RecordSSEEvent("workspace_events", "retry_hint")
+
+	heartbeat := time.NewTicker(15 * time.Second)
+	defer heartbeat.Stop()
 
 	for {
 		select {
@@ -237,6 +254,20 @@ func (c *controllerV1) handleGetWorkspaceEvents(w http.ResponseWriter, r *http.R
 			result = "client_disconnect"
 			observability.RecordSSEEvent("workspace_events", "client_disconnect")
 			return
+		case <-heartbeat.C:
+			if _, err := fmt.Fprint(w, ": keep-alive\n\n"); err != nil {
+				result = "write_error"
+				observability.RecordSSEEvent("workspace_events", "heartbeat_write_error")
+				c.server.logError(r, "Failed to write event stream heartbeat", "error", err)
+				return
+			}
+			if err := flusher.Flush(); err != nil {
+				result = "flush_error"
+				observability.RecordSSEEvent("workspace_events", "heartbeat_flush_error")
+				c.server.logError(r, "Failed to flush event stream heartbeat", "error", err)
+				return
+			}
+			observability.RecordSSEEvent("workspace_events", "heartbeat")
 		case ev, ok := <-events:
 			if !ok {
 				observability.RecordSSEEvent("workspace_events", "upstream_closed")

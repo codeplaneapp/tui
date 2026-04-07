@@ -18,6 +18,7 @@ import (
 	"github.com/charmbracelet/crush/internal/lsp"
 	"github.com/charmbracelet/crush/internal/message"
 	"github.com/charmbracelet/crush/internal/oauth"
+	"github.com/charmbracelet/crush/internal/observability"
 	"github.com/charmbracelet/crush/internal/permission"
 	"github.com/charmbracelet/crush/internal/proto"
 	"github.com/charmbracelet/crush/internal/pubsub"
@@ -34,6 +35,9 @@ type ClientWorkspace struct {
 
 	mu sync.RWMutex
 	ws proto.Workspace
+
+	subscriptionCancel context.CancelFunc
+	subscriptionSeq    uint64
 }
 
 // NewClientWorkspace creates a new ClientWorkspace that proxies all
@@ -540,14 +544,38 @@ func (w *ClientWorkspace) DisableDockerMCP() error {
 // -- Lifecycle --
 
 func (w *ClientWorkspace) Subscribe(program *tea.Program) {
-	defer log.RecoverPanic("ClientWorkspace.Subscribe", func() {
+	subscribeCtx, cancel := context.WithCancel(context.Background())
+	subscribeCtx = observability.WithWorkspaceID(subscribeCtx, w.workspaceID())
+	subscribeCtx = observability.WithComponent(subscribeCtx, "workspace_client")
+
+	w.mu.Lock()
+	w.subscriptionSeq++
+	subscriptionSeq := w.subscriptionSeq
+	if w.subscriptionCancel != nil {
+		w.subscriptionCancel()
+	}
+	w.subscriptionCancel = cancel
+	w.mu.Unlock()
+
+	defer func() {
+		cancel()
+		w.mu.Lock()
+		if w.subscriptionSeq == subscriptionSeq {
+			w.subscriptionCancel = nil
+		}
+		w.mu.Unlock()
+	}()
+
+	defer log.RecoverPanic(subscribeCtx, "ClientWorkspace.Subscribe", func() {
 		slog.Info("TUI subscription panic: attempting graceful shutdown")
 		program.Quit()
 	})
 
-	evc, err := w.client.SubscribeEvents(context.Background(), w.workspaceID())
+	evc, err := w.client.SubscribeEvents(subscribeCtx, w.workspaceID())
 	if err != nil {
-		slog.Error("Failed to subscribe to events", "error", err)
+		observability.LogAttrs(subscribeCtx, slog.LevelError, "Failed to subscribe to workspace events",
+			slog.Any("error", err),
+		)
 		return
 	}
 
@@ -560,6 +588,13 @@ func (w *ClientWorkspace) Subscribe(program *tea.Program) {
 }
 
 func (w *ClientWorkspace) Shutdown() {
+	w.mu.Lock()
+	cancel := w.subscriptionCancel
+	w.subscriptionCancel = nil
+	w.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 	_ = w.client.DeleteWorkspace(context.Background(), w.workspaceID())
 }
 
