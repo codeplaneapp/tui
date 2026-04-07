@@ -223,12 +223,12 @@ func Filter(all []*Skill, disabled []string) []*Skill {
 
 	disabledSet := make(map[string]bool, len(disabled))
 	for _, name := range disabled {
-		disabledSet[name] = true
+		disabledSet[NormalizeSkillName(name)] = true
 	}
 
 	result := make([]*Skill, 0, len(all))
 	for _, s := range all {
-		if !disabledSet[s.Name] {
+		if !disabledSet[NormalizeSkillName(s.Name)] {
 			result = append(result, s)
 		}
 	}

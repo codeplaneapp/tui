@@ -5,13 +5,21 @@ import (
 	"io/fs"
 	"log/slog"
 	"path/filepath"
+	"strings"
 )
 
 // BuiltinPrefix is the path prefix for builtin skill files. It is used by
 // the View tool to distinguish embedded files from disk files.
-const BuiltinPrefix = "crush://skills/"
+const BuiltinPrefix = "codeplane://skills/"
 
-//go:embed builtin/*
+const LegacyBuiltinPrefix = "crush://skills/"
+
+const (
+	BuiltinConfigSkillName       = "codeplane-config"
+	LegacyBuiltinConfigSkillName = "crush-config"
+)
+
+//go:embed builtin
 var builtinFS embed.FS
 
 // BuiltinFS returns the embedded filesystem containing builtin skills.
@@ -43,9 +51,9 @@ func DiscoverBuiltin() []*Skill {
 			return nil
 		}
 
-		// Set paths using the crush prefix. Strip the leading "builtin/"
+		// Set paths using the Codeplane prefix. Strip the leading "builtin/"
 		// so the path is relative to the embedded root
-		// (e.g., "crush://skills/crush-config/SKILL.md").
+		// (e.g., "codeplane://skills/codeplane-config/SKILL.md").
 		relPath, _ := filepath.Rel("builtin", path)
 		relPath = filepath.ToSlash(relPath)
 		skill.SkillFilePath = BuiltinPrefix + relPath
@@ -63,4 +71,25 @@ func DiscoverBuiltin() []*Skill {
 	})
 
 	return discovered
+}
+
+func IsBuiltinPath(path string) bool {
+	return strings.HasPrefix(path, BuiltinPrefix) || strings.HasPrefix(path, LegacyBuiltinPrefix)
+}
+
+func NormalizeBuiltinPath(path string) string {
+	switch {
+	case strings.HasPrefix(path, LegacyBuiltinPrefix):
+		path = BuiltinPrefix + strings.TrimPrefix(path, LegacyBuiltinPrefix)
+	case !strings.HasPrefix(path, BuiltinPrefix):
+		return path
+	}
+	return strings.Replace(path, "/"+LegacyBuiltinConfigSkillName+"/", "/"+BuiltinConfigSkillName+"/", 1)
+}
+
+func NormalizeSkillName(name string) string {
+	if name == LegacyBuiltinConfigSkillName {
+		return BuiltinConfigSkillName
+	}
+	return name
 }

@@ -74,8 +74,8 @@ func NewViewTool(
 				return fantasy.NewTextErrorResponse("file_path is required"), nil
 			}
 
-			// Handle builtin skill files (crush: prefix).
-			if strings.HasPrefix(params.FilePath, skills.BuiltinPrefix) {
+			// Handle builtin skill files.
+			if skills.IsBuiltinPath(params.FilePath) {
 				return readBuiltinFile(params)
 			}
 
@@ -382,7 +382,8 @@ func isInSkillsPath(filePath string, skillsPaths []string) bool {
 
 // readBuiltinFile reads a file from the embedded builtin skills filesystem.
 func readBuiltinFile(params ViewParams) (fantasy.ToolResponse, error) {
-	embeddedPath := "builtin/" + strings.TrimPrefix(params.FilePath, skills.BuiltinPrefix)
+	normalizedPath := skills.NormalizeBuiltinPath(params.FilePath)
+	embeddedPath := "builtin/" + strings.TrimPrefix(normalizedPath, skills.BuiltinPrefix)
 	builtinFS := skills.BuiltinFS()
 
 	data, err := fs.ReadFile(builtinFS, embeddedPath)
@@ -418,7 +419,7 @@ func readBuiltinFile(params ViewParams) (fantasy.ToolResponse, error) {
 	output += "\n</file>\n"
 
 	meta := ViewResponseMetadata{
-		FilePath: params.FilePath,
+		FilePath: normalizedPath,
 		Content:  strings.Join(lines, "\n"),
 	}
 	if skill, err := skills.ParseContent(data); err == nil {

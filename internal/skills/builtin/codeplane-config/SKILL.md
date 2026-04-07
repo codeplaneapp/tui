@@ -1,21 +1,27 @@
 ---
-name: crush-config
-description: Configure Crush settings including providers, LSPs, MCPs, skills, permissions, and behavior options. Use when the user needs help with crush.json configuration, setting up providers, configuring LSPs, adding MCP servers, or changing Crush behavior.
+name: codeplane-config
+description: Configure Codeplane settings including providers, LSPs, MCPs, skills, permissions, observability, and behavior options. Use when the user needs help with codeplane.json configuration, setting up providers, configuring LSPs, adding MCP servers, or changing Codeplane behavior.
 ---
 
-# Crush Configuration
+# Codeplane Configuration
 
-Crush uses JSON configuration files with the following priority (highest to lowest):
+Codeplane uses JSON configuration files with the following priority
+(highest to lowest):
 
-1. `.crush.json` (project-local, hidden)
-2. `crush.json` (project-local)
-3. `$XDG_CONFIG_HOME/crush/crush.json` or `$HOME/.config/crush/crush.json` (global)
+1. `.codeplane.json` (project-local, hidden)
+2. `codeplane.json` (project-local)
+3. `$XDG_CONFIG_HOME/codeplane/codeplane.json` or
+   `$HOME/.config/codeplane/codeplane.json` (global)
+
+Legacy `smithers-tui.json`, `crush.json`, `SMITHERS_TUI_*`, and `CRUSH_*`
+sources are still read as fallbacks, but Codeplane now writes to Codeplane
+paths and names only.
 
 ## Basic Structure
 
 ```json
 {
-  "$schema": "https://charm.land/crush.json",
+  "$schema": "https://charm.land/codeplane.json",
   "options": {}
 }
 ```
@@ -37,12 +43,13 @@ Add a relative path to keep project-specific skills alongside your code:
 ```
 
 > [!IMPORTANT]
->  Keep in mind that the following paths are loaded by default, so they DO NOT NEED to be added to `skill_paths`:
+> Keep in mind that the following paths are loaded by default, so they do not
+> need to be added to `skills_paths`:
 >
->  * `.agents/skills`
->  * `.crush/skills`
->  * `.claude/skills`
->  * `.cursor/skills`
+> * `.agents/skills`
+> * `.codeplane/skills`
+> * `.claude/skills`
+> * `.cursor/skills`
 
 ### LSP Configuration
 
@@ -130,13 +137,14 @@ Add a relative path to keep project-specific skills alongside your code:
 ```json
 {
   "options": {
-    "disabled_skills": ["crush-config"]
+    "disabled_skills": ["codeplane-config"]
   }
 }
 ```
 
 `disabled_skills` disables skills by name, including both builtin skills and
-skills discovered from disk paths.
+skills discovered from disk paths. Legacy `crush-config` still maps to
+`codeplane-config`.
 
 ### Debug Options
 
@@ -164,12 +172,15 @@ skills discovered from disk paths.
 
 ## Environment Variables
 
-- `CRUSH_GLOBAL_CONFIG` - Override global config location
-- `CRUSH_GLOBAL_DATA` - Override data directory location
-- `CRUSH_SKILLS_DIR` - Override default skills directory
+- `CODEPLANE_GLOBAL_CONFIG` - Override global config location.
+- `CODEPLANE_GLOBAL_DATA` - Override data directory location.
+- `CODEPLANE_SKILLS_DIR` - Override default skills directory.
+
+Legacy `SMITHERS_TUI_*` and `CRUSH_*` environment variables are still read as
+fallbacks during migration.
 
 ## Provider Types
 
-- `openai` - For OpenAI or OpenAI-compatible APIs that route through OpenAI
-- `openai-compat` - For non-OpenAI providers with OpenAI-compatible APIs
-- `anthropic` - For Anthropic-compatible APIs
+- `openai` - For OpenAI or OpenAI-compatible APIs that route through OpenAI.
+- `openai-compat` - For non-OpenAI providers with OpenAI-compatible APIs.
+- `anthropic` - For Anthropic-compatible APIs.
