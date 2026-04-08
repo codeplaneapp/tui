@@ -62,7 +62,7 @@ func TestDefaultRegistry_ContainsExpectedViews(t *testing.T) {
 	r := views.DefaultRegistry()
 	client := smithers.NewClient()
 
-	for _, name := range []string{"agents", "approvals", "changes", "chat", "issues", "landings", "status", "tickets"} {
+	for _, name := range []string{"agents", "approvals", "changes", "chat", "issues", "landings", "pulls", "status", "tickets"} {
 		v, ok := r.Open(name, client)
 		if !ok {
 			t.Errorf("expected default registry to contain %q", name)

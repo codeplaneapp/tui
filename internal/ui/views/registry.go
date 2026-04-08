@@ -56,6 +56,7 @@ func DefaultRegistry() *Registry {
 	r.Register("jjhub-workflows", func(c *smithers.Client) View { return NewJJHubWorkflowsView(c) })
 	r.Register("landings", func(c *smithers.Client) View { return NewLandingsView(c) })
 	r.Register("memory", func(c *smithers.Client) View { return NewMemoryView(c) })
+	r.Register("pulls", func(c *smithers.Client) View { return NewPullRequestsView(c) })
 	r.Register("prompts", func(c *smithers.Client) View { return NewPromptsView(c) })
 	r.Register("scores", func(c *smithers.Client) View { return NewScoresView(c) })
 	r.Register("search", func(c *smithers.Client) View { return NewSearchView(c) })

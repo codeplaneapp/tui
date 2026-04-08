@@ -205,6 +205,61 @@ EOF
 	require.NoError(t, err)
 }
 
+func TestRunGit_BrokenJJRefReportsActionableError(t *testing.T) {
+	writeFakeGit(t, `#!/bin/sh
+printf 'fatal: bad object refs/jj/keep/broken\nerror: refs/jj/keep/broken does not point to a valid object!\n' >&2
+exit 1
+`)
+
+	_, err := runGit(context.Background(), "fetch", "origin", "main")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "jj keep ref is invalid")
+	assert.Contains(t, err.Error(), "refs/jj/keep")
+}
+
+func TestCurrentBranch_Success(t *testing.T) {
+	writeFakeGit(t, "#!/bin/sh\nprintf 'feat/test\n'")
+
+	branch, err := CurrentBranch(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, "feat/test", branch)
+}
+
+func TestDefaultBaseBranch_Success(t *testing.T) {
+	writeFakeGit(t, "#!/bin/sh\nprintf '  HEAD branch: trunk\n'")
+
+	base, err := DefaultBaseBranch(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, "trunk", base)
+}
+
+func TestOriginRepository_ParsesHTTPSRemote(t *testing.T) {
+	writeFakeGit(t, "#!/bin/sh\nprintf 'https://github.com/codeplaneapp/tui.git\n'")
+
+	repo, err := OriginRepository(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, "codeplaneapp/tui", repo)
+}
+
+func TestParseRepositoryFromRemoteURL(t *testing.T) {
+	tests := map[string]string{
+		"https://github.com/codeplaneapp/tui.git": "codeplaneapp/tui",
+		"git@github.com:codeplaneapp/tui.git":     "codeplaneapp/tui",
+		"ssh://git@github.com/codeplaneapp/tui":   "codeplaneapp/tui",
+	}
+	for input, want := range tests {
+		repo, err := parseRepositoryFromRemoteURL(input)
+		require.NoError(t, err)
+		assert.Equal(t, want, repo)
+	}
+}
+
+func TestPushBranch_EmptyBranch(t *testing.T) {
+	err := PushBranch(context.Background(), "origin", "")
+	require.Error(t, err)
+	assert.Equal(t, "branch must not be empty", err.Error())
+}
+
 func TestStructTypes(t *testing.T) {
 	var issue Issue
 	assert.Zero(t, issue.Number)
@@ -239,4 +294,17 @@ func writeFakeGH(t *testing.T, script string) {
 	require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("TMPDIR", dir)
+}
+
+func writeFakeGit(t *testing.T, script string) {
+	t.Helper()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("Fake git helper uses a POSIX shell script.")
+	}
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "git")
+	require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }

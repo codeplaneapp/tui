@@ -18,6 +18,12 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
+const (
+	workspaceSandboxModeAuto       = "auto"
+	workspaceSandboxModeBubblewrap = "bwrap"
+	workspaceSandboxModeOff        = "off"
+)
+
 var _ View = (*WorkspacesView)(nil)
 
 type workspaceManager interface {
@@ -109,6 +115,7 @@ type WorkspacesView struct {
 
 	mode         workspaceBrowserMode
 	statusFilter string
+	sandboxMode  string
 
 	cursor         int
 	scrollOffset   int
@@ -189,6 +196,7 @@ func newWorkspacesViewWithClient(client workspaceManager) *WorkspacesView {
 	v := &WorkspacesView{
 		client:           client,
 		mode:             workspaceMode,
+		sandboxMode:      workspaceSandboxModeAuto,
 		loading:          client != nil,
 		snapshotsLoading: client != nil,
 		prompt: workspacePromptState{
@@ -248,6 +256,17 @@ func (v *WorkspacesView) refreshCmd() tea.Cmd {
 	v.loading = true
 	v.snapshotsLoading = true
 	return tea.Batch(v.loadWorkspacesCmd(), v.loadSnapshotsCmd(), v.loadRepoCmd())
+}
+
+func (v *WorkspacesView) cycleSandboxMode() {
+	switch v.sandboxMode {
+	case workspaceSandboxModeAuto:
+		v.sandboxMode = workspaceSandboxModeBubblewrap
+	case workspaceSandboxModeBubblewrap:
+		v.sandboxMode = workspaceSandboxModeOff
+	default:
+		v.sandboxMode = workspaceSandboxModeAuto
+	}
 }
 
 func (v *WorkspacesView) visibleWorkspaces() []jjhub.Workspace {
@@ -356,7 +375,7 @@ func (v *WorkspacesView) clampCursor() {
 }
 
 func (v *WorkspacesView) attachCmd(workspace jjhub.Workspace) tea.Cmd {
-	cmd, err := jjhub.AttachWorkspaceCommand(workspace)
+	cmd, err := jjhub.AttachWorkspaceCommandWithSandbox(workspace, v.sandboxMode)
 	if err != nil {
 		return func() tea.Msg {
 			return workspaceActionErrorMsg{err: err}
@@ -765,6 +784,10 @@ func (v *WorkspacesView) Update(msg tea.Msg) (View, tea.Cmd) {
 		case key.Matches(msg, key.NewBinding(key.WithKeys("r"))):
 			v.actionMsg = ""
 			return v, v.refreshCmd()
+		case key.Matches(msg, key.NewBinding(key.WithKeys("b"))):
+			v.cycleSandboxMode()
+			v.actionMsg = fmt.Sprintf("Workspace sandbox mode set to %s", v.sandboxMode)
+			return v, nil
 		case key.Matches(msg, key.NewBinding(key.WithKeys("c"))):
 			if v.mode == snapshotMode {
 				if v.selectedSnapshot() == nil {
@@ -845,6 +868,7 @@ func (v *WorkspacesView) View() string {
 	var b strings.Builder
 	right := []string{
 		"[" + workspaceModeLabel(v.mode) + "]",
+		"[sandbox: " + v.sandboxMode + "]",
 		jjhubRepoLabel(v.repo),
 		"[Esc] Back",
 	}
@@ -1007,7 +1031,9 @@ func (v *WorkspacesView) renderWorkspaceDetail(width int) string {
 	b.WriteString("\n\n")
 	b.WriteString(jjhubSectionStyle.Render("Actions"))
 	b.WriteString("\n")
-	b.WriteString(wrapText("[Enter] attach  [x] ssh  [c] create  [f] fork  [s] suspend/resume  [n] snapshot  [d] delete  [Tab] snapshots", max(20, width)))
+	b.WriteString(wrapText("[Enter] attach  [x] ssh  [b] sandbox  [c] create  [f] fork  [s] suspend/resume  [n] snapshot  [d] delete  [Tab] snapshots", max(20, width)))
+	b.WriteString("\n")
+	b.WriteString(jjhubMetaRow("Sandbox", workspaceSandboxModeDescription(v.sandboxMode)))
 	return b.String()
 }
 
@@ -1087,6 +1113,7 @@ func (v *WorkspacesView) ShortHelp() []key.Binding {
 		key.NewBinding(key.WithKeys("j", "k"), key.WithHelp("j/k", "move")),
 		key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "attach")),
 		key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "ssh")),
+		key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "sandbox")),
 		key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "create")),
 		key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "suspend")),
 		key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "snapshots")),
@@ -1098,6 +1125,17 @@ func workspaceModeLabel(mode workspaceBrowserMode) string {
 		return "snapshots"
 	}
 	return "workspaces"
+}
+
+func workspaceSandboxModeDescription(mode string) string {
+	switch mode {
+	case workspaceSandboxModeBubblewrap:
+		return "require bubblewrap sandbox for workspace attach"
+	case workspaceSandboxModeOff:
+		return "disable sandbox wrapping during workspace attach"
+	default:
+		return "auto-detect bubblewrap and use it when available"
+	}
 }
 
 func workspacePromptUsesInput(kind workspacePromptKind) bool {

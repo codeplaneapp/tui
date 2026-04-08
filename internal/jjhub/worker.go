@@ -30,10 +30,16 @@ var (
 // hosted in a tmux session so users can detach and reattach without losing the
 // process.
 func AttachWorkspaceCommand(workspace Workspace) (*exec.Cmd, error) {
-	return attachWorkspaceCommand(workspace, exec.LookPath)
+	return attachWorkspaceCommand(workspace, "", exec.LookPath)
 }
 
-func attachWorkspaceCommand(workspace Workspace, lookPathFn func(string) (string, error)) (*exec.Cmd, error) {
+// AttachWorkspaceCommandWithSandbox builds the SSH attach command using the
+// provided sandbox mode. Supported values are "auto", "bwrap", and "off".
+func AttachWorkspaceCommandWithSandbox(workspace Workspace, sandboxMode string) (*exec.Cmd, error) {
+	return attachWorkspaceCommand(workspace, sandboxMode, exec.LookPath)
+}
+
+func attachWorkspaceCommand(workspace Workspace, sandboxMode string, lookPathFn func(string) (string, error)) (*exec.Cmd, error) {
 	start := time.Now()
 	attrs := []attribute.KeyValue{
 		attribute.String("codeplane.workspace.source", "jjhub"),
@@ -52,13 +58,16 @@ func attachWorkspaceCommand(workspace Workspace, lookPathFn func(string) (string
 		return nil, err
 	}
 
+	mode := normalizeWorkspaceSandboxMode(sandboxMode)
+	attrs = append(attrs, attribute.String("codeplane.workspace.sandbox", mode))
+
 	cmd := exec.Command( //nolint:gosec
 		"ssh",
 		"-tt",
 		host,
 		"bash",
 		"-lc",
-		workerAttachScript(defaultWorkerSessionName),
+		workerAttachScriptWithSandbox(defaultWorkerSessionName, mode),
 	)
 	recordAttachWorkspacePrepareResult(time.Since(start), nil, attrs...)
 	return cmd, nil

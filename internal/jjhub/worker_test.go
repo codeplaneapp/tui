@@ -15,7 +15,7 @@ func TestAttachWorkspaceCommand_MissingSSHHost(t *testing.T) {
 	configureWorkerObservability(t)
 
 	workspace := Workspace{ID: "ws-1"}
-	cmd, err := attachWorkspaceCommand(workspace, func(string) (string, error) {
+	cmd, err := attachWorkspaceCommand(workspace, "", func(string) (string, error) {
 		t.Fatal("lookPath should not be called when SSH is unavailable")
 		return "", nil
 	})
@@ -32,7 +32,7 @@ func TestAttachWorkspaceCommand_MissingSSHBinary(t *testing.T) {
 
 	host := "alpha.example.com"
 	workspace := Workspace{ID: "ws-1", SSHHost: &host}
-	cmd, err := attachWorkspaceCommand(workspace, func(name string) (string, error) {
+	cmd, err := attachWorkspaceCommand(workspace, "", func(name string) (string, error) {
 		assert.Equal(t, "ssh", name)
 		return "", errors.New("missing")
 	})
@@ -49,7 +49,7 @@ func TestAttachWorkspaceCommand_BuildsSSHCommand(t *testing.T) {
 
 	host := "alpha.example.com"
 	workspace := Workspace{ID: "ws-1", SSHHost: &host}
-	cmd, err := attachWorkspaceCommand(workspace, func(name string) (string, error) {
+	cmd, err := attachWorkspaceCommand(workspace, "", func(name string) (string, error) {
 		assert.Equal(t, "ssh", name)
 		return "/usr/bin/ssh", nil
 	})
@@ -78,6 +78,20 @@ func TestAttachWorkspaceCommand_BuildsSSHCommand(t *testing.T) {
 	attrs := requireWorkerSpanAttrs(t, "attach_prepare", "ok")
 	assert.Equal(t, "ws-1", attrs["codeplane.workspace.id"])
 	assert.Equal(t, host, attrs["codeplane.workspace.ssh_host"])
+	assert.Equal(t, workspaceSandboxAutoValue, attrs["codeplane.workspace.sandbox"])
+}
+
+func TestAttachWorkspaceCommandWithSandbox_RecordsSandboxMode(t *testing.T) {
+	configureWorkerObservability(t)
+
+	host := "alpha.example.com"
+	workspace := Workspace{ID: "ws-1", SSHHost: &host}
+	cmd, err := AttachWorkspaceCommandWithSandbox(workspace, workspaceSandboxBwrapValue)
+	require.NoError(t, err)
+	require.NotNil(t, cmd)
+
+	attrs := requireWorkerSpanAttrs(t, "attach_prepare", "ok")
+	assert.Equal(t, workspaceSandboxBwrapValue, attrs["codeplane.workspace.sandbox"])
 }
 
 func TestWorkerAttachScriptWithSandbox_AutoModePrefersBubblewrapWhenAvailable(t *testing.T) {
