@@ -64,6 +64,47 @@ func TestHandleKeyPressMsg_ViewApprovalsShort_DoesNotStealSmithersViewInput(t *t
 	require.True(t, view.receivedKey, "expected smithers view to receive bare 'a'")
 }
 
+func TestHandleKeyPressMsg_GlobalShortcutsWorkInSmithersView(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		msg      tea.KeyPressMsg
+		wantView string
+	}{
+		{
+			name:     "runs",
+			msg:      tea.KeyPressMsg{Code: 'r', Mod: tea.ModCtrl},
+			wantView: "runs",
+		},
+		{
+			name:     "approvals",
+			msg:      tea.KeyPressMsg{Code: 'a', Mod: tea.ModCtrl},
+			wantView: "approvals",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ui := newShortcutTestUI()
+			ui.viewRouter = views.NewRouter()
+			ui.viewRouter.Push(&shortcutCaptureView{}, ui.width, ui.height)
+			ui.state = uiSmithersView
+			ui.focus = uiFocusMain
+
+			cmd := ui.handleKeyPressMsg(tt.msg)
+			require.NotNil(t, cmd)
+
+			msg := cmd()
+			navigateMsg, ok := msg.(NavigateToViewMsg)
+			require.Truef(t, ok, "expected NavigateToViewMsg for %s, got %T", tt.name, msg)
+			require.Equal(t, tt.wantView, navigateMsg.View)
+		})
+	}
+}
+
 func TestShortHelp_IncludesSmithersShortcutBindingsInChat(t *testing.T) {
 	t.Parallel()
 

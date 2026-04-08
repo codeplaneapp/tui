@@ -2361,7 +2361,10 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		return tea.Batch(cmds...)
 	case uiSmithersView:
-		// Forward ALL key presses to the current view first.
+		if handleGlobalKeys(msg) {
+			return tea.Batch(cmds...)
+		}
+		// Forward ALL remaining key presses to the current view.
 		// Views handle their own Esc (e.g., closing overlays, cancelling forms).
 		//
 		// Navigation commands are executed synchronously rather than batched
