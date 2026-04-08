@@ -2968,6 +2968,12 @@ func (m *UI) ShortHelp() []key.Binding {
 		if current := m.viewRouter.Current(); current != nil {
 			binds = append(binds, current.ShortHelp()...)
 		}
+		binds = append(binds,
+			commands,
+			k.Models,
+			k.RunDashboard,
+			k.Approvals,
+		)
 	default:
 		// TODO: other states
 		// if m.session == nil {
@@ -3085,6 +3091,19 @@ func (m *UI) FullHelp() [][]key.Binding {
 				binds = append(binds, []key.Binding{k.Chat.PillLeft})
 			}
 		}
+	case uiSmithersView:
+		if current := m.viewRouter.Current(); current != nil {
+			binds = append(binds, []key.Binding(current.ShortHelp()))
+		}
+		binds = append(binds,
+			[]key.Binding{
+				commands,
+				k.Models,
+				k.Sessions,
+				k.RunDashboard,
+				k.Approvals,
+			},
+		)
 	default:
 		if m.session == nil {
 			// no session selected

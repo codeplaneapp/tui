@@ -93,6 +93,47 @@ func TestFullHelp_IncludesSmithersShortcutBindings(t *testing.T) {
 	require.Contains(t, bindings, keyHelp{key: "ctrl+a", desc: "approvals"})
 }
 
+func TestShortHelp_IncludesViewLocalAndGlobalBindingsInSmithersView(t *testing.T) {
+	t.Parallel()
+
+	ui := newShortcutTestUI()
+	ui.viewRouter = views.NewRouter()
+	runsView := views.NewRunsView(nil)
+	ui.viewRouter.Push(runsView, ui.width, ui.height)
+	ui.state = uiSmithersView
+	ui.focus = uiFocusMain
+
+	bindings := ui.ShortHelp()
+	assertHasHelpBinding(t, bindings, "/", "search")
+	assertHasHelpBinding(t, bindings, "ctrl+p", "commands")
+	assertHasHelpBinding(t, bindings, "ctrl+r", "runs")
+	assertHasHelpBinding(t, bindings, "ctrl+a", "approvals")
+}
+
+func TestFullHelp_IncludesViewLocalAndGlobalBindingsInSmithersView(t *testing.T) {
+	t.Parallel()
+
+	ui := newShortcutTestUI()
+	ui.viewRouter = views.NewRouter()
+	runsView := views.NewRunsView(nil)
+	ui.viewRouter.Push(runsView, ui.width, ui.height)
+	ui.state = uiSmithersView
+	ui.focus = uiFocusMain
+
+	var bindings []keyHelp
+	for _, row := range ui.FullHelp() {
+		for _, binding := range row {
+			help := binding.Help()
+			bindings = append(bindings, keyHelp{key: help.Key, desc: help.Desc})
+		}
+	}
+
+	require.Contains(t, bindings, keyHelp{key: "/", desc: "search"})
+	require.Contains(t, bindings, keyHelp{key: "ctrl+p", desc: "commands"})
+	require.Contains(t, bindings, keyHelp{key: "ctrl+r", desc: "runs"})
+	require.Contains(t, bindings, keyHelp{key: "ctrl+a", desc: "approvals"})
+}
+
 func TestHandleNavigateToView_EmptyViewIsNoop(t *testing.T) {
 	t.Parallel()
 
