@@ -68,66 +68,60 @@ func TestClient_CreateIssue_TabTitle(t *testing.T) {
 	assert.Equal(t, "title must not be empty", err.Error())
 }
 
+func TestClient_CreatePullRequest_EmptyTitle(t *testing.T) {
+	c := NewClient("owner/repo")
+	pr, err := c.CreatePullRequest(context.Background(), "", "body", "feature/test", "main", false)
+	assert.Nil(t, pr)
+	require.Error(t, err)
+	assert.Equal(t, "title must not be empty", err.Error())
+}
+
+func TestClient_CreatePullRequest_EmptyHead(t *testing.T) {
+	c := NewClient("owner/repo")
+	pr, err := c.CreatePullRequest(context.Background(), "Add feature", "body", " ", "main", false)
+	assert.Nil(t, pr)
+	require.Error(t, err)
+	assert.Equal(t, "head branch must not be empty", err.Error())
+}
+
+func TestClient_CommentPullRequest_ValidatesInputs(t *testing.T) {
+	c := NewClient("owner/repo")
+	err := c.CommentPullRequest(context.Background(), 0, "nice")
+	require.Error(t, err)
+	assert.Equal(t, "pull request number must be greater than zero", err.Error())
+
+	err = c.CommentPullRequest(context.Background(), 7, "   ")
+	require.Error(t, err)
+	assert.Equal(t, "comment body must not be empty", err.Error())
+}
+
 func TestClient_ListIssues_DefaultState(t *testing.T) {
-	// We can't call ListIssues without the gh CLI installed, but we can
-	// verify the default-filling logic by inspecting the function behavior:
-	// state="" becomes "open", limit<=0 becomes 30.
-	// Since these are applied inline before run(), we verify via CreateIssue
-	// (which validates title) and document the contract.
-
-	// Verify defaults are applied correctly by checking the code path:
-	// an empty state defaults to "open" and limit<=0 defaults to 30.
-	// The actual args passed to run() would be:
-	//   ["issue", "list", "--state", "open", "--limit", "30", "--json", "...", "--repo", "owner/repo"]
-	//
-	// We verify this logic is correct by reading the source: lines 118-123.
-	// This test serves as a guardrail against accidental changes to defaults.
-
 	c := NewClient("test/repo")
-
-	// Smoke check: the function signature accepts these parameters and the
-	// defaults are documented. We just ensure the client is properly wired.
 	assert.NotNil(t, c)
 	assert.Equal(t, "test/repo", c.repo)
 }
 
 func TestClient_ListPullRequests_DefaultState(t *testing.T) {
-	// Same contract as ListIssues: state="" -> "open", limit<=0 -> 30.
-	// Verified by source inspection, lines 146-151.
 	c := NewClient("test/repo")
 	assert.NotNil(t, c)
 	assert.Equal(t, "test/repo", c.repo)
 }
 
 func TestClient_RunError_TrimsOutput(t *testing.T) {
-	// The run() method trims whitespace from combined output on error and
-	// uses it as the error message. If output is empty, it falls back to
-	// err.Error(). We cannot invoke run() without shelling out, but we
-	// verify the error-wrapping contract through CreateIssue validation.
-
 	c := NewClient("owner/repo")
 	_, err := c.CreateIssue(context.Background(), "", "body")
 	require.Error(t, err)
-	// The error message should be clean, not wrapped with "exit status" noise.
 	assert.Equal(t, "title must not be empty", err.Error())
 }
 
 func TestClient_ResolveRepo_Empty_ShellsOut(t *testing.T) {
-	// When repo is empty, resolveRepo calls GetCurrentRepo which shells out.
-	// We verify that the explicit-repo path returns immediately.
 	c := NewClient("explicit/repo")
 	repo, err := c.resolveRepo(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, "explicit/repo", repo)
 }
 
-// TestParseCLIError_Behavior verifies the error message surface area of the
-// github client's run method. The run method uses combined output as the error
-// message when the command fails. If combined output is empty, it falls back
-// to err.Error().
 func TestRunErrorFallback(t *testing.T) {
-	// We can't easily test run() directly without a gh binary, but we can
-	// test the two validation-error code paths that don't shell out.
 	tests := []struct {
 		name  string
 		title string
@@ -150,7 +144,6 @@ func TestRunErrorFallback(t *testing.T) {
 }
 
 func TestClient_RepoArgs_PreservesExactValue(t *testing.T) {
-	// Verify that repoArgs does not modify the repo string.
 	tests := []struct {
 		repo string
 		want []string
@@ -181,8 +174,38 @@ func TestClient_GetCurrentRepo_ContextCanceled(t *testing.T) {
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
+func TestClient_CreatePullRequest_Success(t *testing.T) {
+	writeFakeGH(t, `#!/bin/sh
+printf '%s\n' "$@" >"$TMPDIR/gh-args.txt"
+cat <<'EOF'
+{"number":12,"title":"Add bwrap workspace support","body":"Implements sandbox-backed attach flow.","state":"open","draft":true,"created_at":"2026-04-08T00:00:00Z","updated_at":"2026-04-08T00:00:00Z","html_url":"https://github.com/owner/repo/pull/12","user":{"login":"roninjin10"},"head":{"ref":"feat/test"},"base":{"ref":"main"}}
+EOF
+`)
+
+	c := NewClient("owner/repo")
+	pr, err := c.CreatePullRequest(context.Background(), "Add bwrap workspace support", "Implements sandbox-backed attach flow.", "feat/test", "main", true)
+	require.NoError(t, err)
+	require.NotNil(t, pr)
+	assert.Equal(t, 12, pr.Number)
+	assert.Equal(t, "feat/test", pr.HeadRefName)
+	assert.Equal(t, "main", pr.BaseRefName)
+	assert.True(t, pr.IsDraft)
+}
+
+func TestClient_CommentPullRequest_Success(t *testing.T) {
+	writeFakeGH(t, `#!/bin/sh
+printf '%s\n' "$@" >"$TMPDIR/gh-args.txt"
+cat <<'EOF'
+{"id":1}
+EOF
+`)
+
+	c := NewClient("owner/repo")
+	err := c.CommentPullRequest(context.Background(), 12, "Please exercise the landing request flow in tmux.")
+	require.NoError(t, err)
+}
+
 func TestStructTypes(t *testing.T) {
-	// Ensure the public types are constructable and zero-valued correctly.
 	var issue Issue
 	assert.Zero(t, issue.Number)
 	assert.Empty(t, issue.Title)
@@ -201,7 +224,6 @@ func TestStructTypes(t *testing.T) {
 	var repo Repo
 	assert.Empty(t, repo.NameWithOwner)
 
-	// Suppress unused variable warnings by using them.
 	_ = errors.New("unused")
 }
 
@@ -216,4 +238,5 @@ func writeFakeGH(t *testing.T, script string) {
 	path := filepath.Join(dir, "gh")
 	require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("TMPDIR", dir)
 }

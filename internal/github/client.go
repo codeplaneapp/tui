@@ -76,6 +76,24 @@ type createIssueResponse struct {
 	User      User   `json:"user"`
 }
 
+type createPullRequestResponse struct {
+	Number    int    `json:"number"`
+	Title     string `json:"title"`
+	Body      string `json:"body"`
+	State     string `json:"state"`
+	Draft     bool   `json:"draft"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+	URL       string `json:"html_url"`
+	User      User   `json:"user"`
+	Head      struct {
+		Ref string `json:"ref"`
+	} `json:"head"`
+	Base struct {
+		Ref string `json:"ref"`
+	} `json:"base"`
+}
+
 func NewClient(repo string) *Client {
 	return &Client{repo: repo}
 }
@@ -215,6 +233,88 @@ func (c *Client) CreateIssue(ctx context.Context, title, body string) (*Issue, e
 		UpdatedAt: created.UpdatedAt,
 		URL:       created.URL,
 	}, nil
+}
+
+func (c *Client) CreatePullRequest(ctx context.Context, title, body, head, base string, draft bool) (*PullRequest, error) {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return nil, fmt.Errorf("title must not be empty")
+	}
+	head = strings.TrimSpace(head)
+	if head == "" {
+		return nil, fmt.Errorf("head branch must not be empty")
+	}
+	base = strings.TrimSpace(base)
+	if base == "" {
+		base = "main"
+	}
+
+	repo, err := c.resolveRepo(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	args := []string{
+		"api",
+		"--method", "POST",
+		fmt.Sprintf("repos/%s/pulls", repo),
+		"-f", "title=" + title,
+		"-f", "head=" + head,
+		"-f", "base=" + base,
+	}
+	if strings.TrimSpace(body) != "" {
+		args = append(args, "-f", "body="+body)
+	}
+	if draft {
+		args = append(args, "-F", "draft=true")
+	}
+
+	out, err := c.run(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+
+	var created createPullRequestResponse
+	if err := json.Unmarshal(out, &created); err != nil {
+		return nil, fmt.Errorf("parse created pull request: %w", err)
+	}
+
+	return &PullRequest{
+		Number:      created.Number,
+		Title:       created.Title,
+		Body:        created.Body,
+		State:       created.State,
+		IsDraft:     created.Draft,
+		Author:      created.User,
+		CreatedAt:   created.CreatedAt,
+		UpdatedAt:   created.UpdatedAt,
+		URL:         created.URL,
+		HeadRefName: created.Head.Ref,
+		BaseRefName: created.Base.Ref,
+	}, nil
+}
+
+func (c *Client) CommentPullRequest(ctx context.Context, number int, body string) error {
+	if number <= 0 {
+		return fmt.Errorf("pull request number must be greater than zero")
+	}
+	body = strings.TrimSpace(body)
+	if body == "" {
+		return fmt.Errorf("comment body must not be empty")
+	}
+
+	repo, err := c.resolveRepo(ctx)
+	if err != nil {
+		return err
+	}
+
+	_, err = c.run(ctx,
+		"api",
+		"--method", "POST",
+		fmt.Sprintf("repos/%s/issues/%d/comments", repo, number),
+		"-f", "body="+body,
+	)
+	return err
 }
 
 func (c *Client) GetCurrentRepo(ctx context.Context) (*Repo, error) {

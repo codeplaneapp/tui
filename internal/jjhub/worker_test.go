@@ -80,6 +80,42 @@ func TestAttachWorkspaceCommand_BuildsSSHCommand(t *testing.T) {
 	assert.Equal(t, host, attrs["codeplane.workspace.ssh_host"])
 }
 
+func TestWorkerAttachScriptWithSandbox_AutoModePrefersBubblewrapWhenAvailable(t *testing.T) {
+	script := workerAttachScriptWithSandbox(defaultWorkerSessionName, workspaceSandboxAutoValue)
+	assert.Contains(t, script, "command -v bwrap")
+	assert.Contains(t, script, "command -v bubblewrap")
+	assert.Contains(t, script, "launch_cmd=\"cd ${escaped_dir} && exec ${escaped_sandbox} --die-with-parent --new-session --proc /proc --dev-bind / / --chdir ${escaped_dir} ${escaped_bin}\"")
+}
+
+func TestWorkerAttachScriptWithSandbox_RequiredModeFailsWithoutBubblewrap(t *testing.T) {
+	script := workerAttachScriptWithSandbox(defaultWorkerSessionName, workspaceSandboxBwrapValue)
+	assert.Contains(t, script, "bubblewrap requested but neither bwrap nor bubblewrap is installed in the workspace")
+}
+
+func TestWorkerAttachScriptWithSandbox_OffModeSkipsSandboxSetup(t *testing.T) {
+	script := workerAttachScriptWithSandbox(defaultWorkerSessionName, workspaceSandboxOffValue)
+	assert.NotContains(t, script, "command -v bwrap")
+	assert.NotContains(t, script, "bubblewrap")
+}
+
+func TestNormalizeWorkspaceSandboxMode(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]string{
+		"":         workspaceSandboxAutoValue,
+		"auto":     workspaceSandboxAutoValue,
+		"TRUE":     workspaceSandboxAutoValue,
+		"bwrap":    workspaceSandboxBwrapValue,
+		"required": workspaceSandboxBwrapValue,
+		"off":      workspaceSandboxOffValue,
+		"disabled": workspaceSandboxOffValue,
+		"junk":     workspaceSandboxAutoValue,
+	}
+	for input, want := range tests {
+		assert.Equal(t, want, normalizeWorkspaceSandboxMode(input), input)
+	}
+}
+
 func TestShellQuote(t *testing.T) {
 	t.Parallel()
 
