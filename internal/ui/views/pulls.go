@@ -22,6 +22,7 @@ type pullRequestManager interface {
 	ListPullRequests(ctx context.Context, state string, limit int) ([]ghrepo.PullRequest, error)
 	CreatePullRequest(ctx context.Context, title, body, head, base string, draft bool) (*ghrepo.PullRequest, error)
 	CommentPullRequest(ctx context.Context, number int, body string) error
+	OriginRepository(ctx context.Context) (string, error)
 }
 
 type pullRequestPromptKind uint8
@@ -108,6 +109,10 @@ func (m githubPullRequestManager) CreatePullRequest(ctx context.Context, title, 
 
 func (m githubPullRequestManager) CommentPullRequest(ctx context.Context, number int, body string) error {
 	return m.client.CommentPullRequest(ctx, number, body)
+}
+
+func (m githubPullRequestManager) OriginRepository(ctx context.Context) (string, error) {
+	return ghrepo.OriginRepository(ctx)
 }
 
 func newPullRequestsViewWithClient(client pullRequestManager) *PullRequestsView {
@@ -268,7 +273,7 @@ func (v *PullRequestsView) createPullRequestCmd(title, body, base string) tea.Cm
 		if err := ghrepo.PushBranch(context.Background(), "origin", head); err != nil {
 			return pullRequestActionErrorMsg{err: err}
 		}
-		repo, err := ghrepo.OriginRepository(context.Background())
+		repo, err := v.client.OriginRepository(context.Background())
 		if err != nil {
 			return pullRequestActionErrorMsg{err: err}
 		}

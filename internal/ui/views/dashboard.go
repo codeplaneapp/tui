@@ -201,6 +201,9 @@ func NewDashboardViewWithJJHub(com *common.Common, client *smithers.Client, hasS
 	// Setup menu items
 	d.menuItems = []menuItem{
 		{icon: "⚡", label: "Run Workflow", desc: "Choose a workflow to execute", action: func() tea.Msg { d.activeTab = 2; return nil }},
+		{icon: "🔀", label: "Pull Requests", desc: "Browse and create GitHub pull requests", action: func() tea.Msg {
+			return DashboardNavigateMsg{View: "pulls"}
+		}},
 		{icon: "💬", label: "New Chat", desc: "Start a new AI session", action: func() tea.Msg {
 			return DashboardNavigateMsg{View: "chat"}
 		}},

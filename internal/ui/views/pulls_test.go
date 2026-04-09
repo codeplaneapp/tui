@@ -13,8 +13,9 @@ import (
 )
 
 type mockPullRequestManager struct {
-	repo  *ghrepo.Repo
-	pulls []ghrepo.PullRequest
+	repo       *ghrepo.Repo
+	originRepo string
+	pulls      []ghrepo.PullRequest
 
 	createCalls []struct {
 		title string
@@ -92,6 +93,13 @@ func (m *mockPullRequestManager) CommentPullRequest(_ context.Context, number in
 		body   string
 	}{number: number, body: body})
 	return m.commentErr
+}
+
+func (m *mockPullRequestManager) OriginRepository(context.Context) (string, error) {
+	if m.originRepo != "" {
+		return m.originRepo, nil
+	}
+	return "codeplaneapp/tui", nil
 }
 
 func TestPullRequestsView_EmptyStateAndCreateValidation(t *testing.T) {
