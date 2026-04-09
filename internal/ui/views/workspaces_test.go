@@ -1351,11 +1351,13 @@ func TestWorkspacesView_ShortHelp_States(t *testing.T) {
 	// Default workspace mode
 	bindings := v.ShortHelp()
 	assert.NotEmpty(t, bindings)
+	assert.Contains(t, helpKeys(bindings), "b")
 
 	// Snapshot mode
 	v.mode = snapshotMode
 	bindings = v.ShortHelp()
 	assert.NotEmpty(t, bindings)
+	assert.NotContains(t, helpKeys(bindings), "b")
 
 	// Prompt active
 	v.prompt.active = true
@@ -1408,4 +1410,31 @@ func TestWorkspacesView_ConnectingIndicator(t *testing.T) {
 
 	output := v.View()
 	assert.Contains(t, output, "Attaching to workspace ws-1")
+}
+
+func TestWorkspacesView_SandboxModeCycleAndRendering(t *testing.T) {
+	t.Parallel()
+	manager := &mockWorkspaceManager{}
+	v := newWorkspacesViewWithClient(manager)
+	v.loading = false
+	v.err = nil
+	v.workspaces = []jjhub.Workspace{
+		makeWS("ws-1", "busy-ws", "running"),
+	}
+	v.width = 120
+	v.height = 24
+
+	output := v.View()
+	assert.Contains(t, output, "[sandbox: auto]")
+	assert.Contains(t, output, "auto-detect bubblewrap")
+
+	updated, cmd := v.Update(tea.KeyPressMsg{Code: 'b'})
+	wv := updated.(*WorkspacesView)
+	assert.Nil(t, cmd)
+	assert.Equal(t, workspaceSandboxModeBubblewrap, wv.sandboxMode)
+	assert.Contains(t, wv.actionMsg, "Workspace sandbox mode set to bwrap")
+
+	output = wv.View()
+	assert.Contains(t, output, "[sandbox: bwrap]")
+	assert.Contains(t, output, "require bubblewrap sandbox")
 }

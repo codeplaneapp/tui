@@ -1155,7 +1155,7 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.tabManager != nil {
 			tab := &WorkspaceTab{
 				ID:          "chat:new",
-				Kind:        TabKindView,
+				Kind:        TabKindChat,
 				Label:       "Chat",
 				Closable:    true,
 				Router:      views.NewRouter(),
@@ -2140,6 +2140,13 @@ func (m *UI) handleNavigateToView(msg NavigateToViewMsg) tea.Cmd {
 	if view == "" {
 		return nil
 	}
+
+	if m.tabManager != nil {
+		if cmd := m.openViewAsTab(view); cmd != nil {
+			return cmd
+		}
+	}
+
 	switch view {
 	case "runs":
 		runsView := views.NewRunsView(m.smithersClient)
@@ -2354,7 +2361,10 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		return tea.Batch(cmds...)
 	case uiSmithersView:
-		// Forward ALL key presses to the current view first.
+		if handleGlobalKeys(msg) {
+			return tea.Batch(cmds...)
+		}
+		// Forward ALL remaining key presses to the current view.
 		// Views handle their own Esc (e.g., closing overlays, cancelling forms).
 		//
 		// Navigation commands are executed synchronously rather than batched
@@ -2961,6 +2971,12 @@ func (m *UI) ShortHelp() []key.Binding {
 		if current := m.viewRouter.Current(); current != nil {
 			binds = append(binds, current.ShortHelp()...)
 		}
+		binds = append(binds,
+			commands,
+			k.Models,
+			k.RunDashboard,
+			k.Approvals,
+		)
 	default:
 		// TODO: other states
 		// if m.session == nil {
@@ -3078,6 +3094,19 @@ func (m *UI) FullHelp() [][]key.Binding {
 				binds = append(binds, []key.Binding{k.Chat.PillLeft})
 			}
 		}
+	case uiSmithersView:
+		if current := m.viewRouter.Current(); current != nil {
+			binds = append(binds, []key.Binding(current.ShortHelp()))
+		}
+		binds = append(binds,
+			[]key.Binding{
+				commands,
+				k.Models,
+				k.Sessions,
+				k.RunDashboard,
+				k.Approvals,
+			},
+		)
 	default:
 		if m.session == nil {
 			// no session selected
@@ -3652,6 +3681,12 @@ func (m *UI) handleViewResult(result tea.Msg) []tea.Cmd {
 	case views.PopViewMsg:
 		if m.viewRouter.Depth() <= 1 {
 			m.viewRouter.Reset()
+			if m.tabManager != nil && m.tabManager.ActiveIndex() > 0 {
+				if cmd := m.closeActiveTab(); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+				break
+			}
 			if m.dashboard != nil {
 				m.setState(uiSmithersDashboard, uiFocusMain)
 			} else if m.hasSession() {

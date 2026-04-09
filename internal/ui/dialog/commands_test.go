@@ -62,6 +62,7 @@ func TestCommands_DefaultCommands_IncludeJJHubViews(t *testing.T) {
 	assert.Contains(t, titles, "JJHub Status")
 	assert.Contains(t, titles, "JJHub Issues")
 	assert.Contains(t, titles, "JJHub Landings")
+	assert.Contains(t, titles, "GitHub Pull Requests")
 	assert.Contains(t, titles, "JJHub Workflows")
 	assert.Contains(t, titles, "JJHub Workspaces")
 	assert.Contains(t, titles, "JJHub Search")

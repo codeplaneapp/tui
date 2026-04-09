@@ -88,6 +88,7 @@ func TestTabManagerFindByID(t *testing.T) {
 
 func TestTabKindIcon(t *testing.T) {
 	assert.Equal(t, "◆", TabKindLauncher.Icon())
+	assert.Equal(t, "💬", TabKindChat.Icon())
 	assert.Equal(t, "●", TabKindRunInspect.Icon())
 	assert.Equal(t, "⬡", TabKindWorkspace.Icon())
 }

@@ -64,6 +64,47 @@ func TestHandleKeyPressMsg_ViewApprovalsShort_DoesNotStealSmithersViewInput(t *t
 	require.True(t, view.receivedKey, "expected smithers view to receive bare 'a'")
 }
 
+func TestHandleKeyPressMsg_GlobalShortcutsWorkInSmithersView(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		msg      tea.KeyPressMsg
+		wantView string
+	}{
+		{
+			name:     "runs",
+			msg:      tea.KeyPressMsg{Code: 'r', Mod: tea.ModCtrl},
+			wantView: "runs",
+		},
+		{
+			name:     "approvals",
+			msg:      tea.KeyPressMsg{Code: 'a', Mod: tea.ModCtrl},
+			wantView: "approvals",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ui := newShortcutTestUI()
+			ui.viewRouter = views.NewRouter()
+			ui.viewRouter.Push(&shortcutCaptureView{}, ui.width, ui.height)
+			ui.state = uiSmithersView
+			ui.focus = uiFocusMain
+
+			cmd := ui.handleKeyPressMsg(tt.msg)
+			require.NotNil(t, cmd)
+
+			msg := cmd()
+			navigateMsg, ok := msg.(NavigateToViewMsg)
+			require.Truef(t, ok, "expected NavigateToViewMsg for %s, got %T", tt.name, msg)
+			require.Equal(t, tt.wantView, navigateMsg.View)
+		})
+	}
+}
+
 func TestShortHelp_IncludesSmithersShortcutBindingsInChat(t *testing.T) {
 	t.Parallel()
 
@@ -93,6 +134,47 @@ func TestFullHelp_IncludesSmithersShortcutBindings(t *testing.T) {
 	require.Contains(t, bindings, keyHelp{key: "ctrl+a", desc: "approvals"})
 }
 
+func TestShortHelp_IncludesViewLocalAndGlobalBindingsInSmithersView(t *testing.T) {
+	t.Parallel()
+
+	ui := newShortcutTestUI()
+	ui.viewRouter = views.NewRouter()
+	runsView := views.NewRunsView(nil)
+	ui.viewRouter.Push(runsView, ui.width, ui.height)
+	ui.state = uiSmithersView
+	ui.focus = uiFocusMain
+
+	bindings := ui.ShortHelp()
+	assertHasHelpBinding(t, bindings, "/", "search")
+	assertHasHelpBinding(t, bindings, "ctrl+p", "commands")
+	assertHasHelpBinding(t, bindings, "ctrl+r", "runs")
+	assertHasHelpBinding(t, bindings, "ctrl+a", "approvals")
+}
+
+func TestFullHelp_IncludesViewLocalAndGlobalBindingsInSmithersView(t *testing.T) {
+	t.Parallel()
+
+	ui := newShortcutTestUI()
+	ui.viewRouter = views.NewRouter()
+	runsView := views.NewRunsView(nil)
+	ui.viewRouter.Push(runsView, ui.width, ui.height)
+	ui.state = uiSmithersView
+	ui.focus = uiFocusMain
+
+	var bindings []keyHelp
+	for _, row := range ui.FullHelp() {
+		for _, binding := range row {
+			help := binding.Help()
+			bindings = append(bindings, keyHelp{key: help.Key, desc: help.Desc})
+		}
+	}
+
+	require.Contains(t, bindings, keyHelp{key: "/", desc: "search"})
+	require.Contains(t, bindings, keyHelp{key: "ctrl+p", desc: "commands"})
+	require.Contains(t, bindings, keyHelp{key: "ctrl+r", desc: "runs"})
+	require.Contains(t, bindings, keyHelp{key: "ctrl+a", desc: "approvals"})
+}
+
 func TestHandleNavigateToView_EmptyViewIsNoop(t *testing.T) {
 	t.Parallel()
 
@@ -101,14 +183,54 @@ func TestHandleNavigateToView_EmptyViewIsNoop(t *testing.T) {
 	require.Nil(t, cmd, "empty view name should return nil cmd")
 }
 
+func TestHandleNavigateToView_OpensViewsAsTabs(t *testing.T) {
+	t.Parallel()
+
+	ui := newShortcutTestUI()
+	ui.tabManager = NewTabManager()
+	ui.viewRouter = ui.tabManager.Active().Router
+	ui.state = uiChat
+	ui.focus = uiFocusEditor
+
+	cmd := ui.handleNavigateToView(NavigateToViewMsg{View: "runs"})
+	require.NotNil(t, cmd)
+	require.Equal(t, 2, ui.tabManager.Len())
+	require.Equal(t, 1, ui.tabManager.ActiveIndex())
+	require.Equal(t, "view:runs", ui.tabManager.Active().ID)
+	require.Equal(t, uiSmithersView, ui.state)
+	require.Equal(t, uiFocusMain, ui.focus)
+	require.Same(t, ui.tabManager.Active().Router, ui.viewRouter)
+	require.True(t, ui.tabManager.Active().Router.HasViews())
+}
+
+func TestActivateTab_ChatTabReturnsToChatState(t *testing.T) {
+	t.Parallel()
+
+	ui := newShortcutTestUI()
+	ui.tabManager = NewTabManager()
+	ui.viewRouter = ui.tabManager.Active().Router
+	chatIdx := ui.tabManager.Add(&WorkspaceTab{
+		ID:          "chat:new",
+		Kind:        TabKindChat,
+		Label:       "Chat",
+		Closable:    true,
+		Router:      views.NewRouter(),
+		initialized: true,
+	})
+
+	cmd := ui.activateTab(chatIdx)
+
+	require.Nil(t, cmd)
+	require.Equal(t, chatIdx, ui.tabManager.ActiveIndex())
+	require.Equal(t, uiLanding, ui.state)
+	require.Equal(t, uiFocusEditor, ui.focus)
+	require.Same(t, ui.tabManager.Active().Router, ui.viewRouter)
+}
+
 func TestHandleNavigateToView_RunsView_IsHandled(t *testing.T) {
 	t.Parallel()
 
-	// Verify that the "runs" view name is handled by the runs-specific case
-	// (not falling through to the registry/coming-soon branch).
-	// We can't call handleNavigateToView directly here because it requires a
-	// fully wired UI (viewRouter, viewRegistry). Instead, verify the key-press
-	// path sends a NavigateToViewMsg with View="runs".
+	// Verify that the "runs" view name is handled by the keybinding path.
 	ui := newShortcutTestUI()
 	cmd := ui.handleKeyPressMsg(tea.KeyPressMsg{
 		Code: 'r',

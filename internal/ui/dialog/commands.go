@@ -431,6 +431,7 @@ func (c *Commands) defaultCommands() []*CommandItem {
 		NewCommandItem(c.com.Styles, "jjhub_status", "JJHub Status", "", ActionNavigate{View: "status"}),
 		NewCommandItem(c.com.Styles, "jjhub_issues", "JJHub Issues", "", ActionNavigate{View: "issues"}),
 		NewCommandItem(c.com.Styles, "jjhub_landings", "JJHub Landings", "", ActionNavigate{View: "landings"}),
+		NewCommandItem(c.com.Styles, "github_pulls", "GitHub Pull Requests", "", ActionNavigate{View: "pulls"}),
 		NewCommandItem(c.com.Styles, "jjhub_workflows", "JJHub Workflows", "", ActionNavigate{View: "jjhub-workflows"}),
 		NewCommandItem(c.com.Styles, "jjhub_workspaces", "JJHub Workspaces", "", ActionNavigate{View: "workspaces"}),
 		NewCommandItem(c.com.Styles, "jjhub_search", "JJHub Search", "", ActionNavigate{View: "search"}),

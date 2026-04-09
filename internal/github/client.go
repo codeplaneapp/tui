@@ -76,6 +76,24 @@ type createIssueResponse struct {
 	User      User   `json:"user"`
 }
 
+type createPullRequestResponse struct {
+	Number    int    `json:"number"`
+	Title     string `json:"title"`
+	Body      string `json:"body"`
+	State     string `json:"state"`
+	Draft     bool   `json:"draft"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+	URL       string `json:"html_url"`
+	User      User   `json:"user"`
+	Head      struct {
+		Ref string `json:"ref"`
+	} `json:"head"`
+	Base struct {
+		Ref string `json:"ref"`
+	} `json:"base"`
+}
+
 func NewClient(repo string) *Client {
 	return &Client{repo: repo}
 }
@@ -90,6 +108,25 @@ func (c *Client) run(ctx context.Context, args ...string) ([]byte, error) {
 		msg := strings.TrimSpace(string(out))
 		if msg == "" {
 			msg = err.Error()
+		}
+		return nil, fmt.Errorf("%s", msg)
+	}
+	return out, nil
+}
+
+func runGit(ctx context.Context, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, "git", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		msg := strings.TrimSpace(string(out))
+		if msg == "" {
+			msg = err.Error()
+		}
+		if strings.Contains(msg, "refs/jj/keep") || strings.Contains(msg, "bad ref") {
+			return nil, fmt.Errorf("git failed because a jj keep ref is invalid; remove the broken refs/jj/keep entry and retry: %s", msg)
 		}
 		return nil, fmt.Errorf("%s", msg)
 	}
@@ -215,6 +252,169 @@ func (c *Client) CreateIssue(ctx context.Context, title, body string) (*Issue, e
 		UpdatedAt: created.UpdatedAt,
 		URL:       created.URL,
 	}, nil
+}
+
+func (c *Client) CreatePullRequest(ctx context.Context, title, body, head, base string, draft bool) (*PullRequest, error) {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return nil, fmt.Errorf("title must not be empty")
+	}
+	head = strings.TrimSpace(head)
+	if head == "" {
+		return nil, fmt.Errorf("head branch must not be empty")
+	}
+	base = strings.TrimSpace(base)
+	if base == "" {
+		base = "main"
+	}
+
+	repo, err := c.resolveRepo(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	args := []string{
+		"api",
+		"--method", "POST",
+		fmt.Sprintf("repos/%s/pulls", repo),
+		"-f", "title=" + title,
+		"-f", "head=" + head,
+		"-f", "base=" + base,
+	}
+	if strings.TrimSpace(body) != "" {
+		args = append(args, "-f", "body="+body)
+	}
+	if draft {
+		args = append(args, "-F", "draft=true")
+	}
+
+	out, err := c.run(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+
+	var created createPullRequestResponse
+	if err := json.Unmarshal(out, &created); err != nil {
+		return nil, fmt.Errorf("parse created pull request: %w", err)
+	}
+
+	return &PullRequest{
+		Number:      created.Number,
+		Title:       created.Title,
+		Body:        created.Body,
+		State:       created.State,
+		IsDraft:     created.Draft,
+		Author:      created.User,
+		CreatedAt:   created.CreatedAt,
+		UpdatedAt:   created.UpdatedAt,
+		URL:         created.URL,
+		HeadRefName: created.Head.Ref,
+		BaseRefName: created.Base.Ref,
+	}, nil
+}
+
+func (c *Client) CommentPullRequest(ctx context.Context, number int, body string) error {
+	if number <= 0 {
+		return fmt.Errorf("pull request number must be greater than zero")
+	}
+	body = strings.TrimSpace(body)
+	if body == "" {
+		return fmt.Errorf("comment body must not be empty")
+	}
+
+	repo, err := c.resolveRepo(ctx)
+	if err != nil {
+		return err
+	}
+
+	_, err = c.run(ctx,
+		"api",
+		"--method", "POST",
+		fmt.Sprintf("repos/%s/issues/%d/comments", repo, number),
+		"-f", "body="+body,
+	)
+	return err
+}
+
+func CurrentBranch(ctx context.Context) (string, error) {
+	out, err := runGit(ctx, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return "", err
+	}
+	branch := strings.TrimSpace(string(out))
+	if branch == "" || branch == "HEAD" {
+		return "", fmt.Errorf("current branch is detached or unavailable")
+	}
+	return branch, nil
+}
+
+func DefaultBaseBranch(ctx context.Context) (string, error) {
+	out, err := runGit(ctx, "remote", "show", "origin")
+	if err != nil {
+		return "", err
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "HEAD branch:") {
+			branch := strings.TrimSpace(strings.TrimPrefix(line, "HEAD branch:"))
+			if branch != "" {
+				return branch, nil
+			}
+		}
+	}
+	return "main", nil
+}
+
+func OriginRepository(ctx context.Context) (string, error) {
+	out, err := runGit(ctx, "remote", "get-url", "origin")
+	if err != nil {
+		return "", err
+	}
+	url := strings.TrimSpace(string(out))
+	if url == "" {
+		return "", fmt.Errorf("origin remote URL is empty")
+	}
+	return parseRepositoryFromRemoteURL(url)
+}
+
+func parseRepositoryFromRemoteURL(remoteURL string) (string, error) {
+	remoteURL = strings.TrimSpace(remoteURL)
+	if remoteURL == "" {
+		return "", fmt.Errorf("remote URL is empty")
+	}
+	remoteURL = strings.TrimSuffix(remoteURL, ".git")
+	remoteURL = strings.TrimSuffix(remoteURL, "/")
+	if idx := strings.Index(remoteURL, "://"); idx >= 0 {
+		parts := strings.Split(remoteURL[idx+3:], "/")
+		if len(parts) >= 2 {
+			return parts[len(parts)-2] + "/" + parts[len(parts)-1], nil
+		}
+	}
+	if idx := strings.Index(remoteURL, ":"); idx >= 0 && strings.Contains(remoteURL[:idx], "@") {
+		path := strings.TrimPrefix(remoteURL[idx+1:], "/")
+		parts := strings.Split(path, "/")
+		if len(parts) >= 2 {
+			return parts[len(parts)-2] + "/" + parts[len(parts)-1], nil
+		}
+	}
+	parts := strings.Split(remoteURL, "/")
+	if len(parts) >= 2 {
+		return parts[len(parts)-2] + "/" + parts[len(parts)-1], nil
+	}
+	return "", fmt.Errorf("could not parse repository from remote URL %q", remoteURL)
+}
+
+func PushBranch(ctx context.Context, remote, branch string) error {
+	remote = strings.TrimSpace(remote)
+	if remote == "" {
+		remote = "origin"
+	}
+	branch = strings.TrimSpace(branch)
+	if branch == "" {
+		return fmt.Errorf("branch must not be empty")
+	}
+	_, err := runGit(ctx, "push", "-u", remote, branch)
+	return err
 }
 
 func (c *Client) GetCurrentRepo(ctx context.Context) (*Repo, error) {

@@ -48,6 +48,8 @@ func (m *UI) activateTab(idx int) tea.Cmd {
 	switch tab.Kind {
 	case TabKindLauncher:
 		m.setState(uiSmithersDashboard, uiFocusMain)
+	case TabKindChat:
+		m.setState(uiLanding, uiFocusEditor)
 	case TabKindRunInspect, TabKindLiveChat, TabKindWorkspace, TabKindView:
 		if tab.Router.HasViews() {
 			m.setState(uiSmithersView, uiFocusMain)
