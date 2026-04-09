@@ -47,6 +47,7 @@ type (
 	ActionNewSession        struct{}
 	ActionToggleHelp        struct{}
 	ActionToggleCompactMode struct{}
+	ActionToggleNavSidebar  struct{}
 	ActionToggleThinking    struct{}
 	ActionTogglePills       struct{}
 	ActionNavigate          struct {

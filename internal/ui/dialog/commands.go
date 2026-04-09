@@ -471,9 +471,12 @@ func (c *Commands) defaultCommands() []*CommandItem {
 			}
 		}
 	}
-	// Only show toggle compact mode command if window width is larger than compact breakpoint (120)
+	// Only show navigation/layout toggles when the window is wide enough.
+	if c.windowWidth >= sidebarCompactModeBreakpoint {
+		commands = append(commands, NewCommandItem(c.com.Styles, "toggle_tabs_sidebar", "Toggle Tabs Sidebar", "ctrl+b", ActionToggleNavSidebar{}))
+	}
 	if c.windowWidth >= sidebarCompactModeBreakpoint && c.hasSession {
-		commands = append(commands, NewCommandItem(c.com.Styles, "toggle_sidebar", "Toggle Sidebar", "", ActionToggleCompactMode{}))
+		commands = append(commands, NewCommandItem(c.com.Styles, "toggle_compact_mode", "Toggle Compact Mode", "", ActionToggleCompactMode{}))
 	}
 	if c.hasSession {
 		cfgPrime := c.com.Config()

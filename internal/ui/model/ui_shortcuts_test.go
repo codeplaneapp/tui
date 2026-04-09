@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/crush/internal/ui/styles"
 	"github.com/charmbracelet/crush/internal/ui/views"
 	"github.com/charmbracelet/crush/internal/workspace"
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/stretchr/testify/require"
 )
 
@@ -73,6 +74,7 @@ func TestShortHelp_IncludesSmithersShortcutBindingsInChat(t *testing.T) {
 	bindings := ui.ShortHelp()
 	assertHasHelpBinding(t, bindings, "ctrl+r", "runs")
 	assertHasHelpBinding(t, bindings, "ctrl+a", "approvals")
+	assertHasHelpBinding(t, bindings, "ctrl+b", "sidebar")
 }
 
 func TestFullHelp_IncludesSmithersShortcutBindings(t *testing.T) {
@@ -91,6 +93,79 @@ func TestFullHelp_IncludesSmithersShortcutBindings(t *testing.T) {
 
 	require.Contains(t, bindings, keyHelp{key: "ctrl+r", desc: "runs"})
 	require.Contains(t, bindings, keyHelp{key: "ctrl+a", desc: "approvals"})
+	require.Contains(t, bindings, keyHelp{key: "ctrl+b", desc: "sidebar"})
+	require.Contains(t, bindings, keyHelp{key: "alt+1-9", desc: "tabs"})
+	require.Contains(t, bindings, keyHelp{key: "alt+h", desc: "prev tab"})
+	require.Contains(t, bindings, keyHelp{key: "alt+l", desc: "next tab"})
+}
+
+func TestHandleKeyPressMsg_AltTabNumberNavigatesWhileEditorFocused(t *testing.T) {
+	t.Parallel()
+
+	ui := newShortcutTestUIWithTabs()
+	ui.focus = uiFocusEditor
+
+	ui.handleKeyPressMsg(tea.KeyPressMsg{Code: '2', Mod: tea.ModAlt})
+	require.Equal(t, 1, ui.tabManager.ActiveIndex())
+	require.Equal(t, uiSmithersView, ui.state)
+	require.Equal(t, uiFocusMain, ui.focus)
+}
+
+func TestHandleKeyPressMsg_TabCyclesChatFocusThroughNavSidebar(t *testing.T) {
+	t.Parallel()
+
+	ui := newShortcutTestUIWithTabs()
+	ui.focus = uiFocusEditor
+
+	ui.handleKeyPressMsg(tea.KeyPressMsg{Code: tea.KeyTab})
+	require.Equal(t, uiFocusMain, ui.focus)
+
+	ui.handleKeyPressMsg(tea.KeyPressMsg{Code: tea.KeyTab})
+	require.Equal(t, uiFocusNav, ui.focus)
+
+	ui.handleKeyPressMsg(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
+	require.Equal(t, uiFocusMain, ui.focus)
+}
+
+func TestHandleKeyPressMsg_NavFocusSwitchesTabs(t *testing.T) {
+	t.Parallel()
+
+	ui := newShortcutTestUIWithTabs()
+	ui.focus = uiFocusNav
+	ui.state = uiChat
+
+	ui.handleKeyPressMsg(tea.KeyPressMsg{Code: tea.KeyDown})
+	require.Equal(t, 1, ui.tabManager.ActiveIndex())
+	require.Equal(t, uiSmithersView, ui.state)
+	require.Equal(t, uiFocusNav, ui.focus)
+
+	ui.handleKeyPressMsg(tea.KeyPressMsg{Code: tea.KeyEnter})
+	require.Equal(t, uiFocusMain, ui.focus)
+}
+
+func TestHandleNavMouseClick_ActivatesClickedTab(t *testing.T) {
+	t.Parallel()
+
+	ui := newShortcutTestUIWithTabs()
+	ui.layout.navSidebar = uv.Rect(0, 0, navSidebarWidth, 12)
+
+	handled, _ := ui.handleNavMouseClick(tea.MouseClickMsg{X: 1, Y: navSidebarTabsStartRow + 1})
+	require.True(t, handled)
+	require.Equal(t, 1, ui.tabManager.ActiveIndex())
+	require.Equal(t, uiSmithersView, ui.state)
+}
+
+func TestHandleNavMouseClick_ShowHandleFocusesNav(t *testing.T) {
+	t.Parallel()
+
+	ui := newShortcutTestUIWithTabs()
+	ui.navSidebarHidden = true
+	ui.layout.navToggle = uv.Rect(0, 0, navToggleWidth, 6)
+
+	handled, _ := ui.handleNavMouseClick(tea.MouseClickMsg{X: 0, Y: 0})
+	require.True(t, handled)
+	require.False(t, ui.navSidebarHidden)
+	require.Equal(t, uiFocusNav, ui.focus)
 }
 
 func TestHandleNavigateToView_EmptyViewIsNoop(t *testing.T) {
@@ -194,6 +269,8 @@ func newShortcutTestUI() *UI {
 		keyMap:       keyMap,
 		state:        uiChat,
 		focus:        uiFocusEditor,
+		dashboard:    views.NewDashboardView(com, nil, false),
+		tabManager:   NewTabManager(),
 		viewRegistry: views.DefaultRegistry(),
 		textarea:     ta,
 		status:       NewStatus(com, nil),
@@ -201,6 +278,21 @@ func newShortcutTestUI() *UI {
 		width:        140,
 		height:       45,
 	}
+}
+
+func newShortcutTestUIWithTabs() *UI {
+	ui := newShortcutTestUI()
+	tab := &WorkspaceTab{
+		ID:       "view:capture",
+		Kind:     TabKindView,
+		Label:    "Capture",
+		Closable: true,
+		Router:   views.NewRouter(),
+	}
+	tab.Router.Push(&shortcutCaptureView{}, ui.width, ui.height)
+	tab.initialized = true
+	ui.tabManager.Add(tab)
+	return ui
 }
 
 type shortcutCaptureView struct {

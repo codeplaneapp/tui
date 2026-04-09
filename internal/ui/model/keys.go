@@ -66,6 +66,7 @@ type KeyMap struct {
 	RunDashboard key.Binding
 	Approvals    key.Binding
 	Tab          key.Binding
+	Backtab      key.Binding
 	// DismissToast dismisses the newest in-terminal toast notification.
 	DismissToast key.Binding
 	// ViewApprovalsShort is a bare 'a' shortcut that navigates to the approvals
@@ -73,8 +74,19 @@ type KeyMap struct {
 	ViewApprovalsShort key.Binding
 	// NavSidebar toggles the workspace tab sidebar visibility.
 	NavSidebar key.Binding
+	// PrevTab switches to the previous workspace tab.
+	PrevTab key.Binding
+	// NextTab switches to the next workspace tab.
+	NextTab key.Binding
+	// NavTabs switches directly to workspace tabs 1-9 from any focus state.
+	NavTabs key.Binding
 	// CloseTab closes the active workspace tab.
 	CloseTab key.Binding
+
+	Nav struct {
+		UpDown key.Binding
+		Select key.Binding
+	}
 }
 
 func DefaultKeyMap() KeyMap {
@@ -115,9 +127,25 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("tab"),
 			key.WithHelp("tab", "change focus"),
 		),
+		Backtab: key.NewBinding(
+			key.WithKeys("shift+tab"),
+			key.WithHelp("shift+tab", "focus back"),
+		),
 		NavSidebar: key.NewBinding(
 			key.WithKeys("ctrl+b"),
 			key.WithHelp("ctrl+b", "sidebar"),
+		),
+		PrevTab: key.NewBinding(
+			key.WithKeys("alt+h"),
+			key.WithHelp("alt+h", "prev tab"),
+		),
+		NextTab: key.NewBinding(
+			key.WithKeys("alt+l"),
+			key.WithHelp("alt+l", "next tab"),
+		),
+		NavTabs: key.NewBinding(
+			key.WithKeys("alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7", "alt+8", "alt+9"),
+			key.WithHelp("alt+1-9", "tabs"),
 		),
 		CloseTab: key.NewBinding(
 			key.WithKeys("ctrl+w"),
@@ -271,6 +299,14 @@ func DefaultKeyMap() KeyMap {
 	km.Chat.Expand = key.NewBinding(
 		key.WithKeys("space"),
 		key.WithHelp("space", "expand/collapse"),
+	)
+	km.Nav.UpDown = key.NewBinding(
+		key.WithKeys("up", "k", "down", "j"),
+		key.WithHelp("↑↓/jk", "switch tab"),
+	)
+	km.Nav.Select = key.NewBinding(
+		key.WithKeys("enter"),
+		key.WithHelp("enter", "open tab"),
 	)
 	km.Initialize.Yes = key.NewBinding(
 		key.WithKeys("y", "Y"),

@@ -99,6 +99,7 @@ const (
 	uiFocusNone uiFocusState = iota
 	uiFocusEditor
 	uiFocusMain
+	uiFocusNav
 )
 
 type uiState uint8
@@ -1004,6 +1005,13 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(cmds...)
 		}
 
+		if handled, cmd := m.handleNavMouseClick(msg); handled {
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+			return m, tea.Batch(cmds...)
+		}
+
 		if cmd := m.handleClickFocus(msg); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
@@ -1245,6 +1253,7 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// This logic gets triggered on any message type, but should it?
 	switch m.focus {
 	case uiFocusMain:
+	case uiFocusNav:
 	case uiFocusEditor:
 		// Textarea placeholder logic
 		if m.isAgentBusy() {
@@ -1478,20 +1487,47 @@ func (m *UI) appendSessionMessage(msg message.Message) tea.Cmd {
 
 func (m *UI) handleClickFocus(msg tea.MouseClickMsg) (cmd tea.Cmd) {
 	switch {
-	case m.state != uiChat:
+	case !slices.Contains([]uiState{uiChat, uiLanding, uiSmithersView, uiSmithersDashboard}, m.state):
+		return nil
+	case image.Pt(msg.X, msg.Y).In(m.layout.navSidebar):
+		return nil
+	case image.Pt(msg.X, msg.Y).In(m.layout.navToggle):
 		return nil
 	case image.Pt(msg.X, msg.Y).In(m.layout.sidebar):
 		return nil
 	case m.focus != uiFocusEditor && image.Pt(msg.X, msg.Y).In(m.layout.editor):
-		m.focus = uiFocusEditor
-		cmd = m.textarea.Focus()
-		m.chat.Blur()
-	case m.focus != uiFocusMain && image.Pt(msg.X, msg.Y).In(m.layout.main):
-		m.focus = uiFocusMain
-		m.textarea.Blur()
-		m.chat.Focus()
+		return m.setFocus(uiFocusEditor)
+	case m.focus != uiFocusMain && image.Pt(msg.X, msg.Y).In(m.layout.main) && m.state != uiLanding:
+		return m.setFocus(uiFocusMain)
 	}
 	return cmd
+}
+
+func (m *UI) handleNavMouseClick(msg tea.MouseClickMsg) (bool, tea.Cmd) {
+	if !m.supportsNavSidebar() || m.tabManager == nil {
+		return false, nil
+	}
+
+	pt := image.Pt(msg.X, msg.Y)
+	switch {
+	case pt.In(m.layout.navToggle):
+		cmd := m.toggleNavSidebar()
+		if !m.navSidebarHidden {
+			return true, tea.Batch(cmd, m.setFocus(uiFocusNav))
+		}
+		return true, cmd
+	case !pt.In(m.layout.navSidebar):
+		return false, nil
+	}
+
+	row := msg.Y - m.layout.navSidebar.Min.Y
+	if row == 0 {
+		return true, m.toggleNavSidebar()
+	}
+	if idx, ok := navSidebarTabIndexAt(row, m.tabManager.Len()); ok {
+		return true, m.activateTab(idx)
+	}
+	return true, m.setFocus(uiFocusNav)
 }
 
 // updateSessionMessage updates an existing message in the current session in the chat
@@ -1755,6 +1791,11 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		m.dialog.CloseDialog(dialog.CommandsID)
 	case dialog.ActionToggleCompactMode:
 		cmds = append(cmds, m.toggleCompactMode())
+		m.dialog.CloseDialog(dialog.CommandsID)
+	case dialog.ActionToggleNavSidebar:
+		if cmd := m.toggleNavSidebar(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 		m.dialog.CloseDialog(dialog.CommandsID)
 	case dialog.ActionTogglePills:
 		if cmd := m.togglePillsExpanded(); cmd != nil {
@@ -2191,6 +2232,26 @@ func (m *UI) openAuthenticationDialog(provider catwalk.Provider, model config.Se
 	return cmd
 }
 
+func navTabIndexForKey(msg tea.KeyPressMsg, allowPlain bool) (int, bool) {
+	key := msg.String()
+	if len(key) == 1 && key[0] >= '1' && key[0] <= '9' {
+		if allowPlain {
+			return int(key[0] - '1'), true
+		}
+		return 0, false
+	}
+
+	const altPrefix = "alt+"
+	if strings.HasPrefix(key, altPrefix) && len(key) == len(altPrefix)+1 {
+		last := key[len(key)-1]
+		if last >= '1' && last <= '9' {
+			return int(last - '1'), true
+		}
+	}
+
+	return 0, false
+}
+
 func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 	var cmds []tea.Cmd
 
@@ -2281,7 +2342,7 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 	// Only active when the editor is not focused to avoid capturing text input.
 	// TODO: inline approval — wire smithersClient.ApproveGate(approvalID) directly
 	// from the toast key handler for < 3-keystroke approval (notifications-approval-inline).
-	if key.Matches(msg, m.keyMap.ViewApprovalsShort) && m.focus != uiFocusEditor && m.state != uiSmithersView {
+	if key.Matches(msg, m.keyMap.ViewApprovalsShort) && m.focus != uiFocusEditor && m.focus != uiFocusNav && m.state != uiSmithersView {
 		cmds = append(cmds, m.navigateToView("approvals"))
 		return tea.Batch(cmds...)
 	}
@@ -2292,11 +2353,26 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 	}
 
 	// Global workspace tab switching via number keys.
-	// Only active when the editor is not focused and not in onboarding/init.
-	if m.focus != uiFocusEditor && m.state != uiOnboarding && m.state != uiInitialize {
-		if key.Matches(msg, key.NewBinding(key.WithKeys("1", "2", "3", "4", "5", "6", "7", "8", "9"))) {
-			idx := int(msg.String()[0] - '1')
-			if cmd := m.navigateToNavTab(idx); cmd != nil {
+	// Plain 1-9 stays disabled while typing in the editor, but alt+1-9 works
+	// from any focus state so chat is never trapped.
+	if m.state != uiOnboarding && m.state != uiInitialize {
+		if idx, ok := navTabIndexForKey(msg, m.focus != uiFocusEditor); ok {
+			if cmd := m.navigateToNavTab(idx, m.focus == uiFocusNav); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+			return tea.Batch(cmds...)
+		}
+	}
+
+	if m.state != uiOnboarding && m.state != uiInitialize {
+		switch {
+		case key.Matches(msg, m.keyMap.PrevTab):
+			if cmd := m.navigateRelativeNavTab(-1, m.focus == uiFocusNav); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+			return tea.Batch(cmds...)
+		case key.Matches(msg, m.keyMap.NextTab):
+			if cmd := m.navigateRelativeNavTab(1, m.focus == uiFocusNav); cmd != nil {
 				cmds = append(cmds, cmd)
 			}
 			return tea.Batch(cmds...)
@@ -2305,7 +2381,9 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 
 	// Toggle workspace sidebar visibility.
 	if key.Matches(msg, m.keyMap.NavSidebar) {
-		m.toggleNavSidebar()
+		if cmd := m.toggleNavSidebar(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 		return tea.Batch(cmds...)
 	}
 
@@ -2325,6 +2403,46 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 			}
 			return tea.Batch(cmds...)
 		}
+	}
+
+	if (m.focus == uiFocusNav || m.state == uiChat || m.state == uiLanding) &&
+		(key.Matches(msg, m.keyMap.Tab) || key.Matches(msg, m.keyMap.Backtab)) {
+		delta := 1
+		if key.Matches(msg, m.keyMap.Backtab) {
+			delta = -1
+		}
+		if cmd := m.cycleFocus(delta); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		return tea.Batch(cmds...)
+	}
+
+	if m.focus == uiFocusNav {
+		switch {
+		case key.Matches(msg, m.keyMap.Nav.UpDown):
+			if strings.Contains(msg.String(), "up") || msg.String() == "k" {
+				if cmd := m.navigateRelativeNavTab(-1, true); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+			} else {
+				if cmd := m.navigateRelativeNavTab(1, true); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+			}
+			return tea.Batch(cmds...)
+		case key.Matches(msg, m.keyMap.Nav.Select):
+			if m.tabManager == nil {
+				return tea.Batch(cmds...)
+			}
+			if cmd := m.activateTabWithFocus(m.tabManager.ActiveIndex(), uiFocusMain, false); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+			return tea.Batch(cmds...)
+		}
+		if handleGlobalKeys(msg) {
+			return tea.Batch(cmds...)
+		}
+		return tea.Batch(cmds...)
 	}
 
 	switch m.state {
@@ -2453,13 +2571,6 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 				if cmd := m.newSession(); cmd != nil {
 					cmds = append(cmds, cmd)
 				}
-			case key.Matches(msg, m.keyMap.Tab):
-				if m.state != uiLanding {
-					m.setState(m.state, uiFocusMain)
-					m.textarea.Blur()
-					m.chat.Focus()
-					m.chat.SetSelected(m.chat.Len() - 1)
-				}
 			case key.Matches(msg, m.keyMap.Editor.OpenEditor):
 				if m.isAgentBusy() {
 					cmds = append(cmds, util.ReportWarn("Agent is working, please wait..."))
@@ -2551,10 +2662,6 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 			}
 		case uiFocusMain:
 			switch {
-			case key.Matches(msg, m.keyMap.Tab):
-				m.focus = uiFocusEditor
-				cmds = append(cmds, m.textarea.Focus())
-				m.chat.Blur()
 			case key.Matches(msg, m.keyMap.Chat.NewSession):
 				if !m.hasSession() {
 					break
@@ -2563,7 +2670,7 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 					cmds = append(cmds, util.ReportWarn("Agent is busy, please wait before starting a new session..."))
 					break
 				}
-				m.focus = uiFocusEditor
+				cmds = append(cmds, m.setFocus(uiFocusEditor))
 				if cmd := m.newSession(); cmd != nil {
 					cmds = append(cmds, cmd)
 				}
@@ -2734,7 +2841,7 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 		t := m.com.Styles
 		navHeight := layout.navSidebar.Dy()
 
-		nav := uv.NewStyledString(m.renderNavSidebar(t, navHeight))
+		nav := uv.NewStyledString(m.renderNavSidebar(t, navHeight, m.focus == uiFocusNav))
 		nav.Draw(scr, layout.navSidebar)
 
 		// Draw divider in the 1-col gap between nav sidebar and content.
@@ -2743,6 +2850,10 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 		dividerRect.Min.X = dividerRect.Max.X
 		dividerRect.Max.X = dividerRect.Min.X + 1
 		divider.Draw(scr, dividerRect)
+	}
+
+	if layout.navToggle.Dx() > 0 && layout.navToggle.Dy() > 0 {
+		uv.NewStyledString(renderNavToggle(m.com.Styles, layout.navToggle.Dy())).Draw(scr, layout.navToggle)
 	}
 
 	isOnboarding := m.state == uiOnboarding
@@ -2936,6 +3047,7 @@ func (m *UI) ShortHelp() []key.Binding {
 			tab,
 			commands,
 			k.Models,
+			k.NavSidebar,
 			k.RunDashboard,
 			k.Approvals,
 		)
@@ -2956,10 +3068,22 @@ func (m *UI) ShortHelp() []key.Binding {
 			if m.pillsExpanded && hasIncompleteTodos(m.session.Todos) && m.promptQueue > 0 {
 				binds = append(binds, k.Chat.PillLeft)
 			}
+		case uiFocusNav:
+			binds = append(binds,
+				k.Nav.UpDown,
+				k.Nav.Select,
+				k.Backtab,
+			)
 		}
 	case uiSmithersView:
 		if current := m.viewRouter.Current(); current != nil {
 			binds = append(binds, current.ShortHelp()...)
+		}
+		if m.canFocusNavSidebar() {
+			binds = append(binds, k.NavSidebar, k.NavTabs)
+			if m.focus == uiFocusNav {
+				binds = append(binds, k.Nav.UpDown, k.Nav.Select, k.Backtab)
+			}
 		}
 	default:
 		// TODO: other states
@@ -2968,10 +3092,14 @@ func (m *UI) ShortHelp() []key.Binding {
 		binds = append(binds,
 			commands,
 			k.Models,
+			k.NavSidebar,
 			k.RunDashboard,
 			k.Approvals,
 			k.Editor.Newline,
 		)
+		if m.focus == uiFocusNav {
+			binds = append(binds, k.Nav.UpDown, k.Nav.Select, k.Backtab)
+		}
 	}
 
 	binds = append(binds,
@@ -3025,10 +3153,14 @@ func (m *UI) FullHelp() [][]key.Binding {
 			tab,
 			commands,
 			k.Models,
+			k.NavSidebar,
 			k.Sessions,
 			k.RunDashboard,
 			k.Approvals,
 		)
+		if m.canFocusNavSidebar() {
+			mainBinds = append(mainBinds, k.NavTabs, k.PrevTab, k.NextTab)
+		}
 		if hasSession {
 			mainBinds = append(mainBinds, k.Chat.NewSession)
 		}
@@ -3077,6 +3209,11 @@ func (m *UI) FullHelp() [][]key.Binding {
 			if m.pillsExpanded && hasIncompleteTodos(m.session.Todos) && m.promptQueue > 0 {
 				binds = append(binds, []key.Binding{k.Chat.PillLeft})
 			}
+		case uiFocusNav:
+			binds = append(binds,
+				[]key.Binding{k.Nav.UpDown, k.Nav.Select},
+				[]key.Binding{k.Tab, k.Backtab},
+			)
 		}
 	default:
 		if m.session == nil {
@@ -3085,11 +3222,15 @@ func (m *UI) FullHelp() [][]key.Binding {
 				[]key.Binding{
 					commands,
 					k.Models,
+					k.NavSidebar,
 					k.Sessions,
 					k.RunDashboard,
 					k.Approvals,
 				},
 			)
+			if m.canFocusNavSidebar() {
+				binds = append(binds, []key.Binding{k.NavTabs, k.PrevTab, k.NextTab})
+			}
 			editorBinds := []key.Binding{
 				k.Editor.Newline,
 				k.Editor.MentionFile,
@@ -3292,6 +3433,10 @@ func (m *UI) generateLayout(w, h int) uiLayout {
 			navRect.Max.X -= 1
 			uiLayout.navSidebar = navRect
 			contentArea = rest
+		} else if m.supportsNavSidebar() {
+			toggleRect, rest := layout.SplitHorizontal(appRect, layout.Fixed(navToggleWidth))
+			uiLayout.navToggle = toggleRect
+			contentArea = rest
 		}
 
 		headerRect, mainRect := layout.SplitVertical(contentArea, layout.Fixed(landingHeaderHeight))
@@ -3308,6 +3453,10 @@ func (m *UI) generateLayout(w, h int) uiLayout {
 			navRect, rest := layout.SplitHorizontal(appRect, layout.Fixed(navSidebarWidth+1))
 			navRect.Max.X -= 1
 			uiLayout.navSidebar = navRect
+			chatArea = rest
+		} else if m.supportsNavSidebar() {
+			toggleRect, rest := layout.SplitHorizontal(appRect, layout.Fixed(navToggleWidth))
+			uiLayout.navToggle = toggleRect
 			chatArea = rest
 		}
 
@@ -3364,6 +3513,10 @@ func (m *UI) generateLayout(w, h int) uiLayout {
 			navRect.Max.X -= 1
 			uiLayout.navSidebar = navRect
 			contentArea = rest
+		} else if m.supportsNavSidebar() {
+			toggleRect, rest := layout.SplitHorizontal(belowHeader, layout.Fixed(navToggleWidth))
+			uiLayout.navToggle = toggleRect
+			contentArea = rest
 		}
 		uiLayout.main = contentArea
 	}
@@ -3402,6 +3555,9 @@ type uiLayout struct {
 
 	// navSidebar is the area for the persistent vertical navigation sidebar.
 	navSidebar uv.Rectangle
+
+	// navToggle is the clickable handle shown when the nav sidebar is hidden.
+	navToggle uv.Rectangle
 }
 
 func (m *UI) openEditor(value string) tea.Cmd {
