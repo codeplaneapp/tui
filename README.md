@@ -1,175 +1,8 @@
 # Codeplane
 
-<p align="center">
-    <a href="https://stuff.charm.sh/codeplane/charm-codeplane.png"><img width="450" alt="Charm Codeplane Logo" src="https://github.com/user-attachments/assets/cf8ca3ce-8b02-43f0-9d0f-5a331488da4b" /></a><br />
-    <a href="https://github.com/charmbracelet/codeplane/releases"><img src="https://img.shields.io/github/release/charmbracelet/codeplane" alt="Latest Release"></a>
-    <a href="https://github.com/charmbracelet/codeplane/actions"><img src="https://github.com/charmbracelet/codeplane/actions/workflows/build.yml/badge.svg" alt="Build Status"></a>
-</p>
-
-<p align="center">Your new coding bestie, now available in your favourite terminal.<br />Your tools, your code, and your workflows, wired into your LLM of choice.</p>
-<p align="center">终端里的编程新搭档，<br />无缝接入你的工具、代码与工作流，全面兼容主流 LLM 模型。</p>
-
-<p align="center"><img width="800" alt="Codeplane Demo" src="https://github.com/user-attachments/assets/58280caf-851b-470a-b6f7-d5c4ea8a1968" /></p>
-
 ## Features
 
-- **Multi-Model:** choose from a wide range of LLMs or add your own via OpenAI- or Anthropic-compatible APIs
-- **Flexible:** switch LLMs mid-session while preserving context
-- **Session-Based:** maintain multiple work sessions and contexts per project
-- **LSP-Enhanced:** Codeplane uses LSPs for additional context, just like you do
-- **Extensible:** add capabilities via MCPs (`http`, `stdio`, and `sse`)
-- **Works Everywhere:** first-class support in every terminal on macOS, Linux, Windows (PowerShell and WSL), Android, FreeBSD, OpenBSD, and NetBSD
-- **Industrial Grade:** built on the Charm ecosystem, powering 25k+ applications, from leading open source projects to business-critical infrastructure
-
 ## Installation
-
-Use a package manager:
-
-```bash
-# Homebrew
-brew install charmbracelet/tap/codeplane
-
-# NPM
-npm install -g @charmland/codeplane
-
-# Arch Linux (btw)
-yay -S codeplane-bin
-
-# Nix
-nix run github:numtide/nix-ai-tools#codeplane
-
-# FreeBSD
-pkg install codeplane
-```
-
-Windows users:
-
-```bash
-# Winget
-winget install charmbracelet.codeplane
-
-# Scoop
-scoop bucket add charm https://github.com/charmbracelet/scoop-bucket.git
-scoop install codeplane
-```
-
-<details>
-<summary><strong>Nix (NUR)</strong></summary>
-
-Codeplane is available via the official Charm [NUR](https://github.com/nix-community/NUR) in `nur.repos.charmbracelet.codeplane`, which is the most up-to-date way to get Codeplane in Nix.
-
-You can also try out Codeplane via the NUR with `nix-shell`:
-
-```bash
-# Add the NUR channel.
-nix-channel --add https://github.com/nix-community/NUR/archive/main.tar.gz nur
-nix-channel --update
-
-# Get Codeplane in a Nix shell.
-nix-shell -p '(import <nur> { pkgs = import <nixpkgs> {}; }).repos.charmbracelet.codeplane'
-```
-
-### NixOS & Home Manager Module Usage via NUR
-
-Codeplane provides NixOS and Home Manager modules via NUR.
-You can use these modules directly in your flake by importing them from NUR. Since it auto detects whether its a home manager or nixos context you can use the import the exact same way :)
-
-```nix
-{
-  inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    nur.url = "github:nix-community/NUR";
-  };
-
-  outputs = { self, nixpkgs, nur, ... }: {
-    nixosConfigurations.your-hostname = nixpkgs.lib.nixosSystem {
-      system = "x86_64-linux";
-      modules = [
-        nur.modules.nixos.default
-        nur.repos.charmbracelet.modules.codeplane
-        {
-          programs.codeplane = {
-            enable = true;
-            settings = {
-              providers = {
-                openai = {
-                  id = "openai";
-                  name = "OpenAI";
-                  base_url = "https://api.openai.com/v1";
-                  type = "openai";
-                  api_key = "sk-fake123456789abcdef...";
-                  models = [
-                    {
-                      id = "gpt-4";
-                      name = "GPT-4";
-                    }
-                  ];
-                };
-              };
-              lsp = {
-                go = { command = "gopls"; enabled = true; };
-                nix = { command = "nil"; enabled = true; };
-              };
-              options = {
-                context_paths = [ "/etc/nixos/configuration.nix" ];
-                tui = { compact_mode = true; };
-                debug = false;
-              };
-            };
-          };
-        }
-      ];
-    };
-  };
-}
-```
-
-</details>
-
-<details>
-<summary><strong>Debian/Ubuntu</strong></summary>
-
-```bash
-sudo mkdir -p /etc/apt/keyrings
-curl -fsSL https://repo.charm.sh/apt/gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/charm.gpg
-echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" | sudo tee /etc/apt/sources.list.d/charm.list
-sudo apt update && sudo apt install codeplane
-```
-
-</details>
-
-<details>
-<summary><strong>Fedora/RHEL</strong></summary>
-
-```bash
-echo '[charm]
-name=Charm
-baseurl=https://repo.charm.sh/yum/
-enabled=1
-gpgcheck=1
-gpgkey=https://repo.charm.sh/yum/gpg.key' | sudo tee /etc/yum.repos.d/charm.repo
-sudo yum install codeplane
-```
-
-</details>
-
-Or, download it:
-
-- [Packages][releases] are available in Debian and RPM formats
-- [Binaries][releases] are available for Linux, macOS, Windows, FreeBSD, OpenBSD, and NetBSD
-
-[releases]: https://github.com/charmbracelet/codeplane/releases
-
-Or just install it with Go:
-
-```
-go install github.com/charmbracelet/codeplane@latest
-```
-
-> [!WARNING]
-> Productivity may increase when using Codeplane and you may find yourself nerd
-> sniped when first using the application. If the symptoms persist, join the
-> [Discord][discord] and nerd snipe the rest of us.
 
 ## Getting Started
 
@@ -214,14 +47,6 @@ Codeplane:
 - [Kimi Code](https://www.kimi.com/membership/pricing)
 - [MiniMax Coding Plan](https://platform.minimax.io/subscribe/coding-plan)
 
-### By the Way
-
-Is there a provider you’d like to see in Codeplane? Is there an existing model that needs an update?
-
-Codeplane’s default model listing is managed in [Catwalk](https://github.com/charmbracelet/catwalk), a community-supported, open source repository of Codeplane-compatible models, and you’re welcome to contribute.
-
-<a href="https://github.com/charmbracelet/catwalk"><img width="174" height="174" alt="Catwalk Badge" src="https://github.com/user-attachments/assets/95b49515-fe82-4409-b10d-5beb0873787d" /></a>
-
 ## Configuration
 
 > [!TIP]
@@ -232,18 +57,11 @@ Codeplane runs great with no configuration. That said, if you do need or want to
 customize Codeplane, configuration can be added either local to the project itself,
 or globally, with the following priority:
 
-1. `.codeplane.json`
-2. `codeplane.json`
-3. `$HOME/.config/codeplane/codeplane.json`
+1. `.codeplane.toon`
+2. `codeplane.toon`
+3. `$HOME/.config/codeplane/codeplane.toon`
 
-Configuration itself is stored as a JSON object:
-
-```json
-{
-  "this-setting": { "this": "that" },
-  "that-setting": ["ceci", "cela"]
-}
-```
+Configuration itself is stored as a TOON object:
 
 As an additional note, Codeplane also stores ephemeral data, such as application
 state, in one additional location:
@@ -410,21 +228,21 @@ activate on demand.
 
 The global paths we looks for skills are:
 
-* `$CODEPLANE_SKILLS_DIR`
-* `$XDG_CONFIG_HOME/agents/skills` or `~/.config/agents/skills/`
-* `$XDG_CONFIG_HOME/codeplane/skills` or `~/.config/codeplane/skills/`
-* On Windows, we _also_ look at
-  * `%LOCALAPPDATA%\agents\skills\` or `%USERPROFILE%\AppData\Local\agents\skills\`
-  * `%LOCALAPPDATA%\codeplane\skills\` or `%USERPROFILE%\AppData\Local\codeplane\skills\`
-* Additional paths configured via `options.skills_paths`
+- `$CODEPLANE_SKILLS_DIR`
+- `$XDG_CONFIG_HOME/agents/skills` or `~/.config/agents/skills/`
+- `$XDG_CONFIG_HOME/codeplane/skills` or `~/.config/codeplane/skills/`
+- On Windows, we _also_ look at
+  - `%LOCALAPPDATA%\agents\skills\` or `%USERPROFILE%\AppData\Local\agents\skills\`
+  - `%LOCALAPPDATA%\codeplane\skills\` or `%USERPROFILE%\AppData\Local\codeplane\skills\`
+- Additional paths configured via `options.skills_paths`
 
 On top of that, we _also_ load skills in your project from the following
 relative paths:
 
-* `.agents/skills`
-* `.codeplane/skills`
-* `.claude/skills`
-* `.cursor/skills`
+- `.agents/skills`
+- `.codeplane/skills`
+- `.claude/skills`
+- `.cursor/skills`
 
 ```jsonc
 {
@@ -869,20 +687,6 @@ Installing an extra tool might be needed on Unix-like environments.
 
 ## Contributing
 
-See the [contributing guide](https://github.com/charmbracelet/crush?tab=contributing-ov-file#contributing).
-
-## Whatcha think?
-
-We’d love to hear your thoughts on this project. Need help? We gotchu. You can find us on:
-
-- [Twitter](https://twitter.com/charmcli)
-- [Slack](https://charm.land/slack)
-- [Discord][discord]
-- [The Fediverse](https://mastodon.social/@charmcli)
-- [Bluesky](https://bsky.app/profile/charm.land)
-
-[discord]: https://charm.land/discord
-
 ## License
 
 [FSL-1.1-MIT](https://github.com/charmbracelet/crush/raw/main/LICENSE.md)
@@ -891,7 +695,8 @@ We’d love to hear your thoughts on this project. Need help? We gotchu. You can
 
 Part of [Charm](https://charm.land).
 
-<a href="https://charm.land/"><img alt="The Charm logo" width="400" src="https://stuff.charm.sh/charm-banner-next.jpg" /></a>
+## Attributions
 
-<!--prettier-ignore-->
-Charm热爱开源 • Charm loves open source
+This project was originally forked from Charm's Crush TUI.
+
+<a href="https://charm.land/"><img alt="The Charm logo" width="400" src="https://stuff.charm.sh/charm-banner-next.jpg" /></a>

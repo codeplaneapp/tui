@@ -23,7 +23,6 @@ import (
 	"github.com/charmbracelet/crush/internal/fsext"
 	"github.com/charmbracelet/crush/internal/home"
 	powernapConfig "github.com/charmbracelet/x/powernap/pkg/config"
-	"github.com/qjebbs/go-jsons"
 )
 
 const defaultCatwalkURL = "https://catwalk.charm.sh"
@@ -821,7 +820,9 @@ func lookupConfigs(cwd string) []string {
 		GlobalConfigData(),
 	}
 
-	configNames := []string{appName + ".json", "." + appName + ".json"}
+	configNames := []string{appName + ".toon", "." + appName + ".toon"}
+	// Legacy JSON config files are still discovered for backward compatibility.
+	configNames = append(configNames, appName+".json", "."+appName+".json")
 	for _, legacyAppName := range legacyAppNames {
 		configNames = append(configNames, legacyAppName+".json", "."+legacyAppName+".json")
 	}
@@ -867,7 +868,14 @@ func loadFromBytes(configs [][]byte) (*Config, error) {
 		return &Config{}, nil
 	}
 
-	data, err := jsons.Merge(configs)
+	// Pass each config individually so the merger can detect the format
+	// (JSON vs TOON) per item, enabling mixed-format merging.
+	merger := newConfigMerger()
+	args := make([]interface{}, len(configs))
+	for i, c := range configs {
+		args[i] = c
+	}
+	data, err := merger.Merge(args...)
 	if err != nil {
 		return nil, err
 	}
@@ -1074,10 +1082,11 @@ func workspaceConfigPath(dataDir string) string {
 
 func isLegacyConfigPath(path string) bool {
 	base := filepath.Base(path)
+	// Any .json config file is now legacy (TOON is the primary format).
+	if strings.HasSuffix(base, ".json") {
+		return true
+	}
 	for _, legacyAppName := range legacyAppNames {
-		if base == legacyAppName+".json" || base == "."+legacyAppName+".json" {
-			return true
-		}
 		if strings.Contains(path, string(filepath.Separator)+legacyAppName+string(filepath.Separator)) {
 			return true
 		}
@@ -1093,7 +1102,8 @@ func IsLegacyConfigPath(path string) bool {
 
 func configPathsFor(baseDir string) []string {
 	paths := []string{
-		filepath.Join(baseDir, appName, fmt.Sprintf("%s.json", appName)),
+		filepath.Join(baseDir, appName, fmt.Sprintf("%s.toon", appName)),
+		filepath.Join(baseDir, appName, fmt.Sprintf("%s.json", appName)), // legacy
 	}
 	for _, legacyAppName := range legacyAppNames {
 		paths = append(paths, filepath.Join(baseDir, legacyAppName, fmt.Sprintf("%s.json", legacyAppName)))
@@ -1103,7 +1113,8 @@ func configPathsFor(baseDir string) []string {
 
 func dataPathsFor(baseDir string) []string {
 	paths := []string{
-		filepath.Join(baseDir, appName, fmt.Sprintf("%s.json", appName)),
+		filepath.Join(baseDir, appName, fmt.Sprintf("%s.toon", appName)),
+		filepath.Join(baseDir, appName, fmt.Sprintf("%s.json", appName)), // legacy
 	}
 	for _, legacyAppName := range legacyAppNames {
 		paths = append(paths, filepath.Join(baseDir, legacyAppName, fmt.Sprintf("%s.json", legacyAppName)))
@@ -1113,7 +1124,8 @@ func dataPathsFor(baseDir string) []string {
 
 func workspaceConfigPathsFor(dataDir string) []string {
 	paths := []string{
-		filepath.Join(dataDir, fmt.Sprintf("%s.json", appName)),
+		filepath.Join(dataDir, fmt.Sprintf("%s.toon", appName)),
+		filepath.Join(dataDir, fmt.Sprintf("%s.json", appName)), // legacy
 	}
 	for _, legacyAppName := range legacyAppNames {
 		paths = append(paths, filepath.Join(dataDir, fmt.Sprintf("%s.json", legacyAppName)))
@@ -1123,7 +1135,8 @@ func workspaceConfigPathsFor(dataDir string) []string {
 
 func namedPathsInDir(dir string) []string {
 	paths := []string{
-		filepath.Join(dir, fmt.Sprintf("%s.json", appName)),
+		filepath.Join(dir, fmt.Sprintf("%s.toon", appName)),
+		filepath.Join(dir, fmt.Sprintf("%s.json", appName)), // legacy
 	}
 	for _, legacyAppName := range legacyAppNames {
 		paths = append(paths, filepath.Join(dir, fmt.Sprintf("%s.json", legacyAppName)))

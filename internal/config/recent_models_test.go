@@ -1,7 +1,6 @@
 package config
 
 import (
-	"encoding/json"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -10,22 +9,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// readConfigJSON reads and unmarshals the JSON config file at path.
-func readConfigJSON(t *testing.T, path string) map[string]any {
+// readConfigTOON reads and parses a TOON (or JSON) config file at path.
+func readConfigTOON(t *testing.T, path string) map[string]any {
 	t.Helper()
-	baseDir := filepath.Dir(path)
-	fileName := filepath.Base(path)
-	b, err := fs.ReadFile(os.DirFS(baseDir), fileName)
+	b, err := os.ReadFile(path)
 	require.NoError(t, err)
-	var out map[string]any
-	require.NoError(t, json.Unmarshal(b, &out))
-	return out
+	m, err := parseConfigBytes(b)
+	require.NoError(t, err)
+	return m
 }
 
 // readRecentModels reads the recent_models section from the config file.
 func readRecentModels(t *testing.T, path string) map[string]any {
 	t.Helper()
-	out := readConfigJSON(t, path)
+	out := readConfigTOON(t, path)
 	rm, ok := out["recent_models"].(map[string]any)
 	require.True(t, ok)
 	return rm
@@ -35,7 +32,7 @@ func readRecentModels(t *testing.T, path string) map[string]any {
 func testStoreWithPath(cfg *Config, dir string) *ConfigStore {
 	return &ConfigStore{
 		config:         cfg,
-		globalDataPath: filepath.Join(dir, "config.json"),
+		globalDataPath: filepath.Join(dir, "config.toon"),
 	}
 }
 

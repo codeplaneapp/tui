@@ -20,17 +20,8 @@ import (
 	_ "github.com/joho/godotenv/autoload"
 )
 
-func profileEnabled() bool {
-	for _, key := range []string{"CODEPLANE_PROFILE", "SMITHERS_TUI_PROFILE", "CRUSH_PROFILE"} {
-		if os.Getenv(key) != "" {
-			return true
-		}
-	}
-	return false
-}
-
 func main() {
-	if profileEnabled() {
+	if os.Getenv("CODEPLANE_PROFILE") != "" {
 		go func() {
 			slog.Info("Serving pprof at localhost:6060")
 			if httpErr := http.ListenAndServe("localhost:6060", nil); httpErr != nil {

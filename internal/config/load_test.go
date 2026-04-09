@@ -1546,12 +1546,12 @@ func TestConfig_configureSelectedModels(t *testing.T) {
 	})
 }
 
-// TestConfig_lookupConfigs verifies that codeplane.json is preferred while
+// TestConfig_lookupConfigs verifies that codeplane.toon is preferred while
 // legacy config files are still discovered.
 func TestConfig_lookupConfigs(t *testing.T) {
 	dir := t.TempDir()
 
-	codeplanePath := filepath.Join(dir, "codeplane.json")
+	codeplanePath := filepath.Join(dir, "codeplane.toon")
 	require.NoError(t, os.WriteFile(codeplanePath, []byte(`{}`), 0o644))
 
 	smithersPath := filepath.Join(dir, "smithers-tui.json")
@@ -1579,7 +1579,7 @@ func TestConfig_envVarFallback(t *testing.T) {
 		t.Setenv("CRUSH_GLOBAL_CONFIG", "/tmp/legacy")
 
 		got := GlobalConfig()
-		require.Equal(t, filepath.Join("/tmp/legacy", "codeplane.json"), got)
+		require.Equal(t, filepath.Join("/tmp/legacy", "codeplane.toon"), got)
 	})
 
 	t.Run("CODEPLANE_GLOBAL_CONFIG takes precedence over legacy names", func(t *testing.T) {
@@ -1588,7 +1588,7 @@ func TestConfig_envVarFallback(t *testing.T) {
 		t.Setenv("CRUSH_GLOBAL_CONFIG", "/tmp/legacy")
 
 		got := GlobalConfig()
-		require.Equal(t, filepath.Join("/tmp/primary", "codeplane.json"), got)
+		require.Equal(t, filepath.Join("/tmp/primary", "codeplane.toon"), got)
 	})
 
 	t.Run("CRUSH_GLOBAL_DATA is used when CODEPLANE_GLOBAL_DATA is unset", func(t *testing.T) {
@@ -1597,7 +1597,7 @@ func TestConfig_envVarFallback(t *testing.T) {
 		t.Setenv("CRUSH_GLOBAL_DATA", "/tmp/legacy-data")
 
 		got := GlobalConfigData()
-		require.Equal(t, filepath.Join("/tmp/legacy-data", "codeplane.json"), got)
+		require.Equal(t, filepath.Join("/tmp/legacy-data", "codeplane.toon"), got)
 	})
 
 	t.Run("CODEPLANE_GLOBAL_DATA takes precedence over legacy names", func(t *testing.T) {
@@ -1606,7 +1606,7 @@ func TestConfig_envVarFallback(t *testing.T) {
 		t.Setenv("CRUSH_GLOBAL_DATA", "/tmp/legacy-data")
 
 		got := GlobalConfigData()
-		require.Equal(t, filepath.Join("/tmp/primary-data", "codeplane.json"), got)
+		require.Equal(t, filepath.Join("/tmp/primary-data", "codeplane.toon"), got)
 	})
 }
 

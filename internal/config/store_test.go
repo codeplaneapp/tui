@@ -13,31 +13,31 @@ func TestConfigStore_ConfigPath_GlobalAlwaysWorks(t *testing.T) {
 	t.Parallel()
 
 	store := &ConfigStore{
-		globalDataPath: "/some/global/crush.json",
+		globalDataPath: "/some/global/codeplane.toon",
 	}
 
 	path, err := store.configPath(ScopeGlobal)
 	require.NoError(t, err)
-	require.Equal(t, "/some/global/crush.json", path)
+	require.Equal(t, "/some/global/codeplane.toon", path)
 }
 
 func TestConfigStore_ConfigPath_WorkspaceReturnsPath(t *testing.T) {
 	t.Parallel()
 
 	store := &ConfigStore{
-		workspacePath: "/some/workspace/.crush/crush.json",
+		workspacePath: "/some/workspace/.codeplane/codeplane.toon",
 	}
 
 	path, err := store.configPath(ScopeWorkspace)
 	require.NoError(t, err)
-	require.Equal(t, "/some/workspace/.crush/crush.json", path)
+	require.Equal(t, "/some/workspace/.codeplane/codeplane.toon", path)
 }
 
 func TestConfigStore_ConfigPath_WorkspaceErrorsWhenEmpty(t *testing.T) {
 	t.Parallel()
 
 	store := &ConfigStore{
-		globalDataPath: "/some/global/crush.json",
+		globalDataPath: "/some/global/codeplane.toon",
 		workspacePath:  "",
 	}
 
@@ -51,7 +51,7 @@ func TestConfigStore_SetConfigField_WorkspaceScopeGuard(t *testing.T) {
 
 	store := &ConfigStore{
 		config:         &Config{},
-		globalDataPath: filepath.Join(t.TempDir(), "global.json"),
+		globalDataPath: filepath.Join(t.TempDir(), "global.toon"),
 		workspacePath:  "",
 	}
 
@@ -64,7 +64,7 @@ func TestConfigStore_SetConfigField_GlobalScopeAlwaysWorks(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	globalPath := filepath.Join(dir, "crush.json")
+	globalPath := filepath.Join(dir, "codeplane.toon")
 	store := &ConfigStore{
 		config:         &Config{},
 		globalDataPath: globalPath,
@@ -75,7 +75,7 @@ func TestConfigStore_SetConfigField_GlobalScopeAlwaysWorks(t *testing.T) {
 
 	data, err := os.ReadFile(globalPath)
 	require.NoError(t, err)
-	require.Contains(t, string(data), `"foo"`)
+	require.Contains(t, string(data), "foo: bar")
 }
 
 func TestConfigStore_RemoveConfigField_WorkspaceScopeGuard(t *testing.T) {
@@ -83,7 +83,7 @@ func TestConfigStore_RemoveConfigField_WorkspaceScopeGuard(t *testing.T) {
 
 	store := &ConfigStore{
 		config:         &Config{},
-		globalDataPath: filepath.Join(t.TempDir(), "global.json"),
+		globalDataPath: filepath.Join(t.TempDir(), "global.toon"),
 		workspacePath:  "",
 	}
 
@@ -97,7 +97,7 @@ func TestConfigStore_HasConfigField_WorkspaceScopeGuard(t *testing.T) {
 
 	store := &ConfigStore{
 		config:         &Config{},
-		globalDataPath: filepath.Join(t.TempDir(), "global.json"),
+		globalDataPath: filepath.Join(t.TempDir(), "global.toon"),
 		workspacePath:  "",
 	}
 

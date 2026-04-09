@@ -14,8 +14,6 @@ import (
 	"github.com/charmbracelet/crush/internal/oauth"
 	"github.com/charmbracelet/crush/internal/oauth/copilot"
 	"github.com/charmbracelet/crush/internal/oauth/hyper"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 // RuntimeOverrides holds per-session settings that are never persisted to
@@ -117,7 +115,12 @@ func (s *ConfigStore) HasConfigField(scope Scope, key string) bool {
 	if err != nil {
 		return false
 	}
-	return gjson.Get(string(data), key).Exists()
+	m, err := parseConfigBytes(data)
+	if err != nil {
+		return false
+	}
+	_, ok := mapGet(m, key)
+	return ok
 }
 
 // SetConfigField sets a key/value pair in the config file for the given scope.
@@ -127,22 +130,32 @@ func (s *ConfigStore) SetConfigField(scope Scope, key string, value any) error {
 		return fmt.Errorf("%s: %w", key, err)
 	}
 	data, err := os.ReadFile(path)
+	var m map[string]any
 	if err != nil {
 		if os.IsNotExist(err) {
-			data = []byte("{}")
+			m = make(map[string]any)
 		} else {
 			return fmt.Errorf("failed to read config file: %w", err)
 		}
+	} else if len(data) == 0 {
+		m = make(map[string]any)
+	} else {
+		m, err = parseConfigBytes(data)
+		if err != nil {
+			return fmt.Errorf("failed to parse config file: %w", err)
+		}
 	}
 
-	newValue, err := sjson.Set(string(data), key, value)
+	m = mapSet(m, key, normalizeValue(value))
+
+	out, err := marshalTOON(m)
 	if err != nil {
-		return fmt.Errorf("failed to set config field %s: %w", key, err)
+		return fmt.Errorf("failed to marshal config as TOON: %w", err)
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("failed to create config directory %q: %w", path, err)
 	}
-	if err := os.WriteFile(path, []byte(newValue), 0o600); err != nil {
+	if err := os.WriteFile(path, out, 0o600); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 	return nil
@@ -158,15 +171,21 @@ func (s *ConfigStore) RemoveConfigField(scope Scope, key string) error {
 	if err != nil {
 		return fmt.Errorf("failed to read config file: %w", err)
 	}
-
-	newValue, err := sjson.Delete(string(data), key)
+	m, err := parseConfigBytes(data)
 	if err != nil {
-		return fmt.Errorf("failed to delete config field %s: %w", key, err)
+		return fmt.Errorf("failed to parse config file: %w", err)
+	}
+
+	m = mapDelete(m, key)
+
+	out, err := marshalTOON(m)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config as TOON: %w", err)
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("failed to create config directory %q: %w", path, err)
 	}
-	if err := os.WriteFile(path, []byte(newValue), 0o600); err != nil {
+	if err := os.WriteFile(path, out, 0o600); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 	return nil

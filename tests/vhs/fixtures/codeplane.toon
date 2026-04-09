@@ -1,0 +1,3 @@
+smithers:
+  dbPath: .smithers/smithers.db
+  workflowDir: .smithers/workflows

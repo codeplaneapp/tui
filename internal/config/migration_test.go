@@ -53,7 +53,7 @@ func TestGlobalConfigLogsLegacyPathWarning(t *testing.T) {
 	require.Equal(t, legacyPath, got)
 	require.Contains(t, buf.String(), "Using legacy global_config path")
 	require.Contains(t, buf.String(), legacyPath)
-	require.Contains(t, buf.String(), filepath.Join(cfgHome, "codeplane", "codeplane.json"))
+	require.Contains(t, buf.String(), filepath.Join(cfgHome, "codeplane", "codeplane.toon"))
 }
 
 func TestGlobalConfigDataLogsLegacyPathWarning(t *testing.T) {
@@ -73,7 +73,7 @@ func TestGlobalConfigDataLogsLegacyPathWarning(t *testing.T) {
 	require.Equal(t, legacyPath, got)
 	require.Contains(t, buf.String(), "Using legacy global_data path")
 	require.Contains(t, buf.String(), legacyPath)
-	require.Contains(t, buf.String(), filepath.Join(dataHome, "codeplane", "codeplane.json"))
+	require.Contains(t, buf.String(), filepath.Join(dataHome, "codeplane", "codeplane.toon"))
 }
 
 func TestWorkspaceConfigPathLogsLegacyPathWarning(t *testing.T) {
@@ -87,7 +87,7 @@ func TestWorkspaceConfigPathLogsLegacyPathWarning(t *testing.T) {
 	require.Equal(t, legacyPath, got)
 	require.Contains(t, buf.String(), "Using legacy workspace_config path")
 	require.Contains(t, buf.String(), legacyPath)
-	require.Contains(t, buf.String(), filepath.Join(dataDir, "codeplane.json"))
+	require.Contains(t, buf.String(), filepath.Join(dataDir, "codeplane.toon"))
 }
 
 func TestLoadFromConfigPathsLogsLegacyConfigFiles(t *testing.T) {
@@ -110,7 +110,7 @@ func TestConfigStoreSetConfigFieldWritesCodeplanePathOnly(t *testing.T) {
 	dir := t.TempDir()
 	globalDir := filepath.Join(dir, "codeplane")
 	legacyDir := filepath.Join(dir, "crush")
-	globalPath := filepath.Join(globalDir, "codeplane.json")
+	globalPath := filepath.Join(globalDir, "codeplane.toon")
 	legacyPath := filepath.Join(legacyDir, "crush.json")
 
 	require.NoError(t, os.MkdirAll(filepath.Dir(legacyPath), 0o755))
@@ -125,7 +125,7 @@ func TestConfigStoreSetConfigFieldWritesCodeplanePathOnly(t *testing.T) {
 
 	codeplaneData, err := os.ReadFile(globalPath)
 	require.NoError(t, err)
-	require.Contains(t, string(codeplaneData), `"foo":"bar"`)
+	require.Contains(t, string(codeplaneData), "foo: bar")
 
 	legacyData, err := os.ReadFile(legacyPath)
 	require.NoError(t, err)
